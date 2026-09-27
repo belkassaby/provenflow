@@ -1,7 +1,8 @@
 # State of the art: designing, verifying and running agentic state machines
 
-*Survey date: 25 September 2026. The claims about other tools were checked against their
-documentation, repositories or arXiv abstracts on that date (links in [Sources](#sources)). Items
+*Survey date: 25 September 2026; section 2.9 on 27 September 2026. The claims about other tools
+were checked against their documentation, repositories or arXiv abstracts on those dates (links in
+[Sources](#sources)). Items
 marked "not verified" come from general knowledge and were not re-checked.*
 
 LLM agents are increasingly built as explicit control flows — graphs, state machines,
@@ -290,6 +291,85 @@ It is shallower than each of them in its own area:
 Its models are abstractions, so a counterexample should be confirmed on the code: the scenarios
 it generates are for that.
 
+### 2.9 Code review with model checking and formal verification
+
+Review tools that go beyond linting fall into five groups.
+
+**Review bots and platforms with analysers, no formal methods.**
+- **Google Tricorder** shows analyser results as comments on the changed lines at code review,
+  with one-click fixes (Error Prone, among others). Its paper notes that most of its analyses use
+  no data-flow analysis or abstract interpretation.
+- **Amazon CodeGuru Reviewer** combined program analysis with machine learning. It commented in
+  pull requests, for Java and Python. It has been closed to new repositories since November 2025.
+- **GitHub Copilot Autofix** generates fixes for CodeQL alerts inline on pull requests. The fixes
+  are not verified: GitHub evaluates the model offline, re-scanning about 2,300 alerts, and its
+  documentation warns that a fix can be wrong or partial.
+- **Snyk DeepCode AI Fix** does check each LLM fix again with its symbolic rule engine: the fix
+  must parse, remove the issue and add no new finding. That is a re-scan, not a proof.
+- **Semgrep Assistant** opens pull requests with generated fixes.
+
+**Formal analysis in code review.**
+- Meta's **Infer** (separation logic, bi-abduction) runs on every diff and comments in review.
+  Reporting at diff time raised the fix rate to about 70%, against almost 0% for batch reports. It
+  reports but proposes no fix.
+- **SapFix** proposes fixes for crashes found by Sapienz and Infer: a revert, a template or a
+  mutation. They are validated by compiling and running tests, then reviewed by a person.
+- Microsoft's **Static Driver Verifier** checked Windows drivers against interface rules on every
+  path. It was removed from the 24H2 WDK in favour of CodeQL.
+
+**Model checkers as pull-request gates.** Their proofs rely on harnesses or specifications that
+people write:
+- the **CBMC** proofs of AWS s2n-tls are validated on every pull request;
+- the **Kani** GitHub Action runs Rust proof harnesses in CI;
+- the **Certora** Prover action posts verification results on pull requests for smart-contract
+  rules;
+- **cbmc-viewer** links CBMC error traces to the source lines, the way ProvenFlow maps
+  counterexamples to code.
+
+None of them extracts a model from the code, and none proposes fixes.
+
+**Model checking of designs.**
+- The **P** language (AWS) checks the interleavings of communicating state machines, used for
+  S3, DynamoDB, EBS and others. PObserve then checks production logs against the same
+  specifications.
+- **Apalache** checks TLA+ specifications with Z3.
+
+Both check a design written by hand, beside the code.
+
+**Model extraction and verified repair (research).**
+- **Modex** extracts SPIN models from C, and **Bandera** extracted SMV/SPIN models from Java (it
+  has been dormant since about 2005). Both are offline tools, without review or repair.
+- **ESBMC-AI** is the closest to ProvenFlow's fix loop: bounded model checking finds a violation,
+  the counterexample goes into the LLM prompt, and the patch is checked again until it passes. It
+  works on C programs, and its authors foresee CI use.
+- Other work uses the verifier as the oracle for LLM output: **AutoSpec** (ACSL specifications
+  checked by Frama-C), specification-guided repair of **Dafny** programs, and **Lemur** (LLM
+  invariants checked by sound reasoners).
+- **Verifix** repairs student programs with a verified equivalence to a reference solution.
+
+**ProvenFlow's Code base review compared.** It works on a whole project in 15 languages:
+- it *extracts* the models (state machines, resource lifecycles, pattern contracts, layers), with
+  no harness or specification to write;
+- it checks them with nuXmv's LTL/CTL, and maps each counterexample to the calls in the code;
+- it proposes changes: deterministic quick fixes, or LLM patches;
+- a change is marked verified only when re-running the whole analysis on the patched code removes
+  the finding without adding any, the same principle as ESBMC-AI and Snyk's re-scan;
+- the review shows the original and proposed code, and the model before and after, side by side;
+- the reviewer applies one change or all of them, and conflicting changes are detected;
+- SARIF output puts the findings on GitHub pull requests, and `--fail-on` makes it a CI gate.
+
+As far as the sources show, no other tool puts model extraction, temporal-logic checking and
+re-verified repair into one review loop.
+
+It is also more modest than these tools in several ways:
+- it does not prove memory safety or the absence of crashes (CBMC, Kani, Infer);
+- it has no security or dataflow rules (CodeQL, Snyk, Semgrep);
+- its models are abstractions, so a verified change removes the finding from the model, which is
+  not a full proof about the code;
+- it does not compile the code or run its tests, so a change can pass the checks and still break
+  the build (keeping CI in the loop covers that);
+- it runs as a local server or a CLI step, not as a hosted review bot.
+
 ## 3. Why it matters for LLM agents
 
 - **Agents fail in the ways model checking finds.** The MAST taxonomy (arXiv 2503.13657; 1,600+
@@ -331,9 +411,13 @@ it generates are for that.
 9. Tests that check the pieces agree with each other in both directions: nuXmv, the TypeScript
    semantics, the generated Python, NuRV and PRISM.
 10. From code to model (`pflow extract`): it extracts and verifies the state machines, resource
-    lifecycles, design-pattern contracts and layers of a TypeScript/Angular/Python code base. It
-    maps counterexamples to code, checks the declared paradigm of each layer, emits SARIF for CI,
-    and accepts LLM-proposed fixes only after re-verification (section 2.8).
+    lifecycles, design-pattern contracts and layers of a code base in 15 languages. It maps
+    counterexamples to code, checks the declared paradigm of each layer, and emits SARIF for CI
+    (section 2.8).
+11. Code base review in the editor: findings next to the models they come from. Quick fixes and
+    LLM patches are verified by re-running the analysis. The review shows the code and the model
+    before and after, side by side, and the reviewer applies one change or all of them, in place
+    (section 2.9).
 
 **Lacks:**
 - *Structure*: no hierarchical or parallel states (Stately has statecharts), no multiple modules or
@@ -387,6 +471,21 @@ All checked on 25 September 2026 unless marked otherwise.
   - Lemur: https://arxiv.org/abs/2310.04870 ; Clover: https://arxiv.org/abs/2310.17807
   - PyVeritas: https://arxiv.org/abs/2508.08171 ; IC3-Evolve: https://arxiv.org/abs/2604.03232
   - GitHub Copilot code review: https://docs.github.com/copilot/concepts/agents/code-review
+- Code review with formal methods (section 2.9, checked 26–27 September 2026):
+  - Google Tricorder: https://research.google.com/pubs/archive/43322.pdf ; Error Prone: https://errorprone.info/
+  - Amazon CodeGuru Reviewer: https://docs.aws.amazon.com/codeguru/latest/reviewer-ug/welcome.html
+  - Copilot Autofix for code scanning: https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts/responsible-use-autofix-code-scanning
+  - Snyk DeepCode AI Fix: https://snyk.io/blog/ai-code-security-snyk-autofix-deepcode-ai/ ; Semgrep Assistant: https://docs.semgrep.dev/semgrep-assistant/overview
+  - Infer at code review: https://6826.csail.mit.edu/2020/papers/facebook-infer-cacm.pdf , https://fbinfer.com/docs/infer-workflow
+  - SapFix: https://engineering.fb.com/2018/09/13/developer-tools/finding-and-fixing-software-bugs-automatically-with-sapfix-and-sapienz/
+  - Static Driver Verifier: https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/static-driver-verifier
+  - s2n-tls CBMC proofs: https://github.com/aws/s2n-tls/tree/main/tests/cbmc ; cbmc-viewer: https://github.com/model-checking/cbmc-viewer
+  - Kani GitHub Action: https://github.com/model-checking/kani-github-action ; Certora run action: https://github.com/Certora/certora-run-action
+  - P language: https://github.com/p-org/P ; Apalache: https://apalache-mc.org/
+  - Modex: https://github.com/nimble-code/Modex ; Bandera: https://bandera.projects.cs.ksu.edu/ ; Java PathFinder: https://github.com/javapathfinder/jpf-core
+  - ESBMC-AI: https://arxiv.org/abs/2305.14752 , https://github.com/esbmc/esbmc-ai
+  - Dafny specification-guided repair: https://arxiv.org/abs/2507.03659 ; Verifix: https://arxiv.org/abs/2106.16199
+  - AWS Zelkova: https://www.amazon.science/publications/semantic-based-automated-reasoning-for-aws-access-policies-using-smt ; Tiros: https://www.amazon.science/publications/reachability-analysis-for-aws-based-networks
   - CodeRabbit: https://docs.coderabbit.ai/tools/
 
 - transitions — https://github.com/pytransitions/transitions ; transitions-gui — https://github.com/pytransitions/transitions-gui

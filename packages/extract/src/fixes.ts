@@ -35,6 +35,14 @@ export interface Proposal {
     explanation: string;
     /** `quick fix`, or the LLM provider. */
     by: string;
+    /** State values the change adds (as cases) or removes (from a declaration), to avoid combining contradicting changes. */
+    touches?: ChangeTouches;
+}
+
+export interface ChangeTouches {
+    variable: string;
+    adds?: string[];
+    removes?: string[];
 }
 
 /** What a re-run of the analysis on changed files gives back. */
@@ -86,7 +94,7 @@ export async function verifyProposals(
         const files: PatchFile[] = [...overrides].map(([file, after]) => ({ file, before: read(file) ?? '', after }));
         const diff = files.map(f => lineDiff(f.file, f.before, f.after)).join('\n');
         if (problem) {
-            patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified: false, note: problem, by: p.by } });
+            patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified: false, note: problem, by: p.by, edits: p.edits, touches: p.touches } });
             rejected.push(`${p.by}: ${p.finding.rule} ${p.finding.subject}: ${problem}`);
             continue;
         }
@@ -101,7 +109,7 @@ export async function verifyProposals(
             : stillThere
               ? `${p.explanation} The finding is still reported on the changed code.`
               : `${p.explanation} The change introduces: ${[...new Set(added.map(x => x.rule))].join(', ')}.`;
-        patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified, note, by: p.by, models } });
+        patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified, note, by: p.by, models, edits: p.edits, touches: p.touches } });
         (verified ? accepted : rejected).push(`${p.by}: ${p.finding.rule} ${p.finding.subject}: ${verified ? 'verified' : 'not verified'}`);
     }
     return { findings: findings.map(f => patched.get(f) ?? f), accepted, rejected };
@@ -194,7 +202,7 @@ function removeUnusedValue(f: Finding, facts: Facts, models: ExtractedModel[], r
             const mention = new RegExp(quoted ? `["']${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']` : `\\b${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
             const mentioned = sameLanguage(facts.files, file).some(x => mention.test(x === file ? text.replace(edit.search, edit.replace) : (read(x) ?? '')));
             if (mentioned) return undefined;
-            return { finding: f, edits: [{ file, search: edit.search, replace: edit.replace }], explanation: `Removes '${value}' from the declaration of ${variable.name}: no code sets, tests or handles it.`, by: 'quick fix' };
+            return { finding: f, edits: [{ file, search: edit.search, replace: edit.replace }], explanation: `Removes '${value}' from the declaration of ${variable.name}: no code sets, tests or handles it.`, by: 'quick fix', touches: { variable: variable.id, removes: [value] } };
         }
     }
     return undefined;
@@ -273,7 +281,7 @@ function missingCases(f: Finding, facts: Facts, text: string): Proposal | undefi
         const labels = missing.map(v => spell(template, sw.cases[0], v)).join(' | ');
         const anchor = lines.slice(caseLines[0], end).join('\n');
         const addition = `\n${caseIndent}case ${labels}:\n${caseIndent}    pass  # pflow: these states were not handled before either: decide what they should do`;
-        return { finding: f, edits: [{ file, search: anchor, replace: anchor + addition }], explanation: `Lists ${missing.join(', ')} as explicit cases that do nothing, as before.`, by: 'quick fix' };
+        return { finding: f, edits: [{ file, search: anchor, replace: anchor + addition }], explanation: `Lists ${missing.join(', ')} as explicit cases that do nothing, as before.`, by: 'quick fix', touches: sw.variable ? { variable: sw.variable, adds: missing } : undefined };
     }
 
     // C-like switch: find its block and a case label to copy the spelling from.
@@ -302,7 +310,7 @@ function missingCases(f: Finding, facts: Facts, text: string): Proposal | undefi
     const search = text.slice(start, braceEnd + 1);
     const replace = text.slice(start, insertAt) + (ownLine ? addition : `\n${addition}`) + text.slice(insertAt, braceEnd + 1);
     if (text.split(search).length !== 2) return undefined;
-    return { finding: f, edits: [{ file, search, replace }], explanation: `Lists ${missing.join(', ')} as explicit cases that do nothing, as before (make the choice visible).`, by: 'quick fix' };
+    return { finding: f, edits: [{ file, search, replace }], explanation: `Lists ${missing.join(', ')} as explicit cases that do nothing, as before (make the choice visible).`, by: 'quick fix', touches: sw.variable ? { variable: sw.variable, adds: missing } : undefined };
 }
 
 /** `if (<state> !== <value before the await>) return;` just before the write. */

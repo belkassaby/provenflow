@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EXAMPLES, generatePython, generateSmv, matchResults, parseDiagram } from '@provenflow/language';
 import { runNurv } from '../src/nurv-runner.js';
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/app.js';
@@ -331,6 +331,23 @@ describe('code changes: proposed, verified, applied', () => {
         expect(again.findings.some((f: { rule: string }) => f.rule === 'stale-write-after-await')).toBe(false);
     });
 
+    it('applies several changes in one go, skipping one whose text another change already replaced', async () => {
+        const report = await (await post('/api/extract', { path: copy })).json();
+        const change = report.findings.find((f: { rule: string; loc?: { file: string } }) => f.rule === 'unhandled-state' && f.loc?.file === 'src/core/order.ts');
+        const leak = report.findings.find((f: { rule: string }) => f.rule === 'resource-leak');
+        const res = await (await post('/api/apply-edits', {
+            root: report.root,
+            changes: [
+                { id: 'cases', edits: change.suggestedPatch.edits },
+                { id: 'leak', edits: leak.suggestedPatch.edits },
+                { id: 'cases-again', edits: change.suggestedPatch.edits }
+            ]
+        })).json();
+        expect(res.results.map((r: { id: string; status: string }) => `${r.id}:${r.status}`)).toEqual(['cases:applied', 'leak:applied', 'cases-again:conflict']);
+        expect(readFileSync(join(copy, 'src/core/order.ts'), 'utf8')).toContain("case 'refunded':");
+        expect(readFileSync(join(copy, 'src/ui/widgets.ts'), 'utf8')).toContain('dispose(): void');
+    });
+
     it('refuses to write outside an analysed folder', async () => {
         expect((await post('/api/apply', { root: tmpdir(), file: 'x.ts', before: '', after: 'x' })).status).toBe(403);
         const report = await (await post('/api/extract', { path: copy, quickFixes: 0 })).json();
@@ -339,5 +356,62 @@ describe('code changes: proposed, verified, applied', () => {
 
     it('rejects an unknown LLM provider', async () => {
         expect((await post('/api/extract', { path: copy, llm: 'nope:x' })).status).toBe(400);
+    });
+});
+
+describe('LLM settings (Help → LLM settings)', () => {
+    const runner: RunnerConfig = { executable: '/nonexistent/nuXmv', timeoutMs: 10_000, maxOutputBytes: 1_000_000 };
+    let server: Server;
+    let fake: Server;
+    let url: string;
+    let fakeUrl: string;
+    let file: string;
+    beforeAll(async () => {
+        file = join(mkdtempSync(join(tmpdir(), 'provenflow-settings-')), 'llm.json');
+        // A stand-in for the Anthropic API: answers OK when the key is right.
+        const { createServer } = await import('node:http');
+        fake = createServer((req, res) => {
+            const ok = req.headers['x-api-key'] === 'sk-ant-test-1234567890';
+            res.writeHead(ok ? 200 : 401, { 'content-type': 'application/json' });
+            res.end(JSON.stringify(ok ? { content: [{ type: 'text', text: 'OK' }] } : { error: 'bad key' }));
+        });
+        await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', () => resolve()));
+        fakeUrl = `http://127.0.0.1:${(fake.address() as AddressInfo).port}`;
+        const { LlmSettingsStore } = await import('../src/llm-settings.js');
+        await new Promise<void>(resolve => {
+            server = createApp({ runner, allowLocalPaths: true, llmSettings: new LlmSettingsStore({}, file) }).listen(0, '127.0.0.1', () => {
+                url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+                resolve();
+            });
+        });
+    });
+    afterAll(() => {
+        server.close();
+        fake.close();
+    });
+    const call = (method: string, path: string, body?: unknown) => fetch(`${url}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+
+    it('keeps keys on the server, masked for the browser, and in a private file when remembered', async () => {
+        const saved = await (await call('PUT', '/api/llm-settings', { anthropic: { apiKey: 'sk-ant-test-1234567890', model: 'claude-sonnet-5', baseUrl: fakeUrl }, preferred: 'anthropic', remember: true })).json();
+        expect(saved.anthropic.key).toBe('sk-a…7890');
+        expect(JSON.stringify(saved)).not.toContain('sk-ant-test-1234567890');
+        expect(saved.configured.anthropic).toBe(true);
+        expect(JSON.parse(readFileSync(file, 'utf8')).anthropic.apiKey).toBe('sk-ant-test-1234567890');
+        expect(statSync(file).mode & 0o777).toBe(0o600);
+        const health = await (await fetch(`${url}/api/health`)).json();
+        expect(health.extract.llm.anthropic).toBe(true);
+    });
+
+    it('tests a provider with the saved key and model', async () => {
+        const result = await (await call('POST', '/api/llm-settings/test', { provider: 'anthropic' })).json();
+        expect(result).toMatchObject({ ok: true, spec: 'anthropic:claude-sonnet-5', answer: 'OK' });
+    });
+
+    it('rejects bad input and forgets the file when not remembered', async () => {
+        expect((await call('PUT', '/api/llm-settings', { openai: { baseUrl: 'not a url' } })).status).toBe(400);
+        await call('PUT', '/api/llm-settings', { remember: false });
+        expect(existsSync(file)).toBe(false);
+        const cleared = await (await call('PUT', '/api/llm-settings', { anthropic: { clearKey: true } })).json();
+        expect(cleared.anthropic.key).toBeUndefined();
     });
 });

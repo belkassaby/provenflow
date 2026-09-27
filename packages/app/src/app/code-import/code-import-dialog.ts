@@ -2,7 +2,8 @@ import { Component, computed, ElementRef, inject, output, signal, viewChild } fr
 import { CodeDiff } from './code-diff';
 import { downloadText } from '../file-io';
 import { HelpService } from '../help-dialog/help.service';
-import { CodeImport, type CodeFinding, type CodeModel } from './code-import';
+import { LlmSettings } from '../llm-settings/llm-settings';
+import { changeKey, CodeImport, type CodeFinding, type CodeModel } from './code-import';
 
 type View = 'findings' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm';
 type Severity = CodeFinding['severity'];
@@ -29,6 +30,9 @@ export class CodeImportDialog {
     readonly help = inject(HelpService);
     /** A model to open in the editor: its .pflow text and a file name. */
     readonly openModel = output<{ text: string; name: string; check: boolean }>();
+    /** Asks the app to open Help → LLM settings. */
+    readonly llmSettings = output<void>();
+    readonly llm = inject(LlmSettings);
 
     private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
     readonly path = signal('');
@@ -136,7 +140,8 @@ export class CodeImportDialog {
         const file = f?.suggestedPatch?.files?.[this.fileIndex()];
         if (!file) return;
         const error = await this.codeImport.apply(file.file, file.before, this.diff()?.current() ?? file.after);
-        this.applyMessage.set(error ? { ok: false, text: error } : { ok: true, text: `Applied to ${file.file}. Run the analysis again to check the whole project with the change.` });
+        if (!error && f && (f.suggestedPatch?.files?.length ?? 0) <= 1) this.codeImport.markApplied(f);
+        this.applyMessage.set(error ? { ok: false, text: error } : { ok: true, text: `Applied to ${file.file}. Run the analysis again to check the whole project with the change (other proposals for this file are now out of date).` });
     }
 
     downloadChange(): void {
@@ -154,14 +159,45 @@ export class CodeImportDialog {
     /** Analyses the same folder again (after applying changes). */
     async rerun(): Promise<void> {
         const r = this.report();
-        if (!r?.applicable) return;
-        this.path.set(r.root);
-        await this.analysePath();
+        if (r?.applicable) this.path.set(r.root);
+        this.applyAllResults.set(null);
+        await this.codeImport.reanalyse();
+        this.view.set('findings');
+    }
+
+    /** Choose folder…: with write access where the browser allows it, otherwise an uploaded copy. */
+    async chooseFolder(input: HTMLInputElement): Promise<void> {
+        if (!(await this.codeImport.pickWritableFolder())) input.click();
+        else this.view.set('findings');
+    }
+
+    /** Apply all: which changes, and what happened to each. */
+    readonly includeUnverified = signal(false);
+    readonly applyAllResults = signal<Awaited<ReturnType<CodeImport['applyAll']>> | null>(null);
+    readonly applyingAll = signal(false);
+    readonly toApply = computed(() => this.changes().filter(f => (this.includeUnverified() || f.suggestedPatch!.verified) && !this.codeImport.appliedChanges().has(changeKey(f))));
+
+    isApplied(f: CodeFinding): boolean {
+        return this.codeImport.appliedChanges().has(changeKey(f));
+    }
+
+    async applyAllChanges(): Promise<void> {
+        const list = this.toApply();
+        if (list.length === 0) return;
+        const files = [...new Set(list.flatMap(f => f.suggestedPatch!.files!.map(pf => pf.file)))];
+        if (!confirm(`Apply ${list.length} change(s) to ${files.length} file(s)?\n\n${files.join('\n')}`)) return;
+        this.applyingAll.set(true);
+        try {
+            this.applyAllResults.set(await this.codeImport.applyAll(list));
+        } finally {
+            this.applyingAll.set(false);
+        }
     }
 
     /** `fresh`: start a new analysis; otherwise show the last report (kept across reloads). */
     open(fresh = false): void {
         void this.codeImport.refresh();
+        void this.llm.load();
         if (!this.codeImport.running()) {
             if (fresh) this.codeImport.clear();
             else this.codeImport.restore();
@@ -217,6 +253,11 @@ export class CodeImportDialog {
     downloadReport(): void {
         const r = this.report();
         if (r) downloadText('provenflow-code-report.md', r.markdown, 'text/markdown');
+    }
+
+    openLlmSettings(): void {
+        this.close();
+        this.llmSettings.emit();
     }
 
     walkthrough(): void {

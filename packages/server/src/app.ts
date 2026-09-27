@@ -6,6 +6,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { extractProject, providerFromSpec, webReport, type ProvenflowConfig } from '@provenflow/extract';
 import { generateSmv, GenerationError, parseDiagram } from '@provenflow/language';
 import { ENGINES, nuxmvInfo, runNuxmv, type Engine, type RunnerConfig } from './nuxmv-runner.js';
+import { LlmSettingsStore, type LlmKind, type UpdateInput } from './llm-settings.js';
 import { nurvAvailable, runNurv } from './nurv-runner.js';
 
 export interface AppOptions {
@@ -21,6 +22,8 @@ export interface AppOptions {
      * loopback: anyone who can reach the API can then read the source files of any folder.
      */
     allowLocalPaths?: boolean;
+    /** LLM settings entered in the editor (only accepted by a server bound to localhost). */
+    llmSettings?: LlmSettingsStore;
 }
 
 /** Limits of an uploaded code base. */
@@ -41,13 +44,14 @@ export function createApp(options: AppOptions): express.Express {
     app.disable('x-powered-by');
     // Code bases are uploaded to /api/extract, which takes larger bodies.
     const json = express.json({ limit: '2mb' });
-    app.use((req, res, next) => (req.path === '/api/extract' || req.path === '/api/apply' ? next() : json(req, res, next)));
+    app.use((req, res, next) => (['/api/extract', '/api/apply', '/api/apply-edits'].includes(req.path) ? next() : json(req, res, next)));
 
     let running = 0;
     const maxRuns = options.maxConcurrentRuns ?? 2;
     /** Folders analysed by path: the only places /api/apply may write to. */
     const analysedRoots = new Set<string>();
-    const llmProviders = () => ({ anthropic: !!process.env['ANTHROPIC_API_KEY'], openai: !!process.env['OPENAI_API_KEY'] || !!process.env['OPENAI_BASE_URL'], ollama: true });
+    const settings = options.llmSettings ?? new LlmSettingsStore();
+    const llmProviders = () => settings.configured();
 
     app.get('/api/health', async (_req, res) => {
         res.json({ ok: true, nuxmv: await nuxmvInfo(options.runner), nurv: { available: nurvAvailable(options.nurv) }, extract: { paths: !!options.allowLocalPaths, apply: !!options.allowLocalPaths, llm: llmProviders() } });
@@ -87,7 +91,7 @@ export function createApp(options: AppOptions): express.Express {
             if (body.llm !== undefined && (typeof body.llm !== 'string' || !/^(anthropic|openai|ollama):[\w.:/-]*$/.test(body.llm))) throw new HttpError(400, "'llm' must be anthropic:<model>, openai:<model> or ollama:<model>.");
             let llm;
             try {
-                llm = typeof body.llm === 'string' ? providerFromSpec(body.llm) : undefined;
+                llm = typeof body.llm === 'string' ? providerFromSpec(body.llm, settings.providerEnv()) : undefined;
             } catch (error) {
                 throw new HttpError(400, (error as Error).message);
             }
@@ -147,7 +151,7 @@ export function createApp(options: AppOptions): express.Express {
             const body = (req.body ?? {}) as { root?: unknown; file?: unknown; before?: unknown; after?: unknown };
             if (typeof body.root !== 'string' || typeof body.file !== 'string' || typeof body.before !== 'string' || typeof body.after !== 'string') throw new HttpError(400, "Provide 'root', 'file', 'before' and 'after'.");
             const root = resolve(body.root);
-            if (!analysedRoots.has(root)) throw new HttpError(403, `${root} was not analysed by this server: import it by path first.`);
+            if (!analysedRoots.has(root)) throw new HttpError(403, `${root} was not analysed by this server since it started: run the analysis again, then apply.`, { code: 'not-analysed' });
             const target = resolve(root, body.file);
             const inside = relative(root, target);
             if (!inside || inside.startsWith('..') || isAbsolute(inside)) throw new HttpError(400, `Invalid file ${body.file}.`);
@@ -156,6 +160,116 @@ export function createApp(options: AppOptions): express.Express {
             if (current !== body.before) throw new HttpError(409, `${body.file} changed since the analysis: run the analysis again before applying.`);
             await writeFile(target, body.after, 'utf8');
             res.json({ ok: true, file: body.file });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    /** GET /api/llm-settings: the LLM settings with the keys masked. */
+    app.get('/api/llm-settings', (_req, res) => {
+        res.json({ ...settings.public(), editable: !!options.allowLocalPaths });
+    });
+
+    /** PUT /api/llm-settings: keys, models and addresses (a server on this computer only). */
+    app.put('/api/llm-settings', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            if (!options.allowLocalPaths) throw new HttpError(403, 'This server is not on this computer: set the LLM keys in its environment instead.');
+            try {
+                await settings.update((req.body ?? {}) as UpdateInput);
+            } catch (error) {
+                throw new HttpError(400, (error as Error).message);
+            }
+            res.json({ ...settings.public(), editable: true });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    /** POST /api/llm-settings/test { provider }: a one-line request, to check the key and the model. */
+    app.post('/api/llm-settings/test', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const kind = (req.body as { provider?: unknown } | undefined)?.provider;
+            if (kind !== 'anthropic' && kind !== 'openai' && kind !== 'ollama') throw new HttpError(400, "'provider' must be anthropic, openai or ollama.");
+            const spec = settings.spec(kind as LlmKind);
+            const started = Date.now();
+            try {
+                const provider = providerFromSpec(spec, settings.providerEnv());
+                const answer = await Promise.race([
+                    provider.complete('Answer with one word.', 'Reply with the word OK.'),
+                    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('no answer within 30 s')), 30_000))
+                ]);
+                res.json({ ok: true, spec, answer: answer.trim().slice(0, 80), ms: Date.now() - started });
+            } catch (error) {
+                res.json({ ok: false, spec, error: (error as Error).message.slice(0, 400) });
+            }
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    /**
+     * POST /api/apply-edits { root, changes: [{ id, edits: [{ file, search, replace }] }] }: applies
+     * several changes in order, each on top of the previous ones. A change whose edits no longer match
+     * the current text is skipped ("conflict"); the others are written. Only in folders analysed by path.
+     */
+    app.post('/api/apply-edits', express.json({ limit: '16mb' }), async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            if (!options.allowLocalPaths) throw new HttpError(403, 'This server does not write files (it is not bound to localhost): download the changed files instead.');
+            const body = (req.body ?? {}) as { root?: unknown; changes?: unknown };
+            if (typeof body.root !== 'string' || !Array.isArray(body.changes)) throw new HttpError(400, "Provide 'root' and 'changes'.");
+            const root = resolve(body.root);
+            if (!analysedRoots.has(root)) throw new HttpError(403, `${root} was not analysed by this server since it started: run the analysis again, then apply.`, { code: 'not-analysed' });
+            const texts = new Map<string, string | undefined>();
+            const target = (file: string) => {
+                const path = resolve(root, file);
+                const inside = relative(root, path);
+                if (!inside || inside.startsWith('..') || isAbsolute(inside)) throw new HttpError(400, `Invalid file ${file}.`);
+                return path;
+            };
+            const current = async (file: string) => {
+                if (!texts.has(file)) texts.set(file, await readFile(target(file), 'utf8').catch(() => undefined));
+                return texts.get(file);
+            };
+            const results: Array<{ id: string; status: 'applied' | 'conflict'; message?: string }> = [];
+            const written = new Set<string>();
+            for (const change of body.changes as Array<{ id?: unknown; edits?: unknown }>) {
+                const id = String(change.id ?? results.length);
+                const edits = Array.isArray(change.edits) ? (change.edits as Array<{ file?: unknown; search?: unknown; replace?: unknown }>) : [];
+                const pending = new Map<string, string>();
+                let conflict: string | undefined;
+                for (const e of edits) {
+                    if (typeof e.file !== 'string' || typeof e.search !== 'string' || typeof e.replace !== 'string') {
+                        conflict = 'invalid edit';
+                        break;
+                    }
+                    const text = pending.get(e.file) ?? (await current(e.file));
+                    if (text === undefined && e.search === '') {
+                        pending.set(e.file, e.replace);
+                        continue;
+                    }
+                    if (text === undefined || text.split(e.search).length !== 2) {
+                        conflict = `${e.file} no longer contains the text this change replaces (another change or an edit touched it): run the analysis again for an up-to-date proposal.`;
+                        break;
+                    }
+                    const replacement = e.replace;
+                    pending.set(e.file, text.replace(e.search, () => replacement));
+                }
+                if (conflict || pending.size === 0) {
+                    results.push({ id, status: 'conflict', message: conflict ?? 'nothing to change' });
+                    continue;
+                }
+                for (const [file, text] of pending) {
+                    texts.set(file, text);
+                    written.add(file);
+                }
+                results.push({ id, status: 'applied' });
+            }
+            for (const file of written) {
+                const path = target(file);
+                await mkdir(dirname(path), { recursive: true });
+                await writeFile(path, texts.get(file)!, 'utf8');
+            }
+            res.json({ results, files: [...written] });
         } catch (error) {
             next(error);
         }

@@ -1,0 +1,73 @@
+<dialog #dialog class="help llm-settings" (click)="backdropClick($event)" aria-label="LLM settings">
+  <header>
+    <h2>LLM settings</h2>
+    <button type="button" class="icon" (click)="close()" aria-label="Close">×</button>
+  </header>
+  <div class="help-body">
+    <p class="small">
+      Import code base can ask an LLM for fixes (each proposed change is checked again before it is marked verified).
+      The keys you enter here are sent to the ProvenFlow server on this computer and kept there; they are never shown again in clear.
+      When nothing is set here, the server's environment variables are used (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENAI_BASE_URL, OLLAMA_HOST).
+    </p>
+    @if (llm.error(); as e) { <p class="error-text">{{ e }}</p> }
+    @if (llm.settings(); as s) {
+      @if (!s.editable) {
+        <p class="warn-text small">This server is not running on this computer, so it does not accept keys from the browser: set them in its environment.</p>
+      }
+      <form #form (submit)="$event.preventDefault(); save(form)">
+        <fieldset class="llm-provider" [disabled]="!s.editable">
+          <legend>Anthropic @if (s.configured.anthropic) { <span class="badge ok">configured</span> }</legend>
+          <label>API key
+            <input type="password" autocomplete="off" spellcheck="false" [placeholder]="s.anthropic.key ? 'current: ' + s.anthropic.key + ' (' + s.anthropic.keyFrom + ')' : 'sk-ant-…'" [value]="keys().anthropic" (input)="setKey('anthropic', $any($event.target).value)" />
+          </label>
+          @if (s.anthropic.keyFrom === 'settings') { <button type="button" class="link small" (click)="clearKey('anthropic')">remove the saved key</button> }
+          <label>Model <input name="anthropicModel" class="mono" [value]="s.anthropic.model" spellcheck="false" /></label>
+          <label>Address (optional) <input name="anthropicBaseUrl" class="mono" [value]="s.anthropic.baseUrl ?? ''" placeholder="https://api.anthropic.com" spellcheck="false" /></label>
+          <div class="llm-test">
+            <button type="button" (click)="test('anthropic', form)" [disabled]="tests().anthropic === 'running'">{{ tests().anthropic === 'running' ? 'Testing…' : 'Test' }}</button>
+            @if (testResult('anthropic'); as t) { <span class="small" [class.ok-text]="t.ok" [class.error-text]="!t.ok">{{ t.text }}</span> }
+          </div>
+        </fieldset>
+        <fieldset class="llm-provider" [disabled]="!s.editable">
+          <legend>OpenAI or an OpenAI-compatible server @if (s.configured.openai) { <span class="badge ok">configured</span> }</legend>
+          <label>API key
+            <input type="password" autocomplete="off" spellcheck="false" [placeholder]="s.openai.key ? 'current: ' + s.openai.key + ' (' + s.openai.keyFrom + ')' : 'sk-… (not needed for some local servers)'" [value]="keys().openai" (input)="setKey('openai', $any($event.target).value)" />
+          </label>
+          @if (s.openai.keyFrom === 'settings') { <button type="button" class="link small" (click)="clearKey('openai')">remove the saved key</button> }
+          <label>Model <input name="openaiModel" class="mono" [value]="s.openai.model" spellcheck="false" /></label>
+          <label>Address (optional) <input name="openaiBaseUrl" class="mono" [value]="s.openai.baseUrl ?? ''" placeholder="https://api.openai.com/v1" spellcheck="false" /></label>
+          <div class="llm-test">
+            <button type="button" (click)="test('openai', form)" [disabled]="tests().openai === 'running'">{{ tests().openai === 'running' ? 'Testing…' : 'Test' }}</button>
+            @if (testResult('openai'); as t) { <span class="small" [class.ok-text]="t.ok" [class.error-text]="!t.ok">{{ t.text }}</span> }
+          </div>
+        </fieldset>
+        <fieldset class="llm-provider" [disabled]="!s.editable">
+          <legend>Ollama (local models, no key)</legend>
+          <label>Address <input name="ollamaHost" class="mono" [value]="s.ollama.host" spellcheck="false" /></label>
+          <label>Model <input name="ollamaModel" class="mono" [value]="s.ollama.model" spellcheck="false" /></label>
+          <div class="llm-test">
+            <button type="button" (click)="test('ollama', form)" [disabled]="tests().ollama === 'running'">{{ tests().ollama === 'running' ? 'Testing…' : 'Test' }}</button>
+            @if (testResult('ollama'); as t) { <span class="small" [class.ok-text]="t.ok" [class.error-text]="!t.ok">{{ t.text }}</span> }
+          </div>
+        </fieldset>
+        <fieldset class="llm-provider" [disabled]="!s.editable">
+          <legend>Use</legend>
+          <label>Offer first in Import code base
+            <select name="preferred">
+              <option value="" [selected]="!s.preferred">no preference</option>
+              <option value="anthropic" [selected]="s.preferred === 'anthropic'">Anthropic</option>
+              <option value="openai" [selected]="s.preferred === 'openai'">OpenAI-compatible</option>
+              <option value="ollama" [selected]="s.preferred === 'ollama'">Ollama</option>
+            </select>
+          </label>
+          <label class="llm-remember"><input type="checkbox" name="remember" [checked]="s.remember" /> Remember on this computer (in <code>{{ s.file }}</code>, readable only by your user); otherwise kept until the server stops</label>
+        </fieldset>
+        <div class="code-review-actions">
+          <button type="submit" class="primary" [disabled]="!s.editable">Save</button>
+          <button type="button" (click)="close()">Close</button>
+          @if (saved()) { <span class="small ok-text">Saved.</span> }
+        </div>
+      </form>
+    }
+  </div>
+</dialog>

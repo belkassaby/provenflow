@@ -307,3 +307,12 @@ dialog.code-import header h2 { flex: 1; }
 .code-model-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; align-items: center; }
 .pad-report { padding: 6px 16px 0; margin: 0; }
 .nowrap { white-space: nowrap; }
+.code-apply-all { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.code-apply-results { list-style: none; padding: 0 !important; margin: 8px 0; display: flex; flex-direction: column; gap: 4px; }
+.warn-text { color: var(--warning); background: var(--warning-bg); padding: 6px 8px; border-radius: 6px; margin: 6px 0; }
+dialog.llm-settings { width: min(720px, calc(100vw - 32px)); }
+.llm-provider { border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px 10px; margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+.llm-provider legend { font-weight: 600; padding: 0 4px; }
+.llm-provider label { display: grid; grid-template-columns: 150px 1fr; gap: 8px; align-items: center; font-size: 13px; }
+.llm-provider label.llm-remember { display: flex; }
+.llm-test { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

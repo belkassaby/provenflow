@@ -368,8 +368,10 @@ Findings can come with a **code change**. It is either an LLM's patch, or a quic
 one. The
 change is applied in memory and every check is re-run, so "✓ verified" means the finding is gone
 and nothing new appears. **Review change** shows the original and the proposed code side by side,
-with the differences highlighted. You can edit the proposed side, then **Apply** it to the file
-(for folders analysed by path) or download it.
+with the differences highlighted. You can edit the proposed side, then **Apply** it to the file or
+download it. Applying works for folders opened with **Choose folder…** in Chrome/Edge (the browser
+writes the change) or analysed by path. **Apply all** applies every verified change in one go.
+LLM keys and models are set in **Help → LLM settings**.
 
 From a terminal:
 
@@ -664,6 +666,8 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | GET    | `/api/live/<channel>/commands` | Server-Sent Events stream of commands, read by `link_editor(..., commands=True)` |
 | POST   | `/api/nurv` | `{ diagram }`: NuRV monitor sources and build commands (needs `NURV_PATH`) |
 | POST   | `/api/apply` | `{ root, file, before, after }`: writes a reviewed change into a folder this server analysed by path (409 if the file changed since) |
+| POST   | `/api/apply-edits` | `{ root, changes: [{ id, edits }] }`: applies several changes in order, each on top of the previous ones; one that no longer matches is reported as a conflict |
+| GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
 | POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm` and `llmFixes`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
 
 The response contains the raw `stdout`/`stderr` and the parsed `results` (property, verdict, trace),

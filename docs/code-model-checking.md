@@ -39,10 +39,14 @@ code review is in [the state of the art, section 2.8](state-of-the-art.md#28-che
 
 ## Quick start
 
-**In the editor.** Choose File → Import code base…, then either:
-- **Choose folder…:** the sources, `package.json` and `provenflow.config.json` are uploaded to the
-  ProvenFlow server and deleted after the analysis. `node_modules` is not uploaded, so types from
-  libraries are only partly known.
+**In the editor.** Choose File → Import code base…; after the analysis the window becomes the
+**Code base review**. Choose the folder in one of two ways:
+- **Choose folder…:** the browser reads the sources, `package.json` and `provenflow.config.json`,
+  and sends them to the ProvenFlow server for the analysis. They are deleted afterwards.
+  `node_modules` is not sent, so types from libraries are only partly known.
+  - In Chrome and Edge, allow editing when asked: the browser writes the changes you apply
+    (File System Access API).
+  - Other browsers can only upload a read-only copy.
 - **Type a folder path:** the folder is read in place, with its `node_modules`, which is more
   precise. This is available when the server is bound to localhost, which is the default;
   `PROVENFLOW_EXTRACT_PATHS=0` turns it off.
@@ -388,8 +392,12 @@ In the editor, **Review change** opens a side-by-side view:
 - original on the left, proposed on the right, with the changed lines and characters highlighted,
   and unchanged regions folded;
 - the right side is editable;
-- **Apply** writes it to the file. This works for folders analysed by path on a local server, and
-  only if the file still matches what was analysed; otherwise the server answers 409.
+- **Apply** writes it to the file, but only if the file still matches what was analysed.
+  - For a folder opened in the browser (Chrome/Edge), the browser writes it.
+  - For a folder analysed by path, the server writes it (`POST /api/apply`, 409 if the file
+    changed).
+  - Otherwise the window says why Apply is not available: an uploaded copy, or a server restarted
+    since the analysis.
 - **Download file** and **Copy** give you the text;
 - **Run the analysis again** checks the whole project with the change.
 
@@ -405,11 +413,28 @@ In the editor, **Models → Properties** shows every property of a model:
 
 A change's patch carries these model diffs (`suggestedPatch.models` in report.json).
 
-The **Code changes** tab lists every proposal with its verification. From the terminal, `--fix`
+The **Code changes** tab lists every proposal with its verification. **Apply all** applies every
+verified change in one go, or all changes with the box ticked:
+- each change is applied as its search/replace edits on top of the previous ones, so several
+  changes to the same file combine;
+- removals come first, and a change that adds a value another change removes is skipped;
+- a change whose text was already replaced is skipped and listed as a conflict
+  (`POST /api/apply-edits`);
+- afterwards, **Run the analysis again** for up-to-date proposals. From the terminal, `--fix`
 writes each change to `fixes/NN-rule/` (the changed files and `change.patch`), and report.md shows
 the diff.
 
 ## LLM assistance, verified
+
+In the editor, **Help → LLM settings (API keys)…** holds:
+- the key, model and address for Anthropic, an OpenAI-compatible server, or Ollama (no key);
+- which provider to offer first in the Code base review;
+- a **Test** button for each provider.
+
+The settings go to the ProvenFlow server on this computer, which only accepts them when it is
+bound to localhost. Keys are never shown again in clear. "Remember on this computer" saves them in
+`~/.config/provenflow/llm.json` (mode 600; `PROVENFLOW_SETTINGS` changes the path). Settings made
+here take precedence over the environment variables below.
 
 ```sh
 ANTHROPIC_API_KEY=... pflow extract . --llm anthropic:claude-sonnet-5 --llm-fixes 5

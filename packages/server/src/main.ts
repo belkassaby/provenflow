@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
+import { LlmSettingsStore } from './llm-settings.js';
 import { configFromEnv, nuxmvInfo } from './nuxmv-runner.js';
 import { nurvExecutable } from './nurv-runner.js';
 
@@ -14,7 +15,9 @@ const runner = configFromEnv();
 const loopback = ['127.0.0.1', 'localhost', '::1'].includes(host);
 // Reading folders by path is for a server on this machine only (PROVENFLOW_EXTRACT_PATHS=0 turns it off).
 const allowLocalPaths = loopback && process.env['PROVENFLOW_EXTRACT_PATHS'] !== '0';
-const app = createApp({ runner, staticDir, nurv: nurvExecutable(), allowLocalPaths });
+const llmSettings = new LlmSettingsStore();
+if (allowLocalPaths) await llmSettings.load();
+const app = createApp({ runner, staticDir, nurv: nurvExecutable(), allowLocalPaths, llmSettings });
 app.listen(port, host, async () => {
     console.log(`provenflow server listening on http://${host}:${port}`);
     const info = await nuxmvInfo(runner);

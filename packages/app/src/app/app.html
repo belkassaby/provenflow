@@ -73,6 +73,8 @@
           <button type="button" role="menuitem" (click)="openHelp('symbols')">Logic symbols (¬ ∧ □ ◇ AG EF …)</button>
           <button type="button" role="menuitem" (click)="openHelp('glossary')">Glossary of logic terms</button>
           <button type="button" role="menuitem" (click)="openHelp('references')">References</button>
+          <hr />
+          <button type="button" role="menuitem" (click)="openLlmSettings()">LLM settings (API keys)…</button>
           <a class="menu-link" role="menuitem" href="https://en.wikipedia.org/wiki/List_of_logic_symbols" target="_blank" rel="noopener">Nomenclature of logic symbols ↗</a>
         </div>
       }
@@ -151,4 +153,5 @@
 </main>
 
 <app-help-dialog />
-<app-code-import-dialog (openModel)="openCodeModel($event)" />
+<app-code-import-dialog (openModel)="openCodeModel($event)" (llmSettings)="openLlmSettings()" />
+<app-llm-settings-dialog />

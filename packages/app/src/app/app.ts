@@ -8,6 +8,7 @@ import { downloadText, pickFile } from './file-io';
 import { CodeImport } from './code-import/code-import';
 import { CodeImportDialog } from './code-import/code-import-dialog';
 import { DocumentTabs } from './document-tabs/document-tabs';
+import { LlmSettingsDialog } from './llm-settings/llm-settings-dialog';
 import { DocumentTabsBar } from './document-tabs/document-tabs-bar';
 import { HelpDialog, type HelpSection } from './help-dialog/help-dialog';
 import { Inspector } from './inspector/inspector';
@@ -36,7 +37,7 @@ function loadSizes(): typeof DEFAULT_SIZES {
 
 @Component({
     selector: 'app-root',
-    imports: [AttributeTable, CodeImportDialog, DiagramCanvas, DocumentTabsBar, HelpDialog, Inspector, OutputPanel, ProblemsList, PropertiesPanel, Splitter, TextEditor, TracePanel],
+    imports: [AttributeTable, CodeImportDialog, DiagramCanvas, DocumentTabsBar, LlmSettingsDialog, HelpDialog, Inspector, OutputPanel, ProblemsList, PropertiesPanel, Splitter, TextEditor, TracePanel],
     templateUrl: './app.html',
     styleUrl: './app.css'
 })
@@ -61,6 +62,7 @@ export class App implements OnInit {
     private readonly canvas = viewChild(DiagramCanvas);
     private readonly help = viewChild.required(HelpDialog);
     private readonly codeImport = viewChild.required(CodeImportDialog);
+    private readonly llmSettings = viewChild.required(LlmSettingsDialog);
 
     readonly tabs = computed(() => {
         const v = this.store.verification();
@@ -168,6 +170,11 @@ export class App implements OnInit {
     /** File → Import code base…: extracts and verifies models of a project (pflow extract). */
     importCodeBase(): void {
         this.codeImport().open(true);
+    }
+
+    /** Help → LLM settings: API keys and models for the LLM fixes of Import code base. */
+    openLlmSettings(): void {
+        void this.llmSettings().open();
     }
 
     /** The last code-base report: its findings and every model found, without importing again. */

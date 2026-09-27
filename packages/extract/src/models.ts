@@ -58,6 +58,10 @@ export interface SuggestedPatch {
     by?: string;
     /** Models whose extraction changes with the patch: before and after, and their false properties. */
     models?: ModelChange[];
+    /** The change as exact search/replace edits, to apply it on top of other changes to the same file. */
+    edits?: Array<{ file: string; search: string; replace: string }>;
+    /** State values the change adds (as cases) or removes (from a declaration). */
+    touches?: { variable: string; adds?: string[]; removes?: string[] };
 }
 
 /** A model re-extracted from the changed code. */

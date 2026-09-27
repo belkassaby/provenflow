@@ -1,6 +1,6 @@
-<dialog #dialog class="help code-import" (click)="backdropClick($event)" aria-label="Import code base">
+<dialog #dialog class="help code-import" (click)="backdropClick($event)" [attr.aria-label]="report() ? 'Code base review' : 'Import code base'">
   <header>
-    <h2>Import code base</h2>
+    <h2>{{ report() && !codeImport.running() ? 'Code base review' : 'Import code base' }}</h2>
     @if (report(); as r) {
       <span class="muted small code-root" title="Analysed folder">{{ r.root }}</span>
     }
@@ -21,9 +21,14 @@
       </p>
       <section class="code-source">
         <h3>A folder on this computer</h3>
-        <p class="muted small">The source files (and <code>package.json</code>, <code>provenflow.config.json</code>) are uploaded to the ProvenFlow server and deleted after the analysis; <code>node_modules</code> are not, so types from libraries (e.g. Angular signals) are only partly known.</p>
+        @if (codeImport.canPickWritable) {
+          <p class="muted small">The browser reads the source files (and <code>package.json</code>, <code>provenflow.config.json</code>) and sends them to the ProvenFlow server for the analysis (deleted afterwards). Allow editing when the browser asks: the changes you apply are then written to the folder by the browser itself. <code>node_modules</code> is not sent, so types from libraries (e.g. Angular signals) are only partly known.</p>
+        } @else {
+          <p class="muted small">The source files (and <code>package.json</code>, <code>provenflow.config.json</code>) are uploaded to the ProvenFlow server and deleted after the analysis. This browser can only upload a copy: to apply changes to the files, analyse the folder by path below (or use Chrome/Edge). <code>node_modules</code> is not uploaded, so types from libraries are only partly known.</p>
+        }
         <input #folder type="file" webkitdirectory multiple hidden (change)="analyseFolder(folder.files); folder.value = ''" />
-        <button type="button" class="primary" (click)="folder.click()">Choose folder…</button>
+        <button type="button" class="primary" (click)="chooseFolder(folder)">Choose folder…</button>
+        @if (codeImport.canPickWritable) { <button type="button" class="link small" (click)="folder.click()">or upload a read-only copy</button> }
       </section>
       <section class="code-source">
         <h3>A folder path on the server</h3>
@@ -44,16 +49,15 @@
           Also ask an LLM:
           <select (change)="codeImport.llm.set($any($event.target).value)" aria-label="LLM">
             <option value="" [selected]="!codeImport.llm()">no</option>
-            @if (codeImport.llmProviders().anthropic) { <option value="anthropic:claude-sonnet-5" [selected]="codeImport.llm() === 'anthropic:claude-sonnet-5'">Anthropic (claude-sonnet-5)</option> }
-            @if (codeImport.llmProviders().openai) { <option value="openai:gpt-4.1" [selected]="codeImport.llm() === 'openai:gpt-4.1'">OpenAI-compatible (gpt-4.1)</option> }
-            <option value="ollama:qwen2.5-coder" [selected]="codeImport.llm() === 'ollama:qwen2.5-coder'">Ollama, local (qwen2.5-coder)</option>
+            @for (c of llm.choices(); track c.spec) { <option [value]="c.spec" [selected]="codeImport.llm() === c.spec">{{ c.label }}</option> }
           </select>
+          <button type="button" class="link small" (click)="openLlmSettings()">LLM settings (API keys)…</button>
           @if (codeImport.llm()) {
             <input class="mono narrow-text" type="text" [value]="codeImport.llm()" (change)="codeImport.llm.set($any($event.target).value)" aria-label="Provider and model" spellcheck="false" />
             for up to <input class="narrow" type="number" min="1" max="20" [value]="codeImport.llmFixes()" (change)="codeImport.llmFixes.set(+$any($event.target).value)" aria-label="Number of findings" /> findings
           }
         </label>
-        <p class="muted small">API keys stay on the server (ANTHROPIC_API_KEY, OPENAI_API_KEY / OPENAI_BASE_URL, OLLAMA_HOST). Every proposed change, from a quick fix or an LLM, is applied in memory and checked again before it is marked verified; nothing is written until you apply it.</p>
+        <p class="muted small">API keys stay on the server: set them in Help → LLM settings, or in its environment (ANTHROPIC_API_KEY, OPENAI_API_KEY / OPENAI_BASE_URL, OLLAMA_HOST). Every proposed change, from a quick fix or an LLM, is applied in memory and checked again before it is marked verified; nothing is written until you apply it.</p>
       </section>
       @if (codeImport.error(); as e) { <p class="error-text">{{ e }}</p> }
     </div>
@@ -84,16 +88,17 @@
         </nav>
       }
       @if (f.suggestedPatch!.files?.[fileIndex()]; as pf) {
-        <p class="mono small code-review-file">{{ pf.file }} @if (codeImport.applied().has(pf.file)) { <span class="badge ok">applied</span> }</p>
+        <p class="mono small code-review-file">{{ pf.file }} @if (isApplied(f)) { <span class="badge ok">applied</span> } @else if (codeImport.applied().has(pf.file)) { <span class="badge warn">changed since the analysis</span> }</p>
         <app-code-diff [before]="pf.before" [after]="pf.after" [file]="pf.file" />
         <div class="code-review-actions">
-          <button type="button" class="primary" (click)="applyChange()" [disabled]="!report()?.applicable || codeImport.applied().has(pf.file)" [title]="report()?.applicable ? 'Write the proposed text (with your edits) to ' + pf.file : 'Only folders analysed by path on a local server can be changed: download the file instead'">Apply to {{ pf.file.split('/').pop() }}</button>
+          <button type="button" class="primary" (click)="applyChange()" [disabled]="!codeImport.writeMode().via || isApplied(f)" [title]="codeImport.writeMode().via ? 'Write the proposed text (with your edits) to ' + pf.file : codeImport.writeMode().reason">{{ isApplied(f) ? 'Applied to ' : 'Apply to ' }}{{ pf.file.split('/').pop() }}</button>
           <button type="button" (click)="downloadChange()">Download file</button>
           <button type="button" (click)="copyChange()">Copy</button>
-          @if (report()?.applicable && codeImport.applied().size > 0) { <button type="button" (click)="rerun()">Run the analysis again</button> }
+          @if (codeImport.writeMode().via && codeImport.applied().size > 0) { <button type="button" (click)="rerun()">Run the analysis again</button> }
           <span class="spacer"></span>
           @if (applyMessage(); as m) { <span class="small" [class.ok-text]="m.ok" [class.error-text]="!m.ok">{{ m.text }}</span> }
         </div>
+        @if (!codeImport.writeMode().via) { <p class="small warn-text">{{ codeImport.writeMode().reason }}</p> }
       }
     </div>
   } @else if (view() === 'model' && modelShown(); as m) {
@@ -261,13 +266,28 @@
           @if (changes().length === 0) {
             <p class="muted">No code change proposed. Quick fixes cover missing switch cases, writes after an await without a re-check, and resources acquired twice or never released; enable an LLM on the first screen for the others.</p>
           } @else {
+            <div class="code-apply-all">
+              <button type="button" class="primary" (click)="applyAllChanges()" [disabled]="!codeImport.writeMode().via || toApply().length === 0 || applyingAll()">{{ applyingAll() ? 'Applying…' : 'Apply all ' + (includeUnverified() ? '' : 'verified ') + 'changes (' + toApply().length + ')' }}</button>
+              <label class="small"><input type="checkbox" [checked]="includeUnverified()" (change)="includeUnverified.set($any($event.target).checked)" /> include changes that are not verified</label>
+              @if (codeImport.writeMode().via && codeImport.applied().size > 0) { <button type="button" (click)="rerun()">Run the analysis again</button> }
+            </div>
+            @if (!codeImport.writeMode().via) { <p class="small warn-text">{{ codeImport.writeMode().reason }}</p> }
+            <p class="muted small">Each change is applied as its edits on top of the ones before it, so several changes to the same file combine. A change whose text was already changed by another one is skipped, and so is a change that adds a value another one removes: run the analysis again for up-to-date proposals.</p>
+            @if (applyAllResults(); as res) {
+              @if (res.error) { <p class="error-text">{{ res.error }}</p> }
+              <ul class="small code-apply-results">
+                @for (x of res.results; track $index) {
+                  <li><span class="badge" [class.ok]="x.status === 'applied'" [class.warn]="x.status !== 'applied'">{{ x.status }}</span> <strong>{{ x.finding.rule }}</strong> {{ x.finding.subject }} @if (x.message) { <span class="muted">: {{ x.message }}</span> }</li>
+                }
+              </ul>
+            }
             <table class="code-table">
               <thead><tr><th>finding</th><th>files</th><th>by</th><th>verified</th><th></th></tr></thead>
               <tbody>
                 @for (f of changes(); track $index) {
                   <tr>
                     <td><strong>{{ f.rule }}</strong> {{ f.subject }}<br /><code class="small muted">{{ where(f.loc) }}</code></td>
-                    <td class="small">@for (pf of f.suggestedPatch!.files; track pf.file) { <span class="mono">{{ pf.file }}</span> @if (codeImport.applied().has(pf.file)) { <span class="badge ok">applied</span> } <br /> }</td>
+                    <td class="small">@for (pf of f.suggestedPatch!.files; track pf.file) { <span class="mono">{{ pf.file }}</span> <br /> } @if (isApplied(f)) { <span class="badge ok">applied</span> }</td>
                     <td class="small">{{ f.suggestedPatch!.by ?? 'LLM' }}</td>
                     <td><span class="badge" [class.ok]="f.suggestedPatch!.verified" [class.warn]="!f.suggestedPatch!.verified">{{ f.suggestedPatch!.verified ? '✓ verified' : '✗ not verified' }}</span></td>
                     <td><button type="button" class="small" (click)="review(f)">Review</button></td>
