@@ -338,4 +338,18 @@ export class Lamp {
         await expect(refused.complete('s', 'u')).rejects.toThrow(/^anthropic:claude-sonnet-5: HTTP 400 .*Set the workspace ID/);
         expect(sent[1]['anthropic-workspace-id']).toBeUndefined();
     });
+
+    it('sends no temperature to Anthropic, and retries without it when an OpenAI-compatible model refuses it', async () => {
+        const bodies: Array<Record<string, unknown>> = [];
+        const fake = (answer: (body: Record<string, unknown>) => Response) => (async (_url: string, init: { body: string }) => {
+            const body = JSON.parse(init.body) as Record<string, unknown>;
+            bodies.push(body);
+            return answer(body);
+        }) as unknown as typeof fetch;
+        await providerFromSpec('anthropic:claude-sonnet-5', { ANTHROPIC_API_KEY: 'k' }, fake(() => new Response(JSON.stringify({ content: [{ type: 'text', text: 'OK' }] })))).complete('s', 'u');
+        expect(bodies[0]).not.toHaveProperty('temperature');
+        const openai = providerFromSpec('openai:o-model', { OPENAI_API_KEY: 'k' }, fake(b => ('temperature' in b ? new Response('{"error":{"message":"Unsupported parameter: temperature"}}', { status: 400 }) : new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }] })))));
+        expect(await openai.complete('s', 'u')).toBe('OK');
+        expect(bodies.slice(1).map(b => 'temperature' in b)).toEqual([true, false]);
+    });
 });

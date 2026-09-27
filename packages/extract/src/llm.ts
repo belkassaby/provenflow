@@ -56,7 +56,7 @@ export function providerFromSpec(spec: string, env: NodeJS.ProcessEnv = process.
                 async complete(system, user) {
                     // A key not scoped to a workspace needs the workspace named in each request.
                     const workspace: Record<string, string> = env['ANTHROPIC_WORKSPACE_ID'] ? { 'anthropic-workspace-id': env['ANTHROPIC_WORKSPACE_ID'] } : {};
-                    const json = (await post(`${env['ANTHROPIC_BASE_URL'] ?? 'https://api.anthropic.com'}/v1/messages`, { 'x-api-key': key, 'anthropic-version': '2023-06-01', ...workspace }, { model: model || 'claude-sonnet-5', max_tokens: 4096, temperature: 0, system, messages: [{ role: 'user', content: user }] })) as { content: Array<{ type: string; text?: string }> };
+                    const json = (await post(`${env['ANTHROPIC_BASE_URL'] ?? 'https://api.anthropic.com'}/v1/messages`, { 'x-api-key': key, 'anthropic-version': '2023-06-01', ...workspace }, { model: model || 'claude-sonnet-5', max_tokens: 4096, system, messages: [{ role: 'user', content: user }] })) as { content: Array<{ type: string; text?: string }> };
                     return json.content.filter(c => c.type === 'text').map(c => c.text).join('');
                 }
             };
@@ -66,7 +66,14 @@ export function providerFromSpec(spec: string, env: NodeJS.ProcessEnv = process.
             return {
                 name: spec,
                 async complete(system, user) {
-                    const json = (await post(`${env['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1'}/chat/completions`, key ? { authorization: `Bearer ${key}` } : {}, { model, temperature: 0, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })) as { choices: Array<{ message: { content: string } }> };
+                    const url = `${env['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1'}/chat/completions`;
+                    const headers: Record<string, string> = key ? { authorization: `Bearer ${key}` } : {};
+                    const body = { model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
+                    // Reasoning models refuse a temperature: ask again without it.
+                    const json = (await post(url, headers, { ...body, temperature: 0 }).catch(error => {
+                        if (/HTTP 400.*temperature/s.test((error as Error).message)) return post(url, headers, body);
+                        throw error;
+                    })) as { choices: Array<{ message: { content: string } }> };
                     return json.choices[0]?.message.content ?? '';
                 }
             };
