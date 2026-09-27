@@ -1,5 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cleanStaleWorkspaces } from '@provenflow/extract';
 import { createApp } from './app.js';
 import { LlmSettingsStore } from './llm-settings.js';
 import { configFromEnv, nuxmvInfo } from './nuxmv-runner.js';
@@ -20,6 +21,9 @@ if (allowLocalPaths) await llmSettings.load();
 const app = createApp({ runner, staticDir, nurv: nurvExecutable(), allowLocalPaths, llmSettings });
 app.listen(port, host, async () => {
     console.log(`provenflow server listening on http://${host}:${port}`);
+    // Copies left by analyses interrupted when a server stopped.
+    const cleaned = cleanStaleWorkspaces();
+    if (cleaned > 0) console.log(`Removed ${cleaned} temporary folder(s) left by interrupted analyses.`);
     const info = await nuxmvInfo(runner);
     if (info.available) console.log(`Using ${info.version ?? 'nuXmv'} (${info.executable})`);
     else console.warn(`nuXmv not available (${info.error}). Set NUXMV_PATH to the nuXmv executable.`);

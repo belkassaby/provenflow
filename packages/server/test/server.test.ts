@@ -295,6 +295,24 @@ describe('POST /api/extract (code base models)', () => {
         expect(lines.at(-1).result.findings.length).toBeGreaterThan(0);
     });
 
+    it('goes on when the connection drops, and is followed again by its id (with heartbeats)', async () => {
+        const server = createApp({ runner, allowLocalPaths: true, heartbeatMs: 50 }).listen(0, '127.0.0.1');
+        servers.push(server);
+        await new Promise(ok => server.once('listening', ok));
+        const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        const abort = new AbortController();
+        const res = await fetch(`${base}/api/extract`, { method: 'POST', signal: abort.signal, headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify({ analyzers: false, path: SHOP, quickFixes: 2 }) });
+        const reader = res.body!.getReader();
+        const first = JSON.parse(new TextDecoder().decode((await reader.read()).value).split('\n')[0]) as { run: string };
+        expect(first.run).toMatch(/^[0-9a-f-]{36}$/);
+        abort.abort(); // the browser loses the connection
+        const again = await fetch(`${base}/api/extract/runs/${first.run}`, { headers: { accept: 'application/x-ndjson' } });
+        const lines = (await again.text()).trim().split('\n').map(l => JSON.parse(l));
+        expect(lines[0]).toEqual({ run: first.run });
+        expect(lines.at(-1).result.findings.length).toBeGreaterThan(0);
+        expect((await fetch(`${base}/api/extract/runs/unknown`)).status).toBe(404);
+    });
+
     it('refuses paths when not allowed, and unsafe uploads', async () => {
         const url = await start(false);
         expect((await extract(url, { path: SHOP })).status).toBe(403);

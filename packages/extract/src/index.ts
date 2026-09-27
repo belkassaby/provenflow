@@ -38,6 +38,7 @@ export { lineDiff, quickFixes, verifyProposals, type Proposal } from './fixes.js
 export { BUNDLED_RULES, parseCbmcJson, parseEsbmc, parseKani, sarifToFindings, type ToolRun } from './analyzers/index.js';
 export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './buildcheck.js';
 export * from './review.js';
+export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export * from './report.js';
 export { listSourceFiles } from './scan.js';

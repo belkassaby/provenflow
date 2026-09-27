@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,8 @@ import { declaredInCode, gradePatternFindings } from '../src/patterns.js';
 import { emptyFacts } from '../src/ir.js';
 import { onChanged, parseUnifiedDiff, postGithubReview, reviewComments } from '../src/review.js';
 import { findTool } from '../src/tools/process.js';
+import { cleanStaleWorkspaces, materialize } from '../src/tools/workspace.js';
+import { lstatSync, mkdirSync, readFileSync, utimesSync } from 'node:fs';
 
 const SHOP = fileURLToPath(new URL('./fixtures/shop', import.meta.url));
 const SECURITY = fileURLToPath(new URL('./fixtures/security', import.meta.url));
@@ -202,5 +204,41 @@ describe('pull request review', () => {
         expect(calls[1].body.comments).toEqual([]);
         expect(calls[1].body.body).toContain('src/a.ts:4');
         expect(r).toEqual({ posted: 0, url: 'https://github.com/o/r/pull/7#review' });
+    });
+});
+
+describe('temporary copies of a project', () => {
+    it('copies sources, links data, big files and build outputs, and writes the change', () => {
+        const root = mkdtempSync(join(scratch, 'ws-'));
+        mkdirSync(join(root, 'src'));
+        mkdirSync(join(root, 'dist'));
+        mkdirSync(join(root, 'data'));
+        writeFileSync(join(root, 'src/a.ts'), 'export const a = 1;\n');
+        writeFileSync(join(root, 'data/slide.tif'), Buffer.alloc(10));
+        writeFileSync(join(root, 'data/huge.json'), 'x'.repeat(1_000_001));
+        writeFileSync(join(root, 'dist/out.js'), '');
+        const ws = materialize(root, new Map([['src/a.ts', 'export const a = 2;\n']]));
+        try {
+            expect(readFileSync(join(ws.dir, 'src/a.ts'), 'utf8')).toBe('export const a = 2;\n');
+            expect(lstatSync(join(ws.dir, 'src/a.ts')).isSymbolicLink()).toBe(false);
+            expect(lstatSync(join(ws.dir, 'data/slide.tif')).isSymbolicLink()).toBe(true);
+            expect(lstatSync(join(ws.dir, 'data/huge.json')).isSymbolicLink()).toBe(true);
+            expect(lstatSync(join(ws.dir, 'dist')).isSymbolicLink()).toBe(true);
+            expect(readFileSync(join(root, 'src/a.ts'), 'utf8')).toBe('export const a = 1;\n');
+        } finally {
+            ws.dispose();
+        }
+    });
+
+    it('removes the folders left by interrupted analyses, not recent ones', () => {
+        const tmp = mkdtempSync(join(scratch, 'tmp-'));
+        mkdirSync(join(tmp, 'provenflow-ws-old'));
+        mkdirSync(join(tmp, 'provenflow-ws-new'));
+        mkdirSync(join(tmp, 'someone-else'));
+        const hourAgo = new Date(Date.now() - 3_600_000);
+        utimesSync(join(tmp, 'provenflow-ws-old'), hourAgo, hourAgo);
+        utimesSync(join(tmp, 'someone-else'), hourAgo, hourAgo);
+        expect(cleanStaleWorkspaces(10 * 60_000, tmp)).toBe(1);
+        expect(readdirSync(tmp).sort()).toEqual(['provenflow-ws-new', 'someone-else']);
     });
 });

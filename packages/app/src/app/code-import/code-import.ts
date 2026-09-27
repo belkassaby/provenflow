@@ -414,8 +414,7 @@ export class CodeImport {
         this.running.set(true);
         this.step({ phase: 'upload', message, percent: null });
         try {
-            const res = await fetch('api/extract', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify(body) });
-            const json = await this.readStream(res);
+            const json = await this.follow(await fetch('api/extract', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify(body) }));
             const report = name ? { ...json, root: name, browserFolder } : json;
             this.report.set(report);
             this.applied.set(new Set());
@@ -429,8 +428,32 @@ export class CodeImport {
         }
     }
 
+    /**
+     * The report of a streamed analysis. When the connection drops (a browser or proxy timeout, the
+     * computer sleeping), the analysis goes on on the server: follow it again by its id.
+     */
+    private async follow(first: Response): Promise<CodeReport> {
+        const run = { id: undefined as string | undefined };
+        let res = first;
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await this.readStream(res, run);
+            } catch (error) {
+                if (!(error instanceof ConnectionLost) || !run.id || attempt >= 20) throw error;
+                this.progress.update(p => ({ ...p, message: `The connection to the server was interrupted; reconnecting to the analysis (it goes on meanwhile)…` }));
+                await new Promise(ok => setTimeout(ok, Math.min(10_000, 1000 * 2 ** Math.min(attempt, 3))));
+                try {
+                    res = await fetch(`api/extract/runs/${run.id}`, { headers: { accept: 'application/x-ndjson' } });
+                } catch {
+                    res = Response.error();
+                }
+            }
+        }
+    }
+
     /** The report, from a streamed response (progress lines, then the result) or a plain JSON one. */
-    private async readStream(res: Response): Promise<CodeReport> {
+    private async readStream(res: Response, run: { id?: string }): Promise<CodeReport> {
+        if (res.type === 'error') throw new ConnectionLost();
         if (!res.ok || !res.body || !/ndjson/.test(res.headers.get('content-type') ?? '')) {
             const json = (await res.json()) as CodeReport & { error?: string };
             if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -440,17 +463,24 @@ export class CodeImport {
         const decoder = new TextDecoder();
         let buffer = '';
         for (;;) {
-            const { value, done } = await reader.read();
+            let chunk: ReadableStreamReadResult<Uint8Array>;
+            try {
+                chunk = await reader.read();
+            } catch {
+                throw new ConnectionLost(); // "Error in input stream", "network error"
+            }
+            const { value, done } = chunk;
             buffer += decoder.decode(value, { stream: !done });
             const lines = buffer.split('\n');
             buffer = lines.pop() ?? '';
             for (const line of lines.filter(l => l.trim())) {
-                const msg = JSON.parse(line) as { progress?: AnalysisProgress; result?: CodeReport; error?: string };
+                const msg = JSON.parse(line) as { run?: string; progress?: AnalysisProgress; result?: CodeReport; error?: string };
+                if (msg.run) run.id = msg.run;
                 if (msg.error) throw new Error(msg.error);
                 if (msg.result) return msg.result;
                 if (msg.progress && msg.progress.phase !== 'done') this.step(msg.progress);
             }
-            if (done) throw new Error('The server closed the connection before the analysis finished.');
+            if (done) throw new ConnectionLost();
         }
     }
 
@@ -463,6 +493,13 @@ export class CodeImport {
     /** The last report, when it was cleared to start a new analysis that was then abandoned. */
     restore(): void {
         if (!this.report()) this.report.set(loadReport());
+    }
+}
+
+/** The stream broke before the analysis ended (the analysis itself may still be running). */
+class ConnectionLost extends Error {
+    constructor() {
+        super('The connection to the server was lost before the analysis finished, and reconnecting failed.');
     }
 }
 

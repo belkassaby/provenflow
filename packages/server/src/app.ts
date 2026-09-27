@@ -8,6 +8,7 @@ import { generateSmv, GenerationError, parseDiagram } from '@provenflow/language
 import { ENGINES, nuxmvInfo, runNuxmv, type Engine, type RunnerConfig } from './nuxmv-runner.js';
 import { LlmSettingsStore, type LlmKind, type UpdateInput } from './llm-settings.js';
 import { nurvAvailable, runNurv } from './nurv-runner.js';
+import { ExtractRuns } from './extract-runs.js';
 
 export interface AppOptions {
     runner: RunnerConfig;
@@ -15,6 +16,8 @@ export interface AppOptions {
     staticDir?: string;
     /** Maximum number of nuXmv processes running at the same time. */
     maxConcurrentRuns?: number;
+    /** How often a streamed analysis repeats its current step (default 15 s). */
+    heartbeatMs?: number;
     /** NuRV executable for full-LTL monitor generation (optional). */
     nurv?: string;
     /**
@@ -47,6 +50,7 @@ export function createApp(options: AppOptions): express.Express {
     app.use((req, res, next) => (['/api/extract', '/api/apply', '/api/apply-edits'].includes(req.path) ? next() : json(req, res, next)));
 
     let running = 0;
+    const runs = new ExtractRuns(options.heartbeatMs);
     const maxRuns = options.maxConcurrentRuns ?? 2;
     /** Folders analysed by path: the only places /api/apply may write to. */
     const analysedRoots = new Set<string>();
@@ -82,7 +86,9 @@ export function createApp(options: AppOptions): express.Express {
      *   llm?: "anthropic:<model>" | "openai:<model>" | "ollama:<model>", llmFixes?: number (keys come from the server's environment)
      *   analyzers?: false to skip the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and the replay on the code
      * With `Accept: application/x-ndjson` the response streams one JSON object per line while it runs:
-     * { progress: { phase, message, percent } }..., then { result } or { error }.
+     * { run: id }, { progress: { phase, message, percent } }... (the current one again every 15 s),
+     * then { result } or { error }. The analysis goes on if the connection drops:
+     * GET /api/extract/runs/<id> follows it again.
      */
     app.post('/api/extract', express.json({ limit: '64mb' }), async (req: Request, res: Response, next: NextFunction) => {
         let temp: string | undefined;
@@ -124,13 +130,9 @@ export function createApp(options: AppOptions): express.Express {
             if (running >= maxRuns) throw new HttpError(429, 'Too many runs in progress, try again shortly.');
             running++;
             const stream = /application\/x-ndjson/.test(req.headers.accept ?? '');
-            const send = (line: unknown) => res.write(`${JSON.stringify(line)}\n`);
-            if (stream) {
-                res.status(200).setHeader('content-type', 'application/x-ndjson; charset=utf-8');
-                res.setHeader('cache-control', 'no-cache');
-                res.setHeader('x-accel-buffering', 'no');
-                res.flushHeaders();
-            }
+            // A streamed analysis goes on if the connection drops; the browser follows it again by its id.
+            const run = stream ? runs.create() : undefined;
+            if (run) runs.attach(run, res);
             try {
                 const available = (await nuxmvInfo(options.runner)).available;
                 const result = await extractProject(root, {
@@ -141,18 +143,15 @@ export function createApp(options: AppOptions): express.Express {
                     llmFixes: llm ? Math.min(20, llmFixes) : 0,
                     analyzers: body.analyzers !== false,
                     confirm: body.analyzers !== false,
-                    onProgress: stream ? progress => send({ progress }) : undefined
+                    onProgress: run ? progress => runs.progress(run, progress) : undefined
                 });
                 if (!temp) analysedRoots.add(root);
                 const report = { ...(webReport(result) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!options.allowLocalPaths };
-                if (stream) {
-                    send({ result: report });
-                    res.end();
-                } else res.json(report);
+                if (run) runs.finish(run, { result: report });
+                else res.json(report);
             } catch (error) {
-                if (!stream) throw error;
-                send({ error: (error as Error).message });
-                res.end();
+                if (!run) throw error;
+                runs.finish(run, { error: (error as Error).message });
             } finally {
                 running--;
             }
@@ -161,6 +160,16 @@ export function createApp(options: AppOptions): express.Express {
         } finally {
             if (temp) await rm(temp, { recursive: true, force: true });
         }
+    });
+
+    /** GET /api/extract/runs/<id>: follows a streamed analysis again (NDJSON), or collects its report. */
+    app.get('/api/extract/runs/:id', (req: Request, res: Response) => {
+        const run = runs.get(String(req.params['id']));
+        if (!run) {
+            res.status(404).json({ error: 'This analysis is not known to the server (it was restarted, or the report expired): run it again.' });
+            return;
+        }
+        runs.attach(run, res);
     });
 
     /**
