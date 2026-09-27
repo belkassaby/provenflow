@@ -10,8 +10,23 @@
 
   @if (codeImport.running()) {
     <div class="help-body">
-      <p class="code-progress"><span class="spinner" aria-hidden="true"></span> {{ codeImport.progress() }}</p>
-      <p class="muted small">Extracting the state machines, resource lifecycles, design-pattern contracts and layers, then checking every model. Large projects take a little while.</p>
+      @let p = codeImport.progress();
+      <div class="code-progress-head">
+        <strong>{{ p.phase === 'read' ? 'Reading the folder' : p.phase === 'upload' ? 'Sending to the server' : 'Analysing' }}</strong>
+        <span class="spacer"></span>
+        @if (p.percent !== null) { <strong class="mono">{{ p.percent }}%</strong> }
+        <span class="muted small mono" title="Elapsed time">{{ elapsed() }}</span>
+      </div>
+      <div class="progress-bar" [class.indeterminate]="p.percent === null" role="progressbar" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="p.percent" [attr.aria-valuetext]="p.message">
+        <div class="progress-fill" [style.width.%]="p.percent ?? 30"></div>
+      </div>
+      <p class="code-progress" aria-live="polite"><span class="spinner" aria-hidden="true"></span> {{ p.message }}</p>
+      @if (codeImport.steps().length > 0) {
+        <ul class="code-steps small">
+          @for (s of codeImport.steps(); track $index) { <li><span class="ok-text">✓</span> {{ s.label }} <span class="muted mono">{{ duration(s.ms) }}</span></li> }
+        </ul>
+      }
+      <p class="muted small">Extracting the state machines, resource lifecycles, design-pattern contracts and layers, then checking every model{{ codeImport.analyzers() ? ', running the installed analysers and replaying findings on the code' : '' }}{{ codeImport.quickFixes() ? '; each proposed change is re-checked and built, which takes the longest' : '' }}. You can close this window: the analysis goes on, and File → Import code base… shows it again.</p>
     </div>
   } @else if (!report()) {
     <div class="help-body">

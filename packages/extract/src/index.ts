@@ -16,6 +16,7 @@ import { confirmUnreachableInC, runAnalyzers, type AnalyzerOutput, type ToolRun 
 import { ChangeChecker, detectChecks } from './buildcheck.js';
 import { quickFixes, readSafe, verifyProposals, type Proposal } from './fixes.js';
 import { confirmFindings } from './replay.js';
+import { reporter, type OnProgress } from './progress.js';
 import { findTool } from './tools/process.js';
 import { materialize } from './tools/workspace.js';
 import { cachedProvider, resolveDynamicWrites, suggestFixes, suggestProperties, type LlmLog, type LlmProvider } from './llm.js';
@@ -37,6 +38,7 @@ export { lineDiff, quickFixes, verifyProposals, type Proposal } from './fixes.js
 export { BUNDLED_RULES, parseCbmcJson, parseEsbmc, parseKani, sarifToFindings, type ToolRun } from './analyzers/index.js';
 export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './buildcheck.js';
 export * from './review.js';
+export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export * from './report.js';
 export { listSourceFiles } from './scan.js';
 export { LANGUAGES } from './treesitter/frontend.js';
@@ -67,6 +69,8 @@ export interface ExtractOptions {
     buildChecks?: boolean;
     /** Internal: this run checks a proposed change (only the changed files are re-analysed by the tools). */
     rerunOf?: string[];
+    /** Told what the analysis is doing, with an overall percentage (for long runs). */
+    onProgress?: OnProgress;
 }
 
 export interface ExtractionResult {
@@ -95,14 +99,20 @@ export interface ExtractionResult {
 }
 
 export async function extractProject(root: string, options: ExtractOptions = {}): Promise<ExtractionResult> {
+    const progress = reporter(options.onProgress);
     const config = options.config ?? loadConfig(root, options.configFile);
     const files = listSourceFiles(root, config.include, config.exclude);
     const isTypeScript = (f: string) => /\.(ts|tsx|mts|cts)$/.test(f);
     const isTreeSitter = (f: string) => !isTypeScript(f) && !f.endsWith('.py') && TREE_SITTER_EXTENSIONS.some(e => f.endsWith(e));
-    const parsed = mergeFacts(
-        mergeFacts(extractTypeScript(root, files.filter(isTypeScript), options.overrides), extractPython(root, files.filter(f => f.endsWith('.py')), options.overrides)),
-        await extractTreeSitter(root, files.filter(isTreeSitter), options.overrides)
-    );
+    const ts = files.filter(isTypeScript);
+    const py = files.filter(f => f.endsWith('.py'));
+    const other = files.filter(isTreeSitter);
+    await progress('parse', `Found ${files.length} source files. Reading ${ts.length} TypeScript file(s) with the type checker…`, 0, 3);
+    const tsFacts = extractTypeScript(root, ts, options.overrides);
+    await progress('parse', `Reading ${py.length} Python file(s)…`, 1, 3);
+    const pyFacts = extractPython(root, py, options.overrides);
+    await progress('parse', `Reading ${other.length} file(s) of the other languages (tree-sitter)…`, 2, 3);
+    const parsed = mergeFacts(mergeFacts(tsFacts, pyFacts), await extractTreeSitter(root, other, options.overrides));
 
     const llmLog: LlmLog = { accepted: [], rejected: [] };
     const fixLog: LlmLog = { accepted: [], rejected: [] };
@@ -113,11 +123,13 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     const llm = options.llm ? cachedProvider(options.llm, options.cacheDir ?? join(root, '.provenflow', 'cache')) : undefined;
     let facts = parsed;
     if (llm) {
+        await progress('parse', `Asking ${llm.name} which values the computed writes can set…`, 3, 3);
         const resolved = await resolveDynamicWrites(parsed, llm);
         record(resolved.log);
         facts = { ...parsed, writes: resolved.writes };
     }
 
+    await progress('models', `Building models from ${facts.stateVariables.length} state variable(s), ${facts.resources.length} resource operation(s) and ${facts.classes.length} class(es)…`);
     const machines = buildStateMachines(facts, config);
     const lifecycles = buildLifecycles(facts);
     const patterns = analysePatterns(facts, config);
@@ -126,12 +138,15 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     const paradigm = analyseParadigm(facts, config);
     let models = [...machines.models, ...lifecycles.models, ...patterns.models, ...architecture.models];
     if (llm) {
+        await progress('models', `Asking ${llm.name} for requirements of ${models.length} model(s)…`, 1, 2);
         const suggested = await suggestProperties(models, root, llm);
         record(suggested.log);
         models = suggested.models;
     }
 
-    const verification = await verifyModels(models, options.checker);
+    const verification = await verifyModels(models, options.checker, (m, i, n) =>
+        progress('verify', `Checking model ${i + 1}/${n} with ${options.checker ? 'nuXmv' : 'the explicit-state checker'}: ${m.subject} (${m.model.specs.length} properties)…`, i, n)
+    );
 
     // External analysers: security and dataflow (Semgrep, CodeQL), heap (Infer), code model checking (ESBMC/CBMC, Kani).
     let tools: AnalyzerOutput = { findings: [], proofs: [], fixes: [], notes: [], ran: [] };
@@ -139,7 +154,13 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     if (options.analyzers !== false && analyzersMayRun(config, files)) {
         const workspace = options.overrides?.size ? materialize(root, options.overrides) : undefined;
         try {
-            tools = await runAnalyzers({ root, dir: workspace?.dir ?? root, facts, config, env: process.env, onlyFiles: options.rerunOf });
+            await progress('analyzers', 'Running the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani)…');
+            let finished = 0;
+            tools = await runAnalyzers({ root, dir: workspace?.dir ?? root, facts, config, env: process.env, onlyFiles: options.rerunOf }, (name, running, out) => {
+                finished++;
+                if (out.ran.length === 0) return;
+                void progress('analyzers', `${name} finished (${out.findings.length} finding(s)${out.proofs.length ? `, ${out.proofs.length} proof(s)` : ''})${running.length ? `; still running: ${running.join(', ')}` : ''}…`, finished, 6);
+            });
         } finally {
             workspace?.dispose();
         }
@@ -181,23 +202,31 @@ export async function extractProject(root: string, options: ExtractOptions = {})
             .map(fx => ({ finding: findings.find(f => f.rule === fx.finding.rule && f.loc?.file === fx.finding.loc?.file && f.loc?.line === fx.finding.loc?.line) ?? fx.finding, edits: [{ file: fx.file, search: fx.search, replace: fx.replace }], explanation: fx.explanation, by: 'semgrep autofix' }))
             .filter(p => byFinding.has(p.finding));
         const proposals = [...quickFixes(findings, facts, models, read, config), ...toolProposals].slice(0, options.quickFixes);
-        const fixed = await verifyProposals(findings, proposals, root, rerun, read, { models, verdicts: verification.verdicts }, buildCheck);
+        const fixed = await verifyProposals(findings, proposals, root, rerun, read, { models, verdicts: verification.verdicts }, buildCheck, (p, i, n) =>
+            progress('fixes', `Verifying proposed change ${i + 1}/${n}: ${p.finding.rule} on ${p.finding.subject} (re-running the analysis${buildCheck ? ' and the build' : ''})…`, i, n)
+        );
         fixLog.accepted.push(...fixed.accepted);
         fixLog.rejected.push(...fixed.rejected);
         findings = fixed.findings;
     }
     if (llm && (options.llmFixes ?? 0) > 0) {
-        const fixed = await suggestFixes(findings, root, llm, rerun, options.llmFixes, { models, verdicts: verification.verdicts }, buildCheck);
+        await progress('llm', `Asking ${llm.name} for patches (up to ${options.llmFixes})…`);
+        const fixed = await suggestFixes(findings, root, llm, rerun, options.llmFixes, { models, verdicts: verification.verdicts }, buildCheck, (p, i, n) =>
+            progress('llm', `Verifying ${llm.name}'s patch ${i + 1}/${n}: ${p.finding.rule} on ${p.finding.subject}…`, i, n)
+        );
         record(fixed.log);
         findings = fixed.findings;
     }
 
     // Findings checked on the code itself: counterexamples replayed, C state machines model checked.
     if (options.confirm !== false && !options.rerunOf) {
-        findings = await confirmFindings(findings, models, facts, root);
+        await progress('confirm', 'Replaying counterexamples on the real code…');
+        findings = await confirmFindings(findings, models, facts, root, 12, (f, i, n) => progress('confirm', `Replaying on the real code ${i + 1}/${n}: ${f.rule} on ${f.subject}…`, i, n));
+        await progress('confirm', 'Checking C state machines on the code…', 9, 10);
         findings = await confirmInC(findings, models, facts, root, config);
     }
 
+    options.onProgress?.({ phase: 'done', message: `Done: ${findings.length} finding(s) on ${models.length} model(s).`, percent: 100 });
     return {
         root,
         files: facts.files.length,

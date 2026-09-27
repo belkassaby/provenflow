@@ -11,9 +11,17 @@ export { confirmUnreachableInC, parseCbmcJson, parseEsbmc, parseKani } from './b
 export { sarifToFindings } from './sarif.js';
 export { BUNDLED_RULES } from './semgrep.js';
 
-export async function runAnalyzers(ctx: AnalyzerContext): Promise<AnalyzerOutput> {
+/** `onFinished` is told each time an analyser ends, with the ones still running. */
+export async function runAnalyzers(ctx: AnalyzerContext, onFinished?: (name: string, running: string[], output: AnalyzerOutput) => void): Promise<AnalyzerOutput> {
     const all = emptyOutput();
-    const results = await Promise.all([semgrep(ctx), infer(ctx), bmc(ctx), kani(ctx), codeql(ctx), importSarif(ctx)]);
+    const running = new Set(['Semgrep', 'Infer', 'ESBMC/CBMC', 'Kani', 'CodeQL', 'SARIF import']);
+    const track = (name: string, work: Promise<AnalyzerOutput>) =>
+        work.then(output => {
+            running.delete(name);
+            onFinished?.(name, [...running], output);
+            return output;
+        });
+    const results = await Promise.all([track('Semgrep', semgrep(ctx)), track('Infer', infer(ctx)), track('ESBMC/CBMC', bmc(ctx)), track('Kani', kani(ctx)), track('CodeQL', codeql(ctx)), track('SARIF import', importSarif(ctx))]);
     for (const r of results) {
         all.findings.push(...r.findings);
         all.proofs.push(...r.proofs);

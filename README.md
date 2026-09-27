@@ -359,7 +359,9 @@ counting timers), and unreachable C states are model checked on the code with a 
 
 In the editor, choose **File → Import code base…** and pick a folder on your computer (the sources
 are uploaded to the ProvenFlow server) or type a folder path. The path option is for when the
-server runs on your machine: the folder is then read in place, with its `node_modules`. Findings,
+server runs on your machine: the folder is then read in place, with its `node_modules`. While it runs, a progress bar shows the percentage, what is being done (the model being
+checked, the analyser still running, the change being verified), the elapsed time and the steps
+already finished; you can close the window meanwhile. Findings,
 models, patterns and paradigm profiles show in the dialog. **Open model** opens a model in a new
 tab and checks it, so its counterexample is one click away. Every model can have its own tab, and
 the **Code report** button next to the tabs reopens the findings and the list of models, also after
@@ -693,7 +695,7 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | POST   | `/api/apply` | `{ root, file, before, after }`: writes a reviewed change into a folder this server analysed by path (409 if the file changed since) |
 | POST   | `/api/apply-edits` | `{ root, changes: [{ id, edits }] }`: applies several changes in order, each on top of the previous ones; one that no longer matches is reported as a conflict |
 | GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
-| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay): findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
+| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay). With `Accept: application/x-ndjson` it streams `{ progress: { phase, message, percent } }` lines while it runs, then `{ result }`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
 
 The response contains the raw `stdout`/`stderr` and the parsed `results` (property, verdict, trace),
 `errors` and `warnings`.

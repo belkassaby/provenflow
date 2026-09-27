@@ -101,6 +101,32 @@ export interface CodeReport {
 const WANTED = /(\.(ts|tsx|mts|cts|py|html|java|kts?|groovy|gradle|scala|sc|c|h|cpp|cc|cxx|hpp|hh|hxx|cs|go|rs|swift|rb|php|R|r)|(^|\/)(package\.json|provenflow\.config\.json|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|DESCRIPTION|composer\.json|Gemfile))$/;
 const SKIPPED_DIR = /(^|\/)(node_modules|\.git|dist|out|build|\.angular|\.venv|venv|__pycache__|\.provenflow|coverage|target|bin|obj|vendor|\.gradle|\.idea|renv|Pods|DerivedData)\//;
 const MAX_FILES = 5000;
+/** Where a running analysis is: the current step, and an overall percentage (null while unknown). */
+export interface AnalysisProgress {
+    phase: string;
+    message: string;
+    percent: number | null;
+}
+
+/** A finished step of the running analysis, with how long it took. */
+export interface AnalysisStep {
+    phase: string;
+    label: string;
+    ms: number;
+}
+
+const PHASE_LABELS: Record<string, string> = {
+    read: 'Read the folder',
+    upload: 'Sent the files',
+    parse: 'Parsed the sources',
+    models: 'Built the models',
+    verify: 'Checked the models',
+    analyzers: 'Ran the analysers',
+    fixes: 'Verified the proposed changes',
+    llm: 'LLM patches',
+    confirm: 'Confirmed findings on the code'
+};
+
 /** The last report is kept in the browser, so its models stay one click away after a reload. */
 const REPORT_KEY = 'provenflow.code-report';
 const MAX_FILE_BYTES = 1_000_000;
@@ -109,7 +135,12 @@ const MAX_FILE_BYTES = 1_000_000;
 @Injectable({ providedIn: 'root' })
 export class CodeImport {
     readonly running = signal(false);
-    readonly progress = signal('');
+    readonly progress = signal<AnalysisProgress>({ phase: '', message: '', percent: null });
+    /** Steps of the running analysis already finished. */
+    readonly steps = signal<AnalysisStep[]>([]);
+    /** When the running analysis started (ms since the epoch). */
+    readonly startedAt = signal(0);
+    private phaseStarted = 0;
     readonly error = signal<string | null>(null);
     readonly report = signal<CodeReport | null>(loadReport());
     /** The server can read a folder by path (it runs on this machine). */
@@ -156,7 +187,46 @@ export class CodeImport {
     }
 
     analysePath(path: string): Promise<void> {
-        return this.run(`Analysing ${path}…`, { path: path.trim(), ...this.fixOptions() });
+        this.begin();
+        return this.run(`Sending ${path.trim()} to the server…`, { path: path.trim(), ...this.fixOptions() });
+    }
+
+    /** Starts the progress of a new analysis. */
+    private begin(): void {
+        this.running.set(true);
+        this.error.set(null);
+        this.steps.set([]);
+        this.startedAt.set(Date.now());
+        this.phaseStarted = Date.now();
+        this.progress.set({ phase: '', message: 'Starting…', percent: null });
+    }
+
+    /** Moves the progress on; a new phase closes the previous one in the list of steps. */
+    private step(next: AnalysisProgress): void {
+        const current = this.progress().phase;
+        if (current && next.phase !== current) {
+            this.steps.update(list => [...list, { phase: current, label: PHASE_LABELS[current] ?? current, ms: Date.now() - this.phaseStarted }]);
+            this.phaseStarted = Date.now();
+        }
+        if (!current) this.phaseStarted = Date.now();
+        this.progress.set(next);
+    }
+
+    /** Reads the picked files, showing how far it got. */
+    private async readFiles<T>(items: T[], pathOf: (item: T) => string | undefined, fileOf: (item: T) => File): Promise<{ picked: Record<string, string>; skipped: number }> {
+        const picked: Record<string, string> = {};
+        let skipped = 0;
+        const wanted = items.filter(i => pathOf(i) !== undefined);
+        for (const [i, item] of wanted.entries()) {
+            const file = fileOf(item);
+            if (file.size > MAX_FILE_BYTES || Object.keys(picked).length >= MAX_FILES) {
+                skipped++;
+                continue;
+            }
+            picked[pathOf(item)!] = await file.text();
+            if (i % 25 === 0 || i === wanted.length - 1) this.step({ phase: 'read', message: `Reading the source files: ${i + 1}/${wanted.length}…`, percent: Math.round(((i + 1) / wanted.length) * 100) });
+        }
+        return { picked, skipped };
     }
 
     private fixOptions(): Record<string, unknown> {
@@ -296,24 +366,18 @@ export class CodeImport {
     }
 
     private async analyseDirectory(dir: FileSystemDirectoryHandle): Promise<void> {
+        this.begin();
+        this.step({ phase: 'read', message: `Listing the files of ${dir.name}…`, percent: null });
         const entries = await listFiles(dir, SKIPPED_DIR);
-        const picked: Record<string, string> = {};
-        let skipped = 0;
-        for (const { path, file } of entries) {
-            if (!WANTED.test(path) || path.endsWith('.d.ts')) continue;
-            if (file.size > MAX_FILE_BYTES || Object.keys(picked).length >= MAX_FILES) {
-                skipped++;
-                continue;
-            }
-            picked[path] = await file.text();
-        }
+        const { picked, skipped } = await this.readFiles(entries, e => (WANTED.test(e.path) && !e.path.endsWith('.d.ts') ? e.path : undefined), e => e.file);
         if (Object.keys(picked).length === 0) {
+            this.running.set(false);
             this.error.set('No source files of a supported language in that folder (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rust, Swift, Ruby, PHP, R).');
             return;
         }
         this.folder = dir;
         void saveFolder(dir);
-        await this.run(`Analysing ${Object.keys(picked).length} files of ${dir.name}${skipped ? ` (${skipped} skipped: too large or too many)` : ''}…`, { files: picked, ...this.fixOptions() }, dir.name, true);
+        await this.run(uploadMessage(picked, dir.name, skipped), { files: picked, ...this.fixOptions() }, dir.name, true);
     }
 
     /** The folder the report came from, with write permission (asked again after a reload). */
@@ -329,35 +393,29 @@ export class CodeImport {
     async analyseFolder(list: FileList | null): Promise<void> {
         const files = Array.from(list ?? []);
         if (files.length === 0) return;
-        const picked: Record<string, string> = {};
-        let skipped = 0;
-        for (const file of files) {
-            // "project/src/a.ts" -> "src/a.ts": paths are relative to the chosen folder.
+        this.begin();
+        // "project/src/a.ts" -> "src/a.ts": paths are relative to the chosen folder.
+        const pathOf = (file: File) => {
             const path = file.webkitRelativePath.split('/').slice(1).join('/') || file.name;
-            if (SKIPPED_DIR.test(`/${path}`) || !WANTED.test(path) || path.endsWith('.d.ts')) continue;
-            if (file.size > MAX_FILE_BYTES || Object.keys(picked).length >= MAX_FILES) {
-                skipped++;
-                continue;
-            }
-            picked[path] = await file.text();
-        }
+            return SKIPPED_DIR.test(`/${path}`) || !WANTED.test(path) || path.endsWith('.d.ts') ? undefined : path;
+        };
+        const { picked, skipped } = await this.readFiles(files, pathOf, f => f);
         const count = Object.keys(picked).length;
         if (count === 0) {
+            this.running.set(false);
             this.error.set('No source files of a supported language in that folder (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rust, Swift, Ruby, PHP, R).');
             return;
         }
         const folder = files[0].webkitRelativePath.split('/')[0] || 'folder';
-        return this.run(`Uploading and analysing ${count} files of ${folder}${skipped ? ` (${skipped} skipped: too large or too many)` : ''}…`, { files: picked, ...this.fixOptions() }, folder);
+        return this.run(uploadMessage(picked, folder, skipped), { files: picked, ...this.fixOptions() }, folder);
     }
 
-    private async run(progress: string, body: unknown, name?: string, browserFolder = false): Promise<void> {
+    private async run(message: string, body: unknown, name?: string, browserFolder = false): Promise<void> {
         this.running.set(true);
-        this.error.set(null);
-        this.progress.set(progress);
+        this.step({ phase: 'upload', message, percent: null });
         try {
-            const res = await fetch('api/extract', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-            const json = (await res.json()) as CodeReport & { error?: string };
-            if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+            const res = await fetch('api/extract', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify(body) });
+            const json = await this.readStream(res);
             const report = name ? { ...json, root: name, browserFolder } : json;
             this.report.set(report);
             this.applied.set(new Set());
@@ -367,7 +425,32 @@ export class CodeImport {
             this.error.set(`The analysis failed: ${(error as Error).message}`);
         } finally {
             this.running.set(false);
-            this.progress.set('');
+            this.progress.set({ phase: '', message: '', percent: null });
+        }
+    }
+
+    /** The report, from a streamed response (progress lines, then the result) or a plain JSON one. */
+    private async readStream(res: Response): Promise<CodeReport> {
+        if (!res.ok || !res.body || !/ndjson/.test(res.headers.get('content-type') ?? '')) {
+            const json = (await res.json()) as CodeReport & { error?: string };
+            if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+            return json;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+            const { value, done } = await reader.read();
+            buffer += decoder.decode(value, { stream: !done });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+            for (const line of lines.filter(l => l.trim())) {
+                const msg = JSON.parse(line) as { progress?: AnalysisProgress; result?: CodeReport; error?: string };
+                if (msg.error) throw new Error(msg.error);
+                if (msg.result) return msg.result;
+                if (msg.progress && msg.progress.phase !== 'done') this.step(msg.progress);
+            }
+            if (done) throw new Error('The server closed the connection before the analysis finished.');
         }
     }
 
@@ -381,6 +464,12 @@ export class CodeImport {
     restore(): void {
         if (!this.report()) this.report.set(loadReport());
     }
+}
+
+function uploadMessage(picked: Record<string, string>, folder: string, skipped: number): string {
+    const bytes = Object.values(picked).reduce((n, t) => n + t.length, 0);
+    const size = bytes > 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} kB`;
+    return `Sending ${Object.keys(picked).length} files of ${folder} (${size}) to the server${skipped ? `; ${skipped} skipped: too large or too many` : ''}…`;
 }
 
 /** Identifies a proposed change within a report. */

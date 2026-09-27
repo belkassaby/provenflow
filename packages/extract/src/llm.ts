@@ -224,8 +224,17 @@ export async function proposeFixes(findings: Finding[], root: string, provider: 
 }
 
 /** The findings, with a patch proposed by the LLM on the first `limit` warnings/errors, verified by re-running the checks. */
-export async function suggestFixes(findings: Finding[], root: string, provider: LlmProvider, rerun: Rerun, limit = 5, baseline?: Baseline, buildCheck?: BuildCheck): Promise<{ findings: Finding[]; log: LlmLog }> {
-    const verified = await verifyProposals(findings, await proposeFixes(findings, root, provider, limit), root, rerun, undefined, baseline, buildCheck);
+export async function suggestFixes(
+    findings: Finding[],
+    root: string,
+    provider: LlmProvider,
+    rerun: Rerun,
+    limit = 5,
+    baseline?: Baseline,
+    buildCheck?: BuildCheck,
+    onProposal?: (proposal: Proposal, index: number, total: number) => Promise<void>
+): Promise<{ findings: Finding[]; log: LlmLog }> {
+    const verified = await verifyProposals(findings, await proposeFixes(findings, root, provider, limit), root, rerun, undefined, baseline, buildCheck, onProposal);
     return { findings: verified.findings, log: { accepted: verified.accepted, rejected: verified.rejected } };
 }
 

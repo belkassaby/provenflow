@@ -29,15 +29,21 @@ interface Plan {
 
 const TS = /\.(ts|tsx|mts|cts|js|mjs)$/;
 
-export async function confirmFindings(findings: Finding[], models: ExtractedModel[], facts: Facts, root: string, limit = 12): Promise<Finding[]> {
+export async function confirmFindings(findings: Finding[], models: ExtractedModel[], facts: Facts, root: string, limit = 12, onReplay?: (finding: Finding, index: number, total: number) => Promise<void>): Promise<Finding[]> {
     const out: Finding[] = [];
+    const plans = new Map<Finding, Plan>();
+    for (const f of findings) {
+        const plan = plans.size < limit ? planFor(f, models, facts) : undefined;
+        if (plan) plans.set(f, plan);
+    }
     let done = 0;
     for (const f of findings) {
-        const plan = done < limit ? planFor(f, models, facts) : undefined;
+        const plan = plans.get(f);
         if (!plan) {
             out.push(f);
             continue;
         }
+        await onReplay?.(f, done, plans.size);
         done++;
         const confirmation = await replay(plan, root);
         out.push(confirmation ? { ...f, confirmation } : f);

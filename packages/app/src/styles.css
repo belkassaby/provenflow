@@ -240,6 +240,14 @@ dialog.code-import header h2 { flex: 1; }
 .code-finding p { margin: 4px 0; }
 .code-finding-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .code-trace { margin: 4px 0; padding-left: 22px; }
+.code-progress-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.progress-bar { position: relative; height: 8px; border-radius: 4px; overflow: hidden; background: var(--accent-bg); }
+.progress-fill { height: 100%; background: var(--accent, #3b82f6); border-radius: 4px; transition: width .4s ease; }
+.progress-bar.indeterminate .progress-fill { position: absolute; animation: progress-slide 1.4s ease-in-out infinite; }
+@keyframes progress-slide { from { left: -30%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .progress-bar.indeterminate .progress-fill { animation: none; left: 0; width: 100% !important; opacity: .4; } }
+.code-steps { list-style: none; padding: 0; margin: 8px 0; columns: 2; }
+.code-steps li { margin: 2px 0; }
 .code-output { max-height: 180px; overflow: auto; background: var(--panel-2, rgba(127,127,127,.1)); padding: 6px 8px; border-radius: 4px; white-space: pre-wrap; }
 .code-fix { color: var(--text); }
 .code-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }

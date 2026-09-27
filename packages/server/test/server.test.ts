@@ -282,6 +282,19 @@ describe('POST /api/extract (code base models)', () => {
         expect(body.findings.map((f: { rule: string }) => f.rule)).toContain('resource-leak');
     });
 
+    it('streams the progress, then the report, when asked for NDJSON', async () => {
+        const url = await start(true);
+        const res = await fetch(`${url}/api/extract`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify({ analyzers: false, path: SHOP, quickFixes: 3 }) });
+        expect(res.headers.get('content-type')).toContain('application/x-ndjson');
+        const lines = (await res.text()).trim().split('\n').map(l => JSON.parse(l));
+        const progress = lines.filter(l => l.progress).map(l => l.progress);
+        expect(progress.map(p => p.phase)).toEqual(expect.arrayContaining(['parse', 'models', 'verify', 'fixes', 'done']));
+        expect(progress.map(p => p.percent)).toEqual([...progress.map(p => p.percent)].sort((a, b) => a - b));
+        expect(progress.at(-1)).toMatchObject({ phase: 'done', percent: 100 });
+        expect(progress.find(p => p.phase === 'verify').message).toMatch(/^Checking model 1\/\d+/);
+        expect(lines.at(-1).result.findings.length).toBeGreaterThan(0);
+    });
+
     it('refuses paths when not allowed, and unsafe uploads', async () => {
         const url = await start(false);
         expect((await extract(url, { path: SHOP })).status).toBe(403);

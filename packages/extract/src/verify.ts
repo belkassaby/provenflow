@@ -24,10 +24,11 @@ export interface VerificationResult {
     errors: string[];
 }
 
-export async function verifyModels(models: ExtractedModel[], checker?: Checker): Promise<VerificationResult> {
+export async function verifyModels(models: ExtractedModel[], checker?: Checker, onModel?: (model: ExtractedModel, index: number, total: number) => Promise<void>): Promise<VerificationResult> {
     const result: VerificationResult = { findings: [], verdicts: [], errors: [] };
-    for (const m of models) {
+    for (const [index, m] of models.entries()) {
         if (m.model.specs.length === 0) continue;
+        await onModel?.(m, index, models.length);
         let traces: Array<{ verdict: 'true' | 'false' | 'unknown'; trace?: Trace }> | undefined;
         if (checker) {
             try {

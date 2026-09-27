@@ -81,6 +81,8 @@ export function createApp(options: AppOptions): express.Express {
      *   quickFixes?: number of verified quick fixes to propose (default 20, 0: none)
      *   llm?: "anthropic:<model>" | "openai:<model>" | "ollama:<model>", llmFixes?: number (keys come from the server's environment)
      *   analyzers?: false to skip the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and the replay on the code
+     * With `Accept: application/x-ndjson` the response streams one JSON object per line while it runs:
+     * { progress: { phase, message, percent } }..., then { result } or { error }.
      */
     app.post('/api/extract', express.json({ limit: '64mb' }), async (req: Request, res: Response, next: NextFunction) => {
         let temp: string | undefined;
@@ -121,6 +123,14 @@ export function createApp(options: AppOptions): express.Express {
             if (body.config !== undefined && (typeof body.config !== 'object' || body.config === null)) throw new HttpError(400, "'config' must be an object.");
             if (running >= maxRuns) throw new HttpError(429, 'Too many runs in progress, try again shortly.');
             running++;
+            const stream = /application\/x-ndjson/.test(req.headers.accept ?? '');
+            const send = (line: unknown) => res.write(`${JSON.stringify(line)}\n`);
+            if (stream) {
+                res.status(200).setHeader('content-type', 'application/x-ndjson; charset=utf-8');
+                res.setHeader('cache-control', 'no-cache');
+                res.setHeader('x-accel-buffering', 'no');
+                res.flushHeaders();
+            }
             try {
                 const available = (await nuxmvInfo(options.runner)).available;
                 const result = await extractProject(root, {
@@ -130,10 +140,19 @@ export function createApp(options: AppOptions): express.Express {
                     llm,
                     llmFixes: llm ? Math.min(20, llmFixes) : 0,
                     analyzers: body.analyzers !== false,
-                    confirm: body.analyzers !== false
+                    confirm: body.analyzers !== false,
+                    onProgress: stream ? progress => send({ progress }) : undefined
                 });
                 if (!temp) analysedRoots.add(root);
-                res.json({ ...(webReport(result) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!options.allowLocalPaths });
+                const report = { ...(webReport(result) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!options.allowLocalPaths };
+                if (stream) {
+                    send({ result: report });
+                    res.end();
+                } else res.json(report);
+            } catch (error) {
+                if (!stream) throw error;
+                send({ error: (error as Error).message });
+                res.end();
             } finally {
                 running--;
             }

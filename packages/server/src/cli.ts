@@ -2,7 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { analyse, checkConformance, exportPrism, exportToFramework, importGraph, serializeDiagram, type ProbabilisticQuery, FRAMEWORKS, generateNotebook, generatePython, generatePythonTests, generateSmv, matchResults, parseDiagram, parseTrace, type Framework } from '@provenflow/language';
-import { changedLines, extractProject, formatFindings, githubTargetFromEnv, onChanged, postGithubReview, providerFromSpec, reviewComments, reviewSummary, summary, writeOutputs } from '@provenflow/extract';
+import { changedLines, extractProject, formatFindings, githubTargetFromEnv, onChanged, postGithubReview, providerFromSpec, reviewComments, reviewSummary, summary, writeOutputs, type Progress } from '@provenflow/extract';
 import { readFileSync } from 'node:fs';
 import { configFromEnv, ENGINES, nuxmvInfo, runNuxmv, type Engine } from './nuxmv-runner.js';
 import { nurvExecutable, runNurv } from './nurv-runner.js';
@@ -97,8 +97,10 @@ async function main(): Promise<number> {
             llmFixes: Number(values['llm-fixes']),
             quickFixes: values.fix ? 50 : 0,
             analyzers: !values['no-analyzers'],
-            confirm: !values['no-confirm']
+            confirm: !values['no-confirm'],
+            onProgress: values.quiet ? undefined : terminalProgress()
         });
+        clearProgress();
         const out = values.output ?? join(file, '.provenflow', 'extract');
         const written = writeOutputs(result, out);
         const counts = summary(result);
@@ -123,8 +125,10 @@ async function main(): Promise<number> {
             llm: values.llm ? providerFromSpec(values.llm) : undefined,
             llmFixes: Number(values['llm-fixes']),
             analyzers: !values['no-analyzers'],
-            confirm: !values['no-confirm']
+            confirm: !values['no-confirm'],
+            onProgress: values.quiet ? undefined : terminalProgress()
         });
+        clearProgress();
         const base = values.base ?? githubBase();
         const changed = base ? changedLines(file, base) : undefined;
         const relevant = changed ? onChanged(result.findings, changed, values.files ? 'files' : 'lines') : result.findings;
@@ -293,6 +297,19 @@ async function main(): Promise<number> {
     }
     console.error(USAGE);
     return 2;
+}
+
+/** A progress line on the terminal (stderr), rewritten in place; nothing when stderr is not a terminal. */
+function terminalProgress(): ((p: Progress) => void) | undefined {
+    if (!process.stderr.isTTY) return undefined;
+    return p => {
+        const line = `[${String(p.percent).padStart(3)}%] ${p.message}`;
+        process.stderr.write(`\r\x1b[K${line.slice(0, (process.stderr.columns || 100) - 1)}`);
+    };
+}
+
+function clearProgress(): void {
+    if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
 }
 
 /** The base of the pull request in a GitHub Actions run. */

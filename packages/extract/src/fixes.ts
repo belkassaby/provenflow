@@ -74,13 +74,15 @@ export async function verifyProposals(
     rerun: Rerun,
     read: (file: string) => string | undefined = f => readSafe(join(root, f)),
     baseline?: Baseline,
-    buildCheck?: BuildCheck
+    buildCheck?: BuildCheck,
+    onProposal?: (proposal: Proposal, index: number, total: number) => Promise<void>
 ): Promise<{ findings: Finding[]; accepted: string[]; rejected: string[] }> {
     const accepted: string[] = [];
     const rejected: string[] = [];
     const before = new Set(findings.map(key));
     const patched = new Map<Finding, Finding>();
-    for (const p of proposals) {
+    for (const [index, p] of proposals.entries()) {
+        await onProposal?.(p, index, proposals.length);
         const overrides = new Map<string, string>();
         let problem = '';
         for (const e of p.edits) {

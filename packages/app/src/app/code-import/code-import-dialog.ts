@@ -1,4 +1,4 @@
-import { Component, computed, ElementRef, inject, output, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, output, signal, viewChild } from '@angular/core';
 import { CodeDiff } from './code-diff';
 import { downloadText } from '../file-io';
 import { HelpService } from '../help-dialog/help.service';
@@ -58,6 +58,22 @@ export class CodeImportDialog {
     readonly categoryLabels = CATEGORY_LABELS;
 
     readonly report = this.codeImport.report;
+
+    /** Ticks every second while an analysis runs, for the elapsed time. */
+    private readonly now = signal(Date.now());
+    readonly elapsed = computed(() => (this.codeImport.running() ? this.duration(this.now() - this.codeImport.startedAt()) : ''));
+
+    constructor() {
+        const timer = setInterval(() => {
+            if (this.codeImport.running()) this.now.set(Date.now());
+        }, 1000);
+        inject(DestroyRef).onDestroy(() => clearInterval(timer));
+    }
+
+    duration(ms: number): string {
+        const s = Math.max(0, Math.round(ms / 1000));
+        return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
+    }
 
     readonly groups = computed(() => {
         const r = this.report();
