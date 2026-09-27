@@ -7,7 +7,7 @@
     <p class="small">
       Import code base can ask an LLM for fixes (each proposed change is checked again before it is marked verified).
       The keys you enter here are sent to the ProvenFlow server on this computer and kept there; they are never shown again in clear.
-      When nothing is set here, the server's environment variables are used (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENAI_BASE_URL, OLLAMA_HOST).
+      When nothing is set here, the server's environment variables are used (ANTHROPIC_API_KEY, ANTHROPIC_WORKSPACE_ID, OPENAI_API_KEY, OPENAI_BASE_URL, OLLAMA_HOST).
     </p>
     @if (llm.error(); as e) { <p class="error-text">{{ e }}</p> }
     @if (llm.settings(); as s) {
@@ -23,6 +23,7 @@
           @if (s.anthropic.keyFrom === 'settings') { <button type="button" class="link small" (click)="clearKey('anthropic')">remove the saved key</button> }
           <label>Model <input name="anthropicModel" class="mono" [value]="s.anthropic.model" spellcheck="false" /></label>
           <label>Address (optional) <input name="anthropicBaseUrl" class="mono" [value]="s.anthropic.baseUrl ?? ''" placeholder="https://api.anthropic.com" spellcheck="false" /></label>
+          <label>Workspace ID (for a key not scoped to a workspace) <input name="anthropicWorkspace" class="mono" [value]="s.anthropic.workspaceId ?? ''" placeholder="wrkspc_… (Claude Console → Settings → Workspaces)" spellcheck="false" autocomplete="off" /></label>
           <div class="llm-test">
             <button type="button" (click)="test('anthropic', form)" [disabled]="tests().anthropic === 'running'">{{ tests().anthropic === 'running' ? 'Testing…' : 'Test' }}</button>
             @if (testResult('anthropic'); as t) { <span class="small" [class.ok-text]="t.ok" [class.error-text]="!t.ok">{{ t.text }}</span> }

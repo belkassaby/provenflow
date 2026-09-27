@@ -40,7 +40,11 @@ export function providerFromSpec(spec: string, env: NodeJS.ProcessEnv = process.
     const model = rest.join(':');
     const post = async (url: string, headers: Record<string, string>, body: unknown): Promise<unknown> => {
         const response = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
-        if (!response.ok) throw new Error(`${spec}: HTTP ${response.status} ${(await response.text()).slice(0, 300)}`);
+        if (!response.ok) {
+            const text = (await response.text()).slice(0, 300);
+            const hint = /anthropic-workspace-id/.test(text) ? ' Set the workspace ID (LLM settings, or ANTHROPIC_WORKSPACE_ID): it is in the Claude Console under Settings → Workspaces. Or create the key inside a workspace.' : '';
+            throw new Error(`${spec}: HTTP ${response.status} ${text}${hint}`);
+        }
         return response.json();
     };
     switch (kind) {
@@ -50,7 +54,9 @@ export function providerFromSpec(spec: string, env: NodeJS.ProcessEnv = process.
             return {
                 name: spec,
                 async complete(system, user) {
-                    const json = (await post(`${env['ANTHROPIC_BASE_URL'] ?? 'https://api.anthropic.com'}/v1/messages`, { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, { model: model || 'claude-sonnet-5', max_tokens: 4096, temperature: 0, system, messages: [{ role: 'user', content: user }] })) as { content: Array<{ type: string; text?: string }> };
+                    // A key not scoped to a workspace needs the workspace named in each request.
+                    const workspace: Record<string, string> = env['ANTHROPIC_WORKSPACE_ID'] ? { 'anthropic-workspace-id': env['ANTHROPIC_WORKSPACE_ID'] } : {};
+                    const json = (await post(`${env['ANTHROPIC_BASE_URL'] ?? 'https://api.anthropic.com'}/v1/messages`, { 'x-api-key': key, 'anthropic-version': '2023-06-01', ...workspace }, { model: model || 'claude-sonnet-5', max_tokens: 4096, temperature: 0, system, messages: [{ role: 'user', content: user }] })) as { content: Array<{ type: string; text?: string }> };
                     return json.content.filter(c => c.type === 'text').map(c => c.text).join('');
                 }
             };

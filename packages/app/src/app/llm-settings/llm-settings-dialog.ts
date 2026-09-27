@@ -43,7 +43,7 @@ export class LlmSettingsDialog {
         const value = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null)?.value ?? '';
         const checked = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | null)?.checked ?? false;
         const ok = await this.llm.save({
-            anthropic: { apiKey: this.keys().anthropic || undefined, model: value('anthropicModel'), baseUrl: value('anthropicBaseUrl') },
+            anthropic: { apiKey: this.keys().anthropic || undefined, model: value('anthropicModel'), baseUrl: value('anthropicBaseUrl'), workspaceId: value('anthropicWorkspace') },
             openai: { apiKey: this.keys().openai || undefined, model: value('openaiModel'), baseUrl: value('openaiBaseUrl') },
             ollama: { host: value('ollamaHost'), model: value('ollamaModel') },
             preferred: value('preferred') as LlmKind | '',

@@ -4,7 +4,7 @@ export type LlmKind = 'anthropic' | 'openai' | 'ollama';
 
 /** The server's LLM settings as it shows them: keys masked, never in clear. */
 export interface LlmSettingsView {
-    anthropic: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string };
+    anthropic: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string; workspaceId?: string };
     openai: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string };
     ollama: { host: string; model: string };
     preferred?: LlmKind;
@@ -15,7 +15,7 @@ export interface LlmSettingsView {
 }
 
 export interface LlmSettingsUpdate {
-    anthropic?: { apiKey?: string; clearKey?: boolean; model?: string; baseUrl?: string };
+    anthropic?: { apiKey?: string; clearKey?: boolean; model?: string; baseUrl?: string; workspaceId?: string };
     openai?: { apiKey?: string; clearKey?: boolean; model?: string; baseUrl?: string };
     ollama?: { host?: string; model?: string };
     preferred?: LlmKind | '';

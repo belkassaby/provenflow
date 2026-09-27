@@ -386,7 +386,7 @@ appears and the code still builds. **Review change** shows the original and the 
 with the differences highlighted. You can edit the proposed side, then **Apply** it to the file or
 download it. Applying works for folders opened with **Choose folder…** in Chrome/Edge (the browser
 writes the change) or analysed by path. **Apply all** applies every verified change in one go.
-LLM keys and models are set in **Help → LLM settings**.
+LLM keys and models (and the workspace ID of an Anthropic key not scoped to a workspace) are set in **Help → LLM settings**.
 
 From a terminal:
 

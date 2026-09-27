@@ -376,6 +376,7 @@ describe('LLM settings (Help → LLM settings)', () => {
     const runner: RunnerConfig = { executable: '/nonexistent/nuXmv', timeoutMs: 10_000, maxOutputBytes: 1_000_000 };
     let server: Server;
     let fake: Server;
+    const workspaces: Array<string | undefined> = [];
     let url: string;
     let fakeUrl: string;
     let file: string;
@@ -384,6 +385,7 @@ describe('LLM settings (Help → LLM settings)', () => {
         // A stand-in for the Anthropic API: answers OK when the key is right.
         const { createServer } = await import('node:http');
         fake = createServer((req, res) => {
+            workspaces.push(req.headers['anthropic-workspace-id'] as string | undefined);
             const ok = req.headers['x-api-key'] === 'sk-ant-test-1234567890';
             res.writeHead(ok ? 200 : 401, { 'content-type': 'application/json' });
             res.end(JSON.stringify(ok ? { content: [{ type: 'text', text: 'OK' }] } : { error: 'bad key' }));
@@ -418,6 +420,15 @@ describe('LLM settings (Help → LLM settings)', () => {
     it('tests a provider with the saved key and model', async () => {
         const result = await (await call('POST', '/api/llm-settings/test', { provider: 'anthropic' })).json();
         expect(result).toMatchObject({ ok: true, spec: 'anthropic:claude-sonnet-5', answer: 'OK' });
+    });
+
+    it('sends the workspace ID for keys not scoped to a workspace, and clears it', async () => {
+        const saved = await (await call('PUT', '/api/llm-settings', { anthropic: { workspaceId: 'wrkspc_01abc' } })).json();
+        expect(saved.anthropic.workspaceId).toBe('wrkspc_01abc');
+        await call('POST', '/api/llm-settings/test', { provider: 'anthropic' });
+        expect(workspaces.at(-1)).toBe('wrkspc_01abc');
+        expect((await call('PUT', '/api/llm-settings', { anthropic: { workspaceId: 'bad id!' } })).status).toBe(400);
+        expect((await (await call('PUT', '/api/llm-settings', { anthropic: { workspaceId: '' } })).json()).anthropic.workspaceId).toBeUndefined();
     });
 
     it('rejects bad input and forgets the file when not remembered', async () => {

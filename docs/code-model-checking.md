@@ -512,6 +512,9 @@ the diff.
 
 In the editor, **Help → LLM settings (API keys)…** holds:
 - the key, model and address for Anthropic, an OpenAI-compatible server, or Ollama (no key);
+- for an Anthropic key that is not scoped to a workspace, the **workspace ID** (Claude Console →
+  Settings → Workspaces), sent as the `anthropic-workspace-id` header (`ANTHROPIC_WORKSPACE_ID` in
+  the environment);
 - which provider to offer first in the Code base review;
 - a **Test** button for each provider.
 

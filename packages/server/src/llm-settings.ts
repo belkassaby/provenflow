@@ -2,7 +2,7 @@
  * LLM settings entered in the editor (Help → LLM settings): API keys, models and server addresses.
  * They are kept by this server only: in memory, and in a file readable only by its user when
  * "remember" is chosen. They take precedence over the environment variables (ANTHROPIC_API_KEY,
- * OPENAI_API_KEY, OPENAI_BASE_URL, OLLAMA_HOST). Keys are never sent back to the browser.
+ * ANTHROPIC_WORKSPACE_ID, OPENAI_API_KEY, OPENAI_BASE_URL, OLLAMA_HOST). Keys are never sent back to the browser.
  */
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -11,7 +11,8 @@ import { dirname, join } from 'node:path';
 export type LlmKind = 'anthropic' | 'openai' | 'ollama';
 
 export interface LlmSettings {
-    anthropic: { apiKey?: string; model: string; baseUrl?: string };
+    /** `workspaceId`: sent as anthropic-workspace-id, for keys not scoped to a workspace. */
+    anthropic: { apiKey?: string; model: string; baseUrl?: string; workspaceId?: string };
     openai: { apiKey?: string; model: string; baseUrl?: string };
     ollama: { host?: string; model: string };
     /** Provider offered first in Import code base. */
@@ -22,7 +23,7 @@ export interface LlmSettings {
 
 /** What the browser sees: keys masked. */
 export interface PublicLlmSettings {
-    anthropic: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string };
+    anthropic: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string; workspaceId?: string };
     openai: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string };
     ollama: { host: string; model: string };
     preferred?: LlmKind;
@@ -65,6 +66,7 @@ export class LlmSettingsStore {
             ...this.env,
             ...(s.anthropic.apiKey ? { ANTHROPIC_API_KEY: s.anthropic.apiKey } : {}),
             ...(s.anthropic.baseUrl ? { ANTHROPIC_BASE_URL: s.anthropic.baseUrl } : {}),
+            ...(s.anthropic.workspaceId ? { ANTHROPIC_WORKSPACE_ID: s.anthropic.workspaceId } : {}),
             ...(s.openai.apiKey ? { OPENAI_API_KEY: s.openai.apiKey } : {}),
             ...(s.openai.baseUrl ? { OPENAI_BASE_URL: s.openai.baseUrl } : {}),
             ...(s.ollama.host ? { OLLAMA_HOST: s.ollama.host } : {})
@@ -86,7 +88,7 @@ export class LlmSettingsStore {
         const key = (own: string | undefined, envName: string) =>
             own ? { key: mask(own), keyFrom: 'settings' as const } : this.env[envName] ? { key: mask(this.env[envName]!), keyFrom: 'environment' as const } : {};
         return {
-            anthropic: { ...key(s.anthropic.apiKey, 'ANTHROPIC_API_KEY'), model: s.anthropic.model, baseUrl: s.anthropic.baseUrl ?? this.env['ANTHROPIC_BASE_URL'] },
+            anthropic: { ...key(s.anthropic.apiKey, 'ANTHROPIC_API_KEY'), model: s.anthropic.model, baseUrl: s.anthropic.baseUrl ?? this.env['ANTHROPIC_BASE_URL'], workspaceId: s.anthropic.workspaceId ?? this.env['ANTHROPIC_WORKSPACE_ID'] },
             openai: { ...key(s.openai.apiKey, 'OPENAI_API_KEY'), model: s.openai.model, baseUrl: s.openai.baseUrl ?? this.env['OPENAI_BASE_URL'] },
             ollama: { host: s.ollama.host ?? this.env['OLLAMA_HOST'] ?? 'http://localhost:11434', model: s.ollama.model },
             preferred: s.preferred,
@@ -124,6 +126,12 @@ export class LlmSettingsStore {
             if (base === '') delete s[kind].baseUrl;
             else if (base) s[kind].baseUrl = base;
         }
+        const workspace = text(input.anthropic?.workspaceId, 200);
+        if (workspace === '') delete s.anthropic.workspaceId;
+        else if (workspace) {
+            if (!/^[\w-]+$/.test(workspace)) throw new Error(`Not a workspace ID: ${workspace}`);
+            s.anthropic.workspaceId = workspace;
+        }
         const o = input.ollama ?? {};
         const host = url(o.host);
         if (host === '') delete s.ollama.host;
@@ -148,7 +156,7 @@ export class LlmSettingsStore {
 }
 
 export interface UpdateInput {
-    anthropic?: { apiKey?: unknown; clearKey?: unknown; model?: unknown; baseUrl?: unknown };
+    anthropic?: { apiKey?: unknown; clearKey?: unknown; model?: unknown; baseUrl?: unknown; workspaceId?: unknown };
     openai?: { apiKey?: unknown; clearKey?: unknown; model?: unknown; baseUrl?: unknown };
     ollama?: { host?: unknown; model?: unknown };
     preferred?: unknown;

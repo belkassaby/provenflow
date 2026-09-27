@@ -324,4 +324,18 @@ export class Lamp {
         expect(() => providerFromSpec('anthropic:claude-sonnet-5', {})).toThrow(/ANTHROPIC_API_KEY/);
         expect(() => providerFromSpec('nope:x')).toThrow(/Unknown LLM provider/);
     });
+
+    it('names the Anthropic workspace when one is set, and says how when the API asks for it', async () => {
+        const sent: Array<Record<string, string>> = [];
+        const reply = (status: number, body: unknown) => (async (_url: string, init: { headers: Record<string, string> }) => {
+            sent.push(init.headers);
+            return new Response(JSON.stringify(body), { status });
+        }) as unknown as typeof fetch;
+        const ok = providerFromSpec('anthropic:claude-sonnet-5', { ANTHROPIC_API_KEY: 'k', ANTHROPIC_WORKSPACE_ID: 'wrkspc_01abc' }, reply(200, { content: [{ type: 'text', text: 'OK' }] }));
+        expect(await ok.complete('s', 'u')).toBe('OK');
+        expect(sent[0]['anthropic-workspace-id']).toBe('wrkspc_01abc');
+        const refused = providerFromSpec('anthropic:claude-sonnet-5', { ANTHROPIC_API_KEY: 'k' }, reply(400, { type: 'error', error: { type: 'invalid_request_error', message: 'This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header' } }));
+        await expect(refused.complete('s', 'u')).rejects.toThrow(/^anthropic:claude-sonnet-5: HTTP 400 .*Set the workspace ID/);
+        expect(sent[1]['anthropic-workspace-id']).toBeUndefined();
+    });
 });
