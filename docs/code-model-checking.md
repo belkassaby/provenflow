@@ -563,6 +563,10 @@ In the editor, **Review change** opens a side-by-side view:
   - a change of `provenflow.config.json` or of the options (quick fixes, LLM, analysers) makes it
     a full run, and **Run the full analysis** is always one click away.
 
+  A new analysis of a folder by path works the same way: the path field keeps the folders
+  analysed recently (the last one filled in), and for one of them **Reuse the last analysis of
+  this folder** (ticked by default) redoes only what changed since.
+
   On a 200-file Angular project, a full run with 20 proposed changes took 220 s; the re-run after
   applying one of them took 20 s.
 

@@ -42,6 +42,31 @@ describe('CodeImport', () => {
         }
     });
 
+    it('remembers the folder paths analysed, the last first, and reuses the last run of a known folder', async () => {
+        localStorage.removeItem('provenflow.code-paths');
+        const service = TestBed.inject(CodeImport);
+        const sent: Array<{ path: string; incremental: boolean }> = [];
+        const original = globalThis.fetch;
+        globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+            sent.push(JSON.parse(String(init?.body)));
+            return new Response(JSON.stringify({ root: '', files: 1, findings: [], models: [], verdicts: [], patterns: [], paradigm: [], architecture: { edges: [] }, notes: [], summary: { error: 0, warning: 0, info: 0 }, checkedWith: 'explicit', markdown: '' }), { status: 200 });
+        }) as typeof fetch;
+        try {
+            await service.analysePath('/work/a ');
+            await service.analysePath('/work/b');
+            await service.analysePath('/work/a');
+            expect(service.recentPaths()).toEqual(['/work/a', '/work/b']);
+            expect(JSON.parse(localStorage.getItem('provenflow.code-paths')!)).toEqual(['/work/a', '/work/b']);
+            expect(sent.map(b => [b.path, b.incremental])).toEqual([['/work/a', false], ['/work/b', false], ['/work/a', true]]);
+            service.reuseLastRun.set(false);
+            await service.analysePath('/work/b');
+            expect(sent.at(-1)!.incremental).toBe(false);
+        } finally {
+            globalThis.fetch = original;
+            localStorage.removeItem('provenflow.code-paths');
+        }
+    });
+
     it('reports a folder without sources', async () => {
         const service = TestBed.inject(CodeImport);
         await service.analyseFolder([file('docs/readme.md')] as unknown as FileList);

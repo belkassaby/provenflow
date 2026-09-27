@@ -131,6 +131,9 @@ const PHASE_LABELS: Record<string, string> = {
 
 /** The last report is kept in the browser, so its models stay one click away after a reload. */
 const REPORT_KEY = 'provenflow.code-report';
+/** Folder paths analysed recently, the last one first. */
+const PATHS_KEY = 'provenflow.code-paths';
+const MAX_PATHS = 8;
 const MAX_FILE_BYTES = 1_000_000;
 
 /** Sends a code base to the server (`pflow extract`) and keeps its report. */
@@ -145,6 +148,10 @@ export class CodeImport {
     private phaseStarted = 0;
     readonly error = signal<string | null>(null);
     readonly report = signal<CodeReport | null>(loadReport());
+    /** Folder paths analysed recently (this browser), the last one first. */
+    readonly recentPaths = signal<string[]>(loadPaths());
+    /** For a folder analysed before: reuse that run, redoing only what changed since. */
+    readonly reuseLastRun = signal(true);
     /** The server can read a folder by path (it runs on this machine). */
     readonly pathsAllowed = signal(false);
     /** LLM providers configured on the server (their keys stay there). */
@@ -188,9 +195,12 @@ export class CodeImport {
         }
     }
 
-    analysePath(path: string, incremental = false): Promise<void> {
+    /** `incremental`: redo only what changed since the last run of this folder (when the server still has it). */
+    analysePath(path: string, incremental = this.reuseLastRun() && this.recentPaths().includes(path.trim())): Promise<void> {
+        const folder = path.trim();
+        this.recentPaths.set(savePaths([folder, ...this.recentPaths().filter(p => p !== folder)].slice(0, MAX_PATHS)));
         this.begin();
-        return this.run(`Sending ${path.trim()} to the server…`, { path: path.trim(), incremental, ...this.fixOptions() });
+        return this.run(`Sending ${folder} to the server…`, { path: folder, incremental, ...this.fixOptions() });
     }
 
     /** Starts the progress of a new analysis. */
@@ -514,6 +524,24 @@ function uploadMessage(picked: Record<string, string>, folder: string, skipped: 
 /** Identifies a proposed change within a report. */
 export function changeKey(f: CodeFinding): string {
     return `${f.rule}|${f.subject}|${f.loc?.file ?? ''}:${f.loc?.line ?? 0}`;
+}
+
+function loadPaths(): string[] {
+    try {
+        const saved = JSON.parse(localStorage.getItem(PATHS_KEY) ?? '[]') as unknown;
+        return Array.isArray(saved) ? saved.filter((p): p is string => typeof p === 'string').slice(0, MAX_PATHS) : [];
+    } catch {
+        return [];
+    }
+}
+
+function savePaths(paths: string[]): string[] {
+    try {
+        localStorage.setItem(PATHS_KEY, JSON.stringify(paths));
+    } catch {
+        // storage unavailable: remembered for this session only
+    }
+    return paths;
 }
 
 function loadReport(): CodeReport | null {

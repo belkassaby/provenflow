@@ -50,9 +50,21 @@
         @if (codeImport.pathsAllowed()) {
           <p class="muted small">Read in place on the machine running the ProvenFlow server, with its <code>node_modules</code>: the most precise option when the server runs locally.</p>
           <div class="code-path">
-            <input class="mono" type="text" placeholder="/Users/me/projects/my-app" [value]="path()" (input)="path.set($any($event.target).value)" (keydown.enter)="analysePath()" aria-label="Folder path" spellcheck="false" />
+            <input class="mono" type="text" list="code-recent-paths" placeholder="/Users/me/projects/my-app" [value]="path()" (input)="path.set($any($event.target).value)" (keydown.enter)="analysePath()" aria-label="Folder path" spellcheck="false" />
+            <datalist id="code-recent-paths">
+              @for (p of codeImport.recentPaths(); track p) { <option [value]="p"></option> }
+            </datalist>
             <button type="button" class="primary" (click)="analysePath()" [disabled]="!path().trim()">Analyse</button>
           </div>
+          @if (codeImport.recentPaths().length > 0) {
+            <p class="small code-recent">
+              Recent:
+              @for (p of codeImport.recentPaths().slice(0, 4); track p) { <button type="button" class="link small mono" [class.active]="p === path().trim()" (click)="path.set(p)" [title]="p">{{ p.split('/').filter(x => x).slice(-2).join('/') }}</button> }
+            </p>
+          }
+          @if (codeImport.recentPaths().includes(path().trim())) {
+            <label class="code-option small"><input type="checkbox" [checked]="codeImport.reuseLastRun()" (change)="codeImport.reuseLastRun.set($any($event.target).checked)" /> Reuse the last analysis of this folder: only the files changed since are re-analysed (a full analysis when the server no longer has it, or the options changed)</label>
+          }
         } @else {
           <p class="muted small">Not available: this server is not running on this machine (or PROVENFLOW_EXTRACT_PATHS=0). From a terminal: <code>npx pflow extract &lt;folder&gt;</code>.</p>
         }

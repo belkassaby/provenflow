@@ -57,7 +57,8 @@ export class CodeImportDialog {
     readonly llm = inject(LlmSettings);
 
     private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
-    readonly path = signal('');
+    /** The folder path, the last one analysed to start with. */
+    readonly path = signal(this.codeImport.recentPaths()[0] ?? '');
     readonly view = signal<View>('findings');
     readonly shown = signal<ReadonlySet<Severity>>(new Set<Severity>(['error', 'warning']));
     readonly categoryLabels = CATEGORY_LABELS;
