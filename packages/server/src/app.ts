@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { extractProject, providerFromSpec, webReport, type ProvenflowConfig } from '@provenflow/extract';
+import { extractProject, providerFromSpec, webReport, type PreviousRun, type ProvenflowConfig } from '@provenflow/extract';
 import { generateSmv, GenerationError, parseDiagram } from '@provenflow/language';
 import { ENGINES, nuxmvInfo, runNuxmv, type Engine, type RunnerConfig } from './nuxmv-runner.js';
 import { LlmSettingsStore, type LlmKind, type UpdateInput } from './llm-settings.js';
@@ -51,6 +51,8 @@ export function createApp(options: AppOptions): express.Express {
 
     let running = 0;
     const runs = new ExtractRuns(options.heartbeatMs);
+    /** The last run of each folder (a path, or an uploaded folder by name), for incremental re-runs. */
+    const previousRuns = new Map<string, PreviousRun>();
     const maxRuns = options.maxConcurrentRuns ?? 2;
     /** Folders analysed by path: the only places /api/apply may write to. */
     const analysedRoots = new Set<string>();
@@ -84,6 +86,8 @@ export function createApp(options: AppOptions): express.Express {
      *   config?: provenflow.config.json contents (default: the one in the folder)
      *   quickFixes?: number of verified quick fixes to propose (default 20, 0: none)
      *   llm?: "anthropic:<model>" | "openai:<model>" | "ollama:<model>", llmFixes?: number (keys come from the server's environment)
+     *   incremental?: true to redo only what the files changed since the last run of this folder can
+     *     affect (after applying changes); name?: the uploaded folder's name, to find its last run
      *   analyzers?: false to skip the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and the replay on the code
      * With `Accept: application/x-ndjson` the response streams one JSON object per line while it runs:
      * { run: id }, { progress: { phase, message, percent } }... (the current one again every 15 s),
@@ -93,7 +97,7 @@ export function createApp(options: AppOptions): express.Express {
     app.post('/api/extract', express.json({ limit: '64mb' }), async (req: Request, res: Response, next: NextFunction) => {
         let temp: string | undefined;
         try {
-            const body = (req.body ?? {}) as { path?: unknown; files?: unknown; config?: unknown; quickFixes?: unknown; llm?: unknown; llmFixes?: unknown; analyzers?: unknown };
+            const body = (req.body ?? {}) as { path?: unknown; files?: unknown; config?: unknown; quickFixes?: unknown; llm?: unknown; llmFixes?: unknown; analyzers?: unknown; incremental?: unknown; name?: unknown };
             const quickFixes = body.quickFixes === undefined ? 20 : Number(body.quickFixes);
             const llmFixes = body.llmFixes === undefined ? 5 : Number(body.llmFixes);
             if (!Number.isFinite(quickFixes) || quickFixes < 0 || !Number.isFinite(llmFixes) || llmFixes < 0) throw new HttpError(400, "'quickFixes' and 'llmFixes' must be numbers >= 0.");
@@ -133,9 +137,11 @@ export function createApp(options: AppOptions): express.Express {
             // A streamed analysis goes on if the connection drops; the browser follows it again by its id.
             const run = stream ? runs.create() : undefined;
             if (run) runs.attach(run, res);
+            const folderKey = temp ? `upload:${typeof body.name === 'string' ? body.name : ''}` : root;
             try {
                 const available = (await nuxmvInfo(options.runner)).available;
                 const result = await extractProject(root, {
+                    previous: body.incremental === true ? previousRuns.get(folderKey) : undefined,
                     config: body.config as ProvenflowConfig | undefined,
                     checker: available ? smv => runNuxmv(smv, { engine: 'bdd' }, options.runner) : undefined,
                     quickFixes: Math.min(100, quickFixes),
@@ -146,6 +152,7 @@ export function createApp(options: AppOptions): express.Express {
                     onProgress: run ? progress => runs.progress(run, progress) : undefined
                 });
                 if (!temp) analysedRoots.add(root);
+                previousRuns.set(folderKey, result.previous);
                 const report = { ...(webReport(result) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!options.allowLocalPaths };
                 if (run) runs.finish(run, { result: report });
                 else res.json(report);

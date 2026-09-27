@@ -60,7 +60,7 @@
       <section class="code-source">
         <h3>Code changes</h3>
         <label class="code-option"><input type="checkbox" [checked]="codeImport.quickFixes()" (change)="codeImport.quickFixes.set($any($event.target).checked)" /> Propose quick fixes (mechanical changes, each verified by re-running every check, then built and type checked on a copy)</label>
-        <label class="code-option"><input type="checkbox" [checked]="codeImport.analyzers()" (change)="codeImport.analyzers.set($any($event.target).checked)" /> Run the installed analysers (Semgrep: security and dataflow; Infer: heap; ESBMC/CBMC and Kani: memory safety and arithmetic, proved on the code) and replay counterexamples on the real code · <button type="button" class="link small" (click)="installHelp()">how to install them</button></label>
+        <label class="code-option"><input type="checkbox" [checked]="codeImport.analyzers()" (change)="codeImport.analyzers.set($any($event.target).checked)" /> Run the installed analysers (Semgrep: security and dataflow; Infer: heap; ESBMC/CBMC and Kani: memory safety and arithmetic, proved on the code) and replay counterexamples on the real code · <button type="button" class="link small" (click)="walkthrough('analyzers')">how to install them</button></label>
         <label class="code-option">
           Also ask an LLM:
           <select (change)="codeImport.llm.set($any($event.target).value)" aria-label="LLM">
@@ -122,7 +122,7 @@
           <button type="button" class="primary" (click)="applyChange()" [disabled]="!codeImport.writeMode().via || isApplied(f)" [title]="codeImport.writeMode().via ? 'Write the proposed text (with your edits) to ' + pf.file : codeImport.writeMode().reason">{{ isApplied(f) ? 'Applied to ' : 'Apply to ' }}{{ pf.file.split('/').pop() }}</button>
           <button type="button" (click)="downloadChange()">Download file</button>
           <button type="button" (click)="copyChange()">Copy</button>
-          @if (codeImport.writeMode().via && codeImport.applied().size > 0) { <button type="button" (click)="rerun()">Run the analysis again</button> }
+          @if (codeImport.writeMode().via && codeImport.applied().size > 0) { <button type="button" (click)="rerun()" title="Redoes only what the changed files can affect; the rest is kept from the last run">Run the analysis again (changed files)</button> }
           <span class="spacer"></span>
           @if (applyMessage(); as m) { <span class="small" [class.ok-text]="m.ok" [class.error-text]="!m.ok">{{ m.text }}</span> }
         </div>
@@ -224,6 +224,15 @@
       <button type="button" (click)="downloadReport()">Download report (.md)</button>
       <button type="button" (click)="codeImport.clear()">New analysis</button>
     </div>
+    @if (r.incremental; as inc) {
+      <p class="small pad-report">
+        <span class="badge ok">incremental</span>
+        Re-run after changes: {{ inc.changed.length }} file(s) changed (<span class="mono">{{ inc.changed.slice(0, 3).join(', ') }}{{ inc.changed.length > 3 ? '…' : '' }}</span>).
+        The models were checked again; the analysers, proposed changes and replays ran for those files only, and
+        {{ inc.reused.patches }} proposed change(s), {{ inc.reused.confirmations }} confirmation(s) and {{ inc.reused.toolFindings }} analyser finding(s) were kept from the last run.
+        <button type="button" class="link small" (click)="rerun(false)">Run the full analysis</button>
+      </p>
+    }
     <p class="small muted pad-report">
       <strong>Findings</strong> are the problems. Most are a property of an extracted <strong>model</strong> that nuXmv found false (open the model to see all its properties);
       the others come from direct checks (missing cases, layers, style). <strong>Code changes</strong> are the proposed fixes, each checked again before it is marked verified.
@@ -303,7 +312,7 @@
             <div class="code-apply-all">
               <button type="button" class="primary" (click)="applyAllChanges()" [disabled]="!codeImport.writeMode().via || toApply().length === 0 || applyingAll()">{{ applyingAll() ? 'Applying…' : 'Apply all ' + (includeUnverified() ? '' : 'verified ') + 'changes (' + toApply().length + ')' }}</button>
               <label class="small"><input type="checkbox" [checked]="includeUnverified()" (change)="includeUnverified.set($any($event.target).checked)" /> include changes that are not verified</label>
-              @if (codeImport.writeMode().via && codeImport.applied().size > 0) { <button type="button" (click)="rerun()">Run the analysis again</button> }
+              @if (codeImport.writeMode().via && codeImport.applied().size > 0) { <button type="button" (click)="rerun()" title="Redoes only what the changed files can affect; the rest is kept from the last run">Run the analysis again (changed files)</button> }
             </div>
             @if (!codeImport.writeMode().via) { <p class="small warn-text">{{ codeImport.writeMode().reason }}</p> }
             <p class="muted small">Each change is applied as its edits on top of the ones before it, so several changes to the same file combine. A change whose text was already changed by another one is skipped, and so is a change that adds a value another one removes: run the analysis again for up-to-date proposals.</p>
@@ -400,7 +409,7 @@
           </table>
           @if (r.changeChecks?.length) { <p class="small">Every proposed change was also checked with: @for (c of r.changeChecks; track c) { <code>{{ c }}</code> }</p> }
           @if (missingTools().length > 0) {
-            <h3>Not installed <button type="button" class="link small" (click)="installHelp()">how to install them</button></h3>
+            <h3>Not installed <button type="button" class="link small" (click)="walkthrough('analyzers')">how to install them</button></h3>
             <ul class="small muted">
               @for (n of missingTools(); track $index) { <li>{{ n }}</li> }
             </ul>

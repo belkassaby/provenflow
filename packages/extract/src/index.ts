@@ -17,6 +17,7 @@ import { ChangeChecker, detectChecks } from './buildcheck.js';
 import { quickFixes, readSafe, verifyProposals, type Proposal } from './fixes.js';
 import { confirmFindings } from './replay.js';
 import { reporter, type OnProgress } from './progress.js';
+import { changedFiles, findingKey, fingerprints, isToolFinding, settingsKey, touches, type IncrementalInfo, type PreviousRun } from './incremental.js';
 import { findTool } from './tools/process.js';
 import { materialize } from './tools/workspace.js';
 import { cachedProvider, resolveDynamicWrites, suggestFixes, suggestProperties, type LlmLog, type LlmProvider } from './llm.js';
@@ -40,6 +41,7 @@ export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './
 export * from './review.js';
 export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
+export type { IncrementalInfo, PreviousRun } from './incremental.js';
 export * from './report.js';
 export { listSourceFiles } from './scan.js';
 export { LANGUAGES } from './treesitter/frontend.js';
@@ -72,6 +74,11 @@ export interface ExtractOptions {
     rerunOf?: string[];
     /** Told what the analysis is doing, with an overall percentage (for long runs). */
     onProgress?: OnProgress;
+    /**
+     * The previous run of the same folder (its `previous`): only what the files changed since can
+     * affect is redone. Ignored when the config or the options differ.
+     */
+    previous?: PreviousRun;
 }
 
 export interface ExtractionResult {
@@ -97,6 +104,10 @@ export interface ExtractionResult {
     proofs: CodeProof[];
     /** Build/test commands used to check proposed changes. */
     changeChecks: string[];
+    /** Set when the run was incremental: what changed, and what was reused. */
+    incremental?: IncrementalInfo;
+    /** What a later run of the same folder can reuse (pass it as `options.previous`). */
+    previous: PreviousRun;
 }
 
 export async function extractProject(root: string, options: ExtractOptions = {}): Promise<ExtractionResult> {
@@ -108,7 +119,14 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     const ts = files.filter(isTypeScript);
     const py = files.filter(f => f.endsWith('.py'));
     const other = files.filter(isTreeSitter);
-    await progress('parse', `Found ${files.length} source files. Reading ${ts.length} TypeScript file(s) with the type checker…`, 0, 3);
+    const readFile = (file: string) => options.overrides?.get(file) ?? readSafe(join(root, file));
+    const prints = options.rerunOf ? {} : fingerprints(files, readFile);
+    const settings = settingsKey(config, { quickFixes: options.quickFixes ?? 0, llm: options.llm?.name, llmFixes: options.llmFixes ?? 0, analyzers: options.analyzers !== false, confirm: options.confirm !== false, buildChecks: options.buildChecks !== false, nuxmv: !!options.checker });
+    const previous = !options.rerunOf && options.previous?.settings === settings ? options.previous : undefined;
+    const changed = previous ? changedFiles(previous.fingerprints, prints) : undefined;
+    const prevByKey = new Map((previous?.findings ?? []).map(f => [findingKey(f), f]));
+    const reused = { patches: 0, confirmations: 0, toolFindings: 0 };
+    await progress('parse', `Found ${files.length} source files${changed ? ` (${changed.size} changed since the last run)` : ''}. Reading ${ts.length} TypeScript file(s) with the type checker…`, 0, 3);
     const tsFacts = extractTypeScript(root, ts, options.overrides);
     await progress('parse', `Reading ${py.length} Python file(s)…`, 1, 3);
     const pyFacts = extractPython(root, py, options.overrides);
@@ -152,12 +170,13 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     // External analysers: security and dataflow (Semgrep, CodeQL), heap (Infer), code model checking (ESBMC/CBMC, Kani).
     let tools: AnalyzerOutput = { findings: [], proofs: [], fixes: [], notes: [], ran: [] };
     if (options.analyzers !== false && !options.rerunOf && !analyzersMayRun(config, files)) tools.notes.push(...missingAnalyzers(config, files));
-    if (options.analyzers !== false && analyzersMayRun(config, files)) {
+    const changedSources = changed ? [...changed].filter(f => files.includes(f)) : undefined;
+    if (options.analyzers !== false && analyzersMayRun(config, files) && changedSources?.length !== 0) {
         const workspace = options.overrides?.size ? materialize(root, options.overrides) : undefined;
         try {
-            await progress('analyzers', 'Running the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani)…');
+            await progress('analyzers', changedSources ? `Running the installed analysers on the ${changedSources.length} changed file(s)…` : 'Running the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani)…');
             let finished = 0;
-            tools = await runAnalyzers({ root, dir: workspace?.dir ?? root, facts, config, env: process.env, onlyFiles: options.rerunOf }, (name, running, out) => {
+            tools = await runAnalyzers({ root, dir: workspace?.dir ?? root, facts, config, env: process.env, onlyFiles: options.rerunOf ?? changedSources }, (name, running, out) => {
                 finished++;
                 if (out.ran.length === 0) return;
                 void progress('analyzers', `${name} finished (${out.findings.length} finding(s)${out.proofs.length ? `, ${out.proofs.length} proof(s)` : ''})${running.length ? `; still running: ${running.join(', ')}` : ''}…`, finished, 6);
@@ -165,6 +184,17 @@ export async function extractProject(root: string, options: ExtractOptions = {})
         } finally {
             workspace?.dispose();
         }
+    }
+    if (previous && changed) {
+        // Analyser results on unchanged files are still valid.
+        const kept = previous.findings.filter(f => isToolFinding(f) && f.loc && !changed.has(f.loc.file) && files.includes(f.loc.file)).map(({ suggestedPatch: _p, confirmation: _c, ...f }) => f as Finding);
+        reused.toolFindings = kept.length;
+        tools = {
+            ...tools,
+            findings: [...tools.findings, ...kept],
+            proofs: [...tools.proofs, ...previous.proofs.filter(p => !p.loc || !changed.has(p.loc.file))],
+            ran: tools.ran.length ? tools.ran : previous.tools
+        };
     }
 
     let findings = dedupe([
@@ -202,7 +232,10 @@ export async function extractProject(root: string, options: ExtractOptions = {})
         const toolProposals: Proposal[] = tools.fixes
             .map(fx => ({ finding: findings.find(f => f.rule === fx.finding.rule && f.loc?.file === fx.finding.loc?.file && f.loc?.line === fx.finding.loc?.line) ?? fx.finding, edits: [{ file: fx.file, search: fx.search, replace: fx.replace }], explanation: fx.explanation, by: 'semgrep autofix' }))
             .filter(p => byFinding.has(p.finding));
-        const proposals = [...quickFixes(findings, facts, models, read, config), ...toolProposals].slice(0, options.quickFixes);
+        // Incremental: findings untouched by the change keep the proposal verified last time.
+        if (previous && changed) findings = findings.map(f => reusePatch(f, prevByKey.get(findingKey(f)), changed, reused));
+        const fresh = (p: Proposal) => !previous || !changed || !prevByKey.has(findingKey(p.finding)) || touches(p.finding, changed) || p.edits.some(e => changed.has(e.file));
+        const proposals = [...quickFixes(findings, facts, models, read, config), ...toolProposals].filter(p => !p.finding.suggestedPatch && fresh(p)).slice(0, options.quickFixes);
         const fixed = await verifyProposals(findings, proposals, root, rerun, read, { models, verdicts: verification.verdicts }, buildCheck, (p, i, n) =>
             progress('fixes', `Verifying proposed change ${i + 1}/${n}: ${p.finding.rule} on ${p.finding.subject} (re-running the analysis${buildCheck ? ' and the build' : ''})…`, i, n)
         );
@@ -222,7 +255,18 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     // Findings checked on the code itself: counterexamples replayed, C state machines model checked.
     if (options.confirm !== false && !options.rerunOf) {
         await progress('confirm', 'Replaying counterexamples on the real code…');
-        findings = await confirmFindings(findings, models, facts, root, 12, (f, i, n) => progress('confirm', `Replaying on the real code ${i + 1}/${n}: ${f.rule} on ${f.subject}…`, i, n));
+        // Incremental: a finding on an unchanged file keeps its confirmation.
+        const keep = new Map<Finding, Finding>();
+        if (previous && changed) {
+            for (const f of findings) {
+                const before = prevByKey.get(findingKey(f));
+                if (before?.confirmation && !touches(f, changed)) keep.set(f, { ...f, confirmation: before.confirmation });
+            }
+            reused.confirmations = keep.size;
+        }
+        const replayed = await confirmFindings(findings.filter(f => !keep.has(f)), models, facts, root, 12, (f, i, n) => progress('confirm', `Replaying on the real code ${i + 1}/${n}: ${f.rule} on ${f.subject}…`, i, n));
+        let next = 0;
+        findings = findings.map(f => keep.get(f) ?? replayed[next++]);
         await progress('confirm', 'Checking C state machines on the code…', 9, 10);
         findings = await confirmInC(findings, models, facts, root, config);
     }
@@ -245,8 +289,17 @@ export async function extractProject(root: string, options: ExtractOptions = {})
         checkedWith: options.checker && verification.errors.length < models.length ? 'nuxmv' : 'explicit',
         tools: tools.ran,
         proofs: tools.proofs,
-        changeChecks: [...detected.build, ...detected.test].map(c => `${c.name}: ${c.command}`)
+        changeChecks: [...detected.build, ...detected.test].map(c => `${c.name}: ${c.command}`),
+        incremental: changed ? { changed: [...changed].sort(), reused } : undefined,
+        previous: { fingerprints: prints, settings, findings, proofs: tools.proofs, tools: tools.ran }
     };
+}
+
+/** The previous proposal for a finding, when neither the finding nor the proposal touches a changed file. */
+function reusePatch(f: Finding, before: Finding | undefined, changed: Set<string>, reused: { patches: number }): Finding {
+    if (f.suggestedPatch || !before?.suggestedPatch || touches(f, changed) || touches(before, changed)) return f;
+    reused.patches++;
+    return { ...f, suggestedPatch: before.suggestedPatch };
 }
 
 /** Whether any external analyser can run here (avoids copying the project for nothing). */

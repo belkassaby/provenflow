@@ -1,3 +1,6 @@
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { extractProject, lineDiff, type ExtractionResult } from '../src/index.js';
@@ -95,6 +98,34 @@ describe('quick fixes, verified by re-running every check', () => {
         expect(JSON.parse(config.after).machines.Lamp.terminal).toEqual(expect.arrayContaining(['off', 'broken']));
         expect(f.suggestedPatch!.models![0].falseAfter).toEqual([]);
     });
+
+    it('re-runs incrementally after a change is applied: the same findings as a full run, the rest reused', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'provenflow-incremental-'));
+        try {
+            cpSync(SHOP, dir, { recursive: true });
+            const options = { analyzers: false, config: {}, quickFixes: 50 } as const;
+            const first = await extractProject(dir, options);
+            const leak = first.findings.find(f => f.rule === 'resource-leak' && f.subject.startsWith('Poller'))!;
+            const change = leak.suggestedPatch!.files![0];
+            writeFileSync(join(dir, change.file), change.after); // Apply
+            const again = await extractProject(dir, { ...options, previous: first.previous });
+            const full = await extractProject(dir, options);
+            expect(again.incremental?.changed).toEqual([change.file]);
+            const keys = (r: ExtractionResult) => r.findings.map(f => `${f.rule}|${f.subject}|${f.loc?.file}:${f.loc?.line}`).sort();
+            expect(keys(again)).toEqual(keys(full));
+            expect(again.findings.some(f => f.rule === 'resource-leak' && f.subject === leak.subject)).toBe(false);
+            // Findings on the other files keep the change verified last time and their replay.
+            expect(again.incremental!.reused.patches).toBeGreaterThan(0);
+            const stale = again.findings.find(f => f.rule === 'stale-write-after-await')!;
+            expect(stale.suggestedPatch?.verified).toBe(true);
+            expect(stale.confirmation?.status).toBe('confirmed');
+            expect(again.incremental!.reused.confirmations).toBeGreaterThan(0);
+            // A different option means a full run.
+            expect((await extractProject(dir, { ...options, quickFixes: 1, previous: first.previous })).incremental).toBeUndefined();
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 120_000);
 
     it('proposes nothing unless asked', async () => {
         const r = await extractProject(SHOP, { analyzers: false, config: {} });

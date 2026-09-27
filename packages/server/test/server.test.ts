@@ -313,6 +313,15 @@ describe('POST /api/extract (code base models)', () => {
         expect((await fetch(`${base}/api/extract/runs/unknown`)).status).toBe(404);
     });
 
+    it('re-runs a folder incrementally when asked, and fully otherwise', async () => {
+        const url = await start(true);
+        const body = { analyzers: false, path: SHOP, quickFixes: 0 };
+        expect((await (await extract(url, body)).json()).incremental).toBeUndefined();
+        const again = await (await extract(url, { ...body, incremental: true })).json();
+        expect(again.incremental).toMatchObject({ changed: [] });
+        expect(again).not.toHaveProperty('previous');
+    });
+
     it('refuses paths when not allowed, and unsafe uploads', async () => {
         const url = await start(false);
         expect((await extract(url, { path: SHOP })).status).toBe(403);

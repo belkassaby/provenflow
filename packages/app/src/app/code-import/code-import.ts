@@ -91,6 +91,8 @@ export interface CodeReport {
     proofs?: CodeProof[];
     /** Build/test commands run on each proposed change. */
     changeChecks?: string[];
+    /** Set for a re-run after changes: the files changed, and what was kept from the last run. */
+    incremental?: { changed: string[]; reused: { patches: number; confirmations: number; toolFindings: number } };
     paradigm: Array<{ part: string; declared?: string; detected: string; files: number; classes: number; methods: number; freeFunctions: number; pureFunctions: number; mutationDensity: number; mutableGlobals: number }>;
     architecture: { edges: Array<{ from: string; to: string; count: number; typeOnly: boolean }> };
     notes: string[];
@@ -186,9 +188,9 @@ export class CodeImport {
         }
     }
 
-    analysePath(path: string): Promise<void> {
+    analysePath(path: string, incremental = false): Promise<void> {
         this.begin();
-        return this.run(`Sending ${path.trim()} to the server…`, { path: path.trim(), ...this.fixOptions() });
+        return this.run(`Sending ${path.trim()} to the server…`, { path: path.trim(), incremental, ...this.fixOptions() });
     }
 
     /** Starts the progress of a new analysis. */
@@ -351,21 +353,21 @@ export class CodeImport {
         return true;
     }
 
-    /** Analyses the report's folder again, after changes were applied. */
-    async reanalyse(): Promise<void> {
+    /** Analyses the report's folder again; `incremental`: only what the changes since the last run can affect. */
+    async reanalyse(incremental = true): Promise<void> {
         const r = this.report();
         if (!r) return;
-        if (r.applicable) return this.analysePath(r.root);
+        if (r.applicable) return this.analysePath(r.root, incremental);
         if (r.browserFolder) {
             try {
-                await this.analyseDirectory(await this.writableFolder());
+                await this.analyseDirectory(await this.writableFolder(), incremental);
             } catch (error) {
                 this.error.set((error as Error).message);
             }
         }
     }
 
-    private async analyseDirectory(dir: FileSystemDirectoryHandle): Promise<void> {
+    private async analyseDirectory(dir: FileSystemDirectoryHandle, incremental = false): Promise<void> {
         this.begin();
         this.step({ phase: 'read', message: `Listing the files of ${dir.name}…`, percent: null });
         const entries = await listFiles(dir, SKIPPED_DIR);
@@ -377,7 +379,7 @@ export class CodeImport {
         }
         this.folder = dir;
         void saveFolder(dir);
-        await this.run(uploadMessage(picked, dir.name, skipped), { files: picked, ...this.fixOptions() }, dir.name, true);
+        await this.run(uploadMessage(picked, dir.name, skipped), { files: picked, name: dir.name, incremental, ...this.fixOptions() }, dir.name, true);
     }
 
     /** The folder the report came from, with write permission (asked again after a reload). */
@@ -407,7 +409,7 @@ export class CodeImport {
             return;
         }
         const folder = files[0].webkitRelativePath.split('/')[0] || 'folder';
-        return this.run(uploadMessage(picked, folder, skipped), { files: picked, ...this.fixOptions() }, folder);
+        return this.run(uploadMessage(picked, folder, skipped), { files: picked, name: folder, ...this.fixOptions() }, folder);
     }
 
     private async run(message: string, body: unknown, name?: string, browserFolder = false): Promise<void> {

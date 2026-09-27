@@ -20,6 +20,11 @@ const CATEGORY_LABELS: Record<CodeFinding['category'], string> = {
     paradigm: 'Paradigm and size'
 };
 
+function formatDuration(ms: number): string {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
+}
+
 const PROOF_ORDER = { refuted: 0, unknown: 1, proved: 2 } as const;
 
 const SOURCE_LABELS: Partial<Record<CodeFinding['source'], string>> = {
@@ -70,10 +75,7 @@ export class CodeImportDialog {
         inject(DestroyRef).onDestroy(() => clearInterval(timer));
     }
 
-    duration(ms: number): string {
-        const s = Math.max(0, Math.round(ms / 1000));
-        return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
-    }
+    readonly duration = formatDuration;
 
     readonly groups = computed(() => {
         const r = this.report();
@@ -199,12 +201,12 @@ export class CodeImportDialog {
         this.applyMessage.set({ ok: true, text: 'Copied to the clipboard.' });
     }
 
-    /** Analyses the same folder again (after applying changes). */
-    async rerun(): Promise<void> {
+    /** Analyses the same folder again: after applying changes, only what they can affect (`incremental`). */
+    async rerun(incremental = true): Promise<void> {
         const r = this.report();
         if (r?.applicable) this.path.set(r.root);
         this.applyAllResults.set(null);
-        await this.codeImport.reanalyse();
+        await this.codeImport.reanalyse(incremental);
         this.view.set('findings');
     }
 
@@ -303,14 +305,9 @@ export class CodeImportDialog {
         this.llmSettings.emit();
     }
 
-    /** Help → how to install Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL. */
-    installHelp(): void {
+    /** Help → a walkthrough: the Code base review, or how to install the analysers ('analyzers'). */
+    walkthrough(id = 'code'): void {
         this.close();
-        this.help.walkthrough('analyzers');
-    }
-
-    walkthrough(): void {
-        this.close();
-        this.help.walkthrough('code');
+        this.help.walkthrough(id);
     }
 }

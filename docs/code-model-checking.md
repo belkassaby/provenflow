@@ -553,7 +553,18 @@ In the editor, **Review change** opens a side-by-side view:
   - Otherwise the window says why Apply is not available: an uploaded copy, or a server restarted
     since the analysis.
 - **Download file** and **Copy** give you the text;
-- **Run the analysis again** checks the whole project with the change.
+- **Run the analysis again (changed files)** checks the project with the change, incrementally:
+  - the models of the whole project are extracted and checked again (they span files, and this
+    part takes seconds);
+  - the analysers, the verification of proposed changes and the replays on the code run only for
+    the files changed since the last run, and for findings that are new;
+  - everything else (proposed changes and their verification, confirmations, analyser findings on
+    unchanged files) is kept from the last run, and the report says how much was kept;
+  - a change of `provenflow.config.json` or of the options (quick fixes, LLM, analysers) makes it
+    a full run, and **Run the full analysis** is always one click away.
+
+  On a 200-file Angular project, a full run with 20 proposed changes took 220 s; the re-run after
+  applying one of them took 20 s.
 
 **Findings and models.** A model is what was extracted from the code, and its properties say
 what the code should satisfy. A finding is a problem. Most findings are a property that nuXmv

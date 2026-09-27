@@ -201,7 +201,7 @@ export function webReport(result: ExtractionResult): unknown {
 }
 
 function jsonReport(result: ExtractionResult): unknown {
-    const { facts, models, ...rest } = result;
+    const { facts, models, previous: _previous, ...rest } = result;
     return {
         ...rest,
         summary: summary(result),
