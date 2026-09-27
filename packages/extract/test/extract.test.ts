@@ -37,7 +37,7 @@ const checker: Checker | undefined = process.env['NUXMV_PATH']
 
 let cached: ExtractionResult | undefined;
 async function shop(): Promise<ExtractionResult> {
-    cached ??= await extractProject(SHOP, { config: CONFIG, checker });
+    cached ??= await extractProject(SHOP, { analyzers: false, config: CONFIG, checker });
     return cached;
 }
 
@@ -150,7 +150,7 @@ describe('architecture and paradigm', () => {
     });
 
     it('honours ignore rules', async () => {
-        const r = await extractProject(SHOP, { config: { ...CONFIG, ignore: [{ rule: 'import-cycle' }, { rule: 'resource-leak', subject: 'Poller' }] } });
+        const r = await extractProject(SHOP, { analyzers: false, config: { ...CONFIG, ignore: [{ rule: 'import-cycle' }, { rule: 'resource-leak', subject: 'Poller' }] } });
         expect(rules(r)).not.toContain('import-cycle');
         expect(r.findings.some(f => f.rule === 'resource-leak' && f.subject.startsWith('Poller'))).toBe(false);
     });
@@ -199,7 +199,7 @@ export class Tabs {
 }
 `
             );
-            const r = await extractProject(dir, { config: {} });
+            const r = await extractProject(dir, { analyzers: false, config: {} });
             const m = r.models.find(x => x.subject === 'Tabs.tab')!;
             const settings = m.evidence['home->settings'][0];
             expect(settings.event).toBe('Tabs.template (click)');
@@ -231,7 +231,7 @@ export class Door {
 }
 `
             );
-            const r = await extractProject(dir, { config: {} });
+            const r = await extractProject(dir, { analyzers: false, config: {} });
             const m = r.models.find(x => x.subject === 'Door.state')!;
             expect(m.model.transitions.map(t => `${t.source}->${t.target}`).sort()).toEqual(['closed->open', 'locked->closed', 'locked->open', 'open->closed']);
             expect(r.findings.find(f => f.rule === 'unreachable-state')!.message).toContain("'locked'");
@@ -281,14 +281,14 @@ export class Lamp {
                     }
                 ]
             ]);
-            const r = await extractProject(dir, { config: {}, llm, cacheDir: join(dir, 'cache') });
+            const r = await extractProject(dir, { analyzers: false, config: {}, llm, cacheDir: join(dir, 'cache') });
             expect(r.llm!.accepted).toHaveLength(1);
             expect(r.llm!.rejected[0]).toContain('lamp.ts:99');
             const m = r.models.find(x => x.subject === 'Lamp.mode')!;
             expect(m.model.transitions.map(t => `${t.source}->${t.target}`)).toContain('off->blink');
             // Cached: a second run does not ask again.
             const again = scripted([]);
-            await extractProject(dir, { config: {}, llm: { ...again, name: 'test:scripted' }, cacheDir: join(dir, 'cache') });
+            await extractProject(dir, { analyzers: false, config: {}, llm: { ...again, name: 'test:scripted' }, cacheDir: join(dir, 'cache') });
             expect(again.prompts).toHaveLength(0);
         } finally {
             rmSync(dir, { recursive: true, force: true });
@@ -309,7 +309,7 @@ export class Lamp {
             ],
             [/EventBus registers observers/, { edits: [{ file: 'src/core/registry.ts', search: 'text that is not in the file', replace: 'x' }] }]
         ]);
-        const r = await extractProject(SHOP, { config: CONFIG, llm, llmFixes: 30, cacheDir: mkdtempSync(join(tmpdir(), 'provenflow-cache-')) });
+        const r = await extractProject(SHOP, { analyzers: false, config: CONFIG, llm, llmFixes: 30, cacheDir: mkdtempSync(join(tmpdir(), 'provenflow-cache-')) });
         const leak = r.findings.find(f => f.rule === 'resource-leak' && f.subject.startsWith('Poller'))!;
         expect(leak.suggestedPatch?.verified).toBe(true);
         expect(leak.suggestedPatch?.diff).toContain('+        if (this.timer) return;');

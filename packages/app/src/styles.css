@@ -240,6 +240,7 @@ dialog.code-import header h2 { flex: 1; }
 .code-finding p { margin: 4px 0; }
 .code-finding-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .code-trace { margin: 4px 0; padding-left: 22px; }
+.code-output { max-height: 180px; overflow: auto; background: var(--panel-2, rgba(127,127,127,.1)); padding: 6px 8px; border-radius: 4px; white-space: pre-wrap; }
 .code-fix { color: var(--text); }
 .code-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
 .code-table th, .code-table td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }

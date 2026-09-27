@@ -1,0 +1,46 @@
+name: ProvenFlow review
+description: Model-check the code base (state machines, lifecycles, patterns, layers), run the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL) and review the pull request, with verified fixes as suggestions.
+branding:
+  icon: check-circle
+  color: blue
+inputs:
+  path:
+    description: Folder to analyse, relative to the repository.
+    default: .
+  fix:
+    description: Propose verified quick fixes (as GitHub suggestions).
+    default: 'true'
+  fail-on:
+    description: error, warning or none.
+    default: error
+  semgrep:
+    description: Install Semgrep for security and dataflow rules.
+    default: 'true'
+  cbmc:
+    description: Install CBMC for bounded model checking of C/C++ (Ubuntu runners).
+    default: 'false'
+  github-token:
+    description: Token used to post the review.
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - if: inputs.semgrep == 'true'
+      shell: bash
+      run: python3 -m pip install --quiet semgrep
+    - if: inputs.cbmc == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        url=$(curl -s https://api.github.com/repos/diffblue/cbmc/releases/latest | grep -o 'https://[^"]*ubuntu-24.04-cbmc-[^"]*-Linux.deb' | head -1)
+        curl -sL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb
+    - shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --no-audit --no-fund && npm run build -w @provenflow/language && npm run build -w @provenflow/extract && npm run build -w @provenflow/server
+    - shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        node "${{ github.action_path }}/packages/server/out/cli.js" review "${{ inputs.path }}" --github --fail-on "${{ inputs.fail-on }}" $([ "${{ inputs.fix }}" = "true" ] && echo --fix) -q

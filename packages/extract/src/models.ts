@@ -8,7 +8,7 @@ import { nuxmvIdentifier, serializeDiagram, type DiagramModel, type SpecKind } f
 import { formatLocation, type Location } from './ir.js';
 
 export type Severity = 'error' | 'warning' | 'info';
-export type Category = 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture';
+export type Category = 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build';
 
 export interface CounterexampleStep {
     state: string;
@@ -33,12 +33,35 @@ export interface Finding {
     /** The property nuXmv found false. */
     spec?: string;
     counterexample?: CounterexampleStep[];
-    /** How the finding was established. */
-    source: 'analysis' | 'nuxmv' | 'graph' | 'llm';
+    /** How the finding was established: ProvenFlow's own checks, or an external tool (semgrep, codeql, infer, esbmc, cbmc, kani, sarif). */
+    source: 'analysis' | 'nuxmv' | 'graph' | 'llm' | 'semgrep' | 'codeql' | 'infer' | 'esbmc' | 'cbmc' | 'kani' | 'sarif' | 'build';
+    /** Whether the problem was reproduced on the real code (replay of the counterexample, bounded model checking of the code). */
+    confirmation?: Confirmation;
     /** Code values of the states the finding is about (e.g. the unreachable value). */
     states?: string[];
     /** A proposed code change (quick fix or LLM) and whether re-running every check confirmed it. */
     suggestedPatch?: SuggestedPatch;
+}
+
+/** A finding checked against the code itself, not only the model. */
+export interface Confirmation {
+    /** `replay` (the counterexample run on the code), or the model checker that checked the code. */
+    by: string;
+    /** confirmed: the code does it; refuted: the code does not (the model is coarser); unknown: could not tell. */
+    status: 'confirmed' | 'refuted' | 'unknown';
+    detail: string;
+}
+
+/** A property of the code proved or refuted by a model checker of the code (bounded). */
+export interface CodeProof {
+    tool: string;
+    subject: string;
+    property: string;
+    status: 'proved' | 'refuted' | 'unknown';
+    /** Loop unwinding / call depth the proof holds for. */
+    bound?: number;
+    loc?: Location;
+    detail?: string;
 }
 
 /** One file of a proposed change, whole, before and after. */
@@ -58,6 +81,8 @@ export interface SuggestedPatch {
     by?: string;
     /** Models whose extraction changes with the patch: before and after, and their false properties. */
     models?: ModelChange[];
+    /** Build, type check and tests run on a copy of the project with the change. */
+    checks?: Array<{ name: string; command: string; ok: boolean; output: string; ms: number }>;
     /** The change as exact search/replace edits, to apply it on top of other changes to the same file. */
     edits?: Array<{ file: string; search: string; replace: string }>;
     /** State values the change adds (as cases) or removes (from a declaration). */

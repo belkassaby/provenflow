@@ -262,7 +262,7 @@ describe('POST /api/extract (code base models)', () => {
     it('analyses a folder of the server by path, with the models as .pflow text', async () => {
         const url = await start(true);
         expect((await (await fetch(`${url}/api/health`)).json()).extract).toMatchObject({ paths: true, apply: true });
-        const res = await extract(url, { path: SHOP, quickFixes: 0 });
+        const res = await extract(url, { analyzers: false, path: SHOP, quickFixes: 0 });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.checkedWith).toBe('explicit');
@@ -277,7 +277,7 @@ describe('POST /api/extract (code base models)', () => {
         const files = {
             'src/poller.ts': 'export class Poller {\n    private timer?: ReturnType<typeof setInterval>;\n    start(): void {\n        this.timer = setInterval(() => undefined, 1000);\n    }\n    stop(): void {\n        clearInterval(this.timer);\n    }\n}\n'
         };
-        const body = await (await extract(url, { files, config: { ignore: [] }, quickFixes: 0 })).json();
+        const body = await (await extract(url, { analyzers: false, files, config: { ignore: [] }, quickFixes: 0 })).json();
         expect(body.root).toBe('(uploaded folder)');
         expect(body.findings.map((f: { rule: string }) => f.rule)).toContain('resource-leak');
     });
@@ -313,7 +313,7 @@ describe('code changes: proposed, verified, applied', () => {
     const post = (path: string, body: unknown) => fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
     it('proposes verified quick fixes with the whole files, and applies a reviewed one', async () => {
-        const report = await (await post('/api/extract', { path: copy })).json();
+        const report = await (await post('/api/extract', { analyzers: false, path: copy })).json();
         expect(report.applicable).toBe(true);
         const stale = report.findings.find((f: { rule: string }) => f.rule === 'stale-write-after-await');
         expect(stale.suggestedPatch.verified).toBe(true);
@@ -327,12 +327,12 @@ describe('code changes: proposed, verified, applied', () => {
         // The file changed since the analysis: a second apply of the old version is refused.
         expect((await post('/api/apply', { root: report.root, file: file.file, before: file.before, after: file.after })).status).toBe(409);
 
-        const again = await (await post('/api/extract', { path: copy, quickFixes: 0 })).json();
+        const again = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 0 })).json();
         expect(again.findings.some((f: { rule: string }) => f.rule === 'stale-write-after-await')).toBe(false);
     });
 
     it('applies several changes in one go, skipping one whose text another change already replaced', async () => {
-        const report = await (await post('/api/extract', { path: copy })).json();
+        const report = await (await post('/api/extract', { analyzers: false, path: copy })).json();
         const change = report.findings.find((f: { rule: string; loc?: { file: string } }) => f.rule === 'unhandled-state' && f.loc?.file === 'src/core/order.ts');
         const leak = report.findings.find((f: { rule: string }) => f.rule === 'resource-leak');
         const res = await (await post('/api/apply-edits', {
@@ -350,12 +350,12 @@ describe('code changes: proposed, verified, applied', () => {
 
     it('refuses to write outside an analysed folder', async () => {
         expect((await post('/api/apply', { root: tmpdir(), file: 'x.ts', before: '', after: 'x' })).status).toBe(403);
-        const report = await (await post('/api/extract', { path: copy, quickFixes: 0 })).json();
+        const report = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 0 })).json();
         expect((await post('/api/apply', { root: report.root, file: '../escape.ts', before: '', after: 'x' })).status).toBe(400);
     });
 
     it('rejects an unknown LLM provider', async () => {
-        expect((await post('/api/extract', { path: copy, llm: 'nope:x' })).status).toBe(400);
+        expect((await post('/api/extract', { analyzers: false, path: copy, llm: 'nope:x' })).status).toBe(400);
     });
 });
 

@@ -5,15 +5,32 @@ import { HelpService } from '../help-dialog/help.service';
 import { LlmSettings } from '../llm-settings/llm-settings';
 import { changeKey, CodeImport, type CodeFinding, type CodeModel } from './code-import';
 
-type View = 'findings' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm';
+type View = 'findings' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm' | 'tools';
 type Severity = CodeFinding['severity'];
 
 const CATEGORY_LABELS: Record<CodeFinding['category'], string> = {
+    security: 'Security and dataflow',
+    memory: 'Memory safety and arithmetic',
+    heap: 'Heap (interprocedural)',
+    build: 'Build and tests',
     'state-machine': 'State machines',
     lifecycle: 'Resource lifecycles',
     pattern: 'Design patterns',
     architecture: 'Architecture',
     paradigm: 'Paradigm and size'
+};
+
+const PROOF_ORDER = { refuted: 0, unknown: 1, proved: 2 } as const;
+
+const SOURCE_LABELS: Partial<Record<CodeFinding['source'], string>> = {
+    semgrep: 'Semgrep',
+    codeql: 'CodeQL',
+    infer: 'Infer',
+    esbmc: 'ESBMC',
+    cbmc: 'CBMC',
+    kani: 'Kani',
+    sarif: 'SARIF',
+    build: 'build'
 };
 
 /**
@@ -52,6 +69,16 @@ export class CodeImportDialog {
     });
 
     readonly properties = computed(() => this.report()?.verdicts.length ?? 0);
+
+    /** Proofs about the code (ESBMC, CBMC, Kani), refuted first. */
+    readonly proofs = computed(() => [...(this.report()?.proofs ?? [])].sort((a, b) => PROOF_ORDER[a.status] - PROOF_ORDER[b.status] || a.subject.localeCompare(b.subject)));
+    /** Notes about analysers that are not installed. */
+    readonly missingTools = computed(() => (this.report()?.notes ?? []).filter(n => /not installed/.test(n)));
+
+    /** Who found a finding: ProvenFlow's model, or an external analyser. */
+    sourceLabel(f: CodeFinding): string {
+        return SOURCE_LABELS[f.source] ?? f.source;
+    }
 
     /** Findings with a proposed code change. */
     readonly changes = computed(() => (this.report()?.findings ?? []).filter(f => f.suggestedPatch?.files?.length));

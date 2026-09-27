@@ -7,7 +7,7 @@ const POLYGLOT = fileURLToPath(new URL('./fixtures/polyglot', import.meta.url));
 
 const cache = new Map<string, Promise<ExtractionResult>>();
 const run = (root: string) => {
-    if (!cache.has(root)) cache.set(root, extractProject(root, { config: {}, quickFixes: 50 }));
+    if (!cache.has(root)) cache.set(root, extractProject(root, { analyzers: false, config: {}, quickFixes: 50 }));
     return cache.get(root)!;
 };
 
@@ -97,7 +97,7 @@ describe('quick fixes, verified by re-running every check', () => {
     });
 
     it('proposes nothing unless asked', async () => {
-        const r = await extractProject(SHOP, { config: {} });
+        const r = await extractProject(SHOP, { analyzers: false, config: {} });
         expect(r.findings.some(f => f.suggestedPatch)).toBe(false);
     });
 

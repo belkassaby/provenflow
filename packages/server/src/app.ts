@@ -80,11 +80,12 @@ export function createApp(options: AppOptions): express.Express {
      *   config?: provenflow.config.json contents (default: the one in the folder)
      *   quickFixes?: number of verified quick fixes to propose (default 20, 0: none)
      *   llm?: "anthropic:<model>" | "openai:<model>" | "ollama:<model>", llmFixes?: number (keys come from the server's environment)
+     *   analyzers?: false to skip the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and the replay on the code
      */
     app.post('/api/extract', express.json({ limit: '64mb' }), async (req: Request, res: Response, next: NextFunction) => {
         let temp: string | undefined;
         try {
-            const body = (req.body ?? {}) as { path?: unknown; files?: unknown; config?: unknown; quickFixes?: unknown; llm?: unknown; llmFixes?: unknown };
+            const body = (req.body ?? {}) as { path?: unknown; files?: unknown; config?: unknown; quickFixes?: unknown; llm?: unknown; llmFixes?: unknown; analyzers?: unknown };
             const quickFixes = body.quickFixes === undefined ? 20 : Number(body.quickFixes);
             const llmFixes = body.llmFixes === undefined ? 5 : Number(body.llmFixes);
             if (!Number.isFinite(quickFixes) || quickFixes < 0 || !Number.isFinite(llmFixes) || llmFixes < 0) throw new HttpError(400, "'quickFixes' and 'llmFixes' must be numbers >= 0.");
@@ -127,7 +128,9 @@ export function createApp(options: AppOptions): express.Express {
                     checker: available ? smv => runNuxmv(smv, { engine: 'bdd' }, options.runner) : undefined,
                     quickFixes: Math.min(100, quickFixes),
                     llm,
-                    llmFixes: llm ? Math.min(20, llmFixes) : 0
+                    llmFixes: llm ? Math.min(20, llmFixes) : 0,
+                    analyzers: body.analyzers !== false,
+                    confirm: body.analyzers !== false
                 });
                 if (!temp) analysedRoots.add(root);
                 res.json({ ...(webReport(result) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!options.allowLocalPaths });

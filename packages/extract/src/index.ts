@@ -12,12 +12,17 @@ import { CONFIG_FILE, loadConfig, type ProvenflowConfig } from './config.js';
 import { mergeFacts, type Facts } from './ir.js';
 import { analyseArchitecture, type ArchitectureResult } from './architecture.js';
 import { buildLifecycles } from './lifecycles.js';
-import { quickFixes, readSafe, verifyProposals } from './fixes.js';
+import { confirmUnreachableInC, runAnalyzers, type AnalyzerOutput, type ToolRun } from './analyzers/index.js';
+import { ChangeChecker, detectChecks } from './buildcheck.js';
+import { quickFixes, readSafe, verifyProposals, type Proposal } from './fixes.js';
+import { confirmFindings } from './replay.js';
+import { findTool } from './tools/process.js';
+import { materialize } from './tools/workspace.js';
 import { cachedProvider, resolveDynamicWrites, suggestFixes, suggestProperties, type LlmLog, type LlmProvider } from './llm.js';
 import { buildStateMachines } from './machines.js';
-import type { ExtractedModel, Finding } from './models.js';
+import type { CodeProof, ExtractedModel, Finding } from './models.js';
 import { analyseParadigm, type ParadigmProfile } from './paradigm.js';
-import { analysePatterns, checkExpectations, type PatternInstance } from './patterns.js';
+import { analysePatterns, checkExpectations, declaredInCode, gradePatternFindings, type PatternInstance } from './patterns.js';
 import { extractPython } from './python-frontend.js';
 import { listSourceFiles, matchesAny } from './scan.js';
 import { extractTreeSitter, TREE_SITTER_EXTENSIONS } from './treesitter/frontend.js';
@@ -29,6 +34,9 @@ export * from './ir.js';
 export * from './models.js';
 export * from './llm.js';
 export { lineDiff, quickFixes, verifyProposals, type Proposal } from './fixes.js';
+export { BUNDLED_RULES, parseCbmcJson, parseEsbmc, parseKani, sarifToFindings, type ToolRun } from './analyzers/index.js';
+export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './buildcheck.js';
+export * from './review.js';
 export * from './report.js';
 export { listSourceFiles } from './scan.js';
 export { LANGUAGES } from './treesitter/frontend.js';
@@ -51,6 +59,14 @@ export interface ExtractOptions {
     cacheDir?: string;
     /** Files whose text replaces the file on disk (used to check fixes). */
     overrides?: Map<string, string>;
+    /** Run the external analysers that are installed (Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL, SARIF). Default true. */
+    analyzers?: boolean;
+    /** Replay counterexamples on the real code / check them with a code model checker. Default true. */
+    confirm?: boolean;
+    /** Build/type-check (and tests, when configured) proposed changes on a copy of the project. Default true. */
+    buildChecks?: boolean;
+    /** Internal: this run checks a proposed change (only the changed files are re-analysed by the tools). */
+    rerunOf?: string[];
 }
 
 export interface ExtractionResult {
@@ -67,9 +83,15 @@ export interface ExtractionResult {
     llm?: LlmLog & { provider: string };
     /** Quick fixes proposed and whether each was verified. */
     quickFixes?: LlmLog;
-    /** Notes about the run (skipped files, nuXmv errors). */
+    /** Notes about the run (skipped files, nuXmv errors, analysers not installed). */
     notes: string[];
     checkedWith: 'nuxmv' | 'explicit';
+    /** External analysers that ran. */
+    tools: ToolRun[];
+    /** Properties of the code proved or refuted by code model checkers (ESBMC/CBMC, Kani). */
+    proofs: CodeProof[];
+    /** Build/test commands used to check proposed changes. */
+    changeChecks: string[];
 }
 
 export async function extractProject(root: string, options: ExtractOptions = {}): Promise<ExtractionResult> {
@@ -110,35 +132,70 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     }
 
     const verification = await verifyModels(models, options.checker);
+
+    // External analysers: security and dataflow (Semgrep, CodeQL), heap (Infer), code model checking (ESBMC/CBMC, Kani).
+    let tools: AnalyzerOutput = { findings: [], proofs: [], fixes: [], notes: [], ran: [] };
+    if (options.analyzers !== false && !options.rerunOf && !analyzersMayRun(config, files)) tools.notes.push(...missingAnalyzers(config, files));
+    if (options.analyzers !== false && analyzersMayRun(config, files)) {
+        const workspace = options.overrides?.size ? materialize(root, options.overrides) : undefined;
+        try {
+            tools = await runAnalyzers({ root, dir: workspace?.dir ?? root, facts, config, env: process.env, onlyFiles: options.rerunOf });
+        } finally {
+            workspace?.dispose();
+        }
+    }
+
     let findings = dedupe([
         ...machines.findings,
         ...lifecycles.findings,
         ...patterns.findings,
-        ...checkExpectations(config, instances),
+        ...checkExpectations(config, instances, declaredInCode(facts)),
         ...architecture.findings,
         ...paradigm.findings,
-        ...verification.findings
+        ...verification.findings,
+        ...tools.findings
     ]);
-    findings = applyIgnores(findings, config).sort(bySeverity);
+    findings = applyIgnores(gradePatternFindings(findings, instances), config).sort(bySeverity);
 
     const rerun = async (overrides: Map<string, string>) => {
         // A change of provenflow.config.json is part of the change being checked.
         const changedConfig = overrides.get(CONFIG_FILE);
-        const r = await extractProject(root, { config: changedConfig ? (JSON.parse(changedConfig) as ProvenflowConfig) : config, checker: options.checker, overrides: new Map([...(options.overrides ?? []), ...overrides]) });
+        const r = await extractProject(root, {
+            config: changedConfig ? (JSON.parse(changedConfig) as ProvenflowConfig) : config,
+            checker: options.checker,
+            overrides: new Map([...(options.overrides ?? []), ...overrides]),
+            analyzers: options.analyzers,
+            confirm: false,
+            rerunOf: [...overrides.keys()]
+        });
         return { findings: r.findings, models: r.models, verdicts: r.verdicts };
     };
+    const proposing = (options.quickFixes ?? 0) > 0 || (!!llm && (options.llmFixes ?? 0) > 0);
+    const detected = proposing && options.buildChecks !== false && !options.rerunOf ? detectChecks(root, files, config) : { build: [], test: [] };
+    const changeChecker = new ChangeChecker(root, [...detected.build, ...detected.test], config.verification?.timeoutSec ?? 300);
+    const buildCheck = changeChecker.enabled ? (overrides: Map<string, string>) => changeChecker.check(overrides) : undefined;
     const read = (file: string) => options.overrides?.get(file) ?? readSafe(join(root, file));
     if ((options.quickFixes ?? 0) > 0) {
-        const proposals = quickFixes(findings, facts, models, read, config).slice(0, options.quickFixes);
-        const fixed = await verifyProposals(findings, proposals, root, rerun, read, { models, verdicts: verification.verdicts });
+        const byFinding = new Map(findings.map(f => [f, f]));
+        const toolProposals: Proposal[] = tools.fixes
+            .map(fx => ({ finding: findings.find(f => f.rule === fx.finding.rule && f.loc?.file === fx.finding.loc?.file && f.loc?.line === fx.finding.loc?.line) ?? fx.finding, edits: [{ file: fx.file, search: fx.search, replace: fx.replace }], explanation: fx.explanation, by: 'semgrep autofix' }))
+            .filter(p => byFinding.has(p.finding));
+        const proposals = [...quickFixes(findings, facts, models, read, config), ...toolProposals].slice(0, options.quickFixes);
+        const fixed = await verifyProposals(findings, proposals, root, rerun, read, { models, verdicts: verification.verdicts }, buildCheck);
         fixLog.accepted.push(...fixed.accepted);
         fixLog.rejected.push(...fixed.rejected);
         findings = fixed.findings;
     }
     if (llm && (options.llmFixes ?? 0) > 0) {
-        const fixed = await suggestFixes(findings, root, llm, rerun, options.llmFixes, { models, verdicts: verification.verdicts });
+        const fixed = await suggestFixes(findings, root, llm, rerun, options.llmFixes, { models, verdicts: verification.verdicts }, buildCheck);
         record(fixed.log);
         findings = fixed.findings;
+    }
+
+    // Findings checked on the code itself: counterexamples replayed, C state machines model checked.
+    if (options.confirm !== false && !options.rerunOf) {
+        findings = await confirmFindings(findings, models, facts, root);
+        findings = await confirmInC(findings, models, facts, root, config);
     }
 
     return {
@@ -154,9 +211,56 @@ export async function extractProject(root: string, options: ExtractOptions = {})
         architecture: { edges: architecture.edges },
         llm: llm ? { provider: llm.name, ...llmLog } : undefined,
         quickFixes: (options.quickFixes ?? 0) > 0 ? fixLog : undefined,
-        notes: [...facts.notes, ...verification.errors, ...uncheckedNote(verification.verdicts)],
-        checkedWith: options.checker && verification.errors.length < models.length ? 'nuxmv' : 'explicit'
+        notes: [...facts.notes, ...verification.errors, ...uncheckedNote(verification.verdicts), ...tools.notes],
+        checkedWith: options.checker && verification.errors.length < models.length ? 'nuxmv' : 'explicit',
+        tools: tools.ran,
+        proofs: tools.proofs,
+        changeChecks: [...detected.build, ...detected.test].map(c => `${c.name}: ${c.command}`)
     };
+}
+
+/** Whether any external analyser can run here (avoids copying the project for nothing). */
+function analyzersMayRun(config: ProvenflowConfig, files: string[]): boolean {
+    const a = config.analyzers ?? {};
+    if (a.sarif?.length) return true;
+    if (a.semgrep !== false && findTool('semgrep')) return true;
+    if (a.infer !== false && findTool('infer') && files.some(f => /\.(c|cc|cpp|cxx|m|mm|java)$/.test(f))) return true;
+    if (a.bmc !== false && (findTool('esbmc') || findTool('cbmc')) && files.some(f => /\.(c|cc|cpp|cxx)$/.test(f))) return true;
+    if (a.kani !== false && findTool('cargo') && files.some(f => f.endsWith('.rs'))) return true;
+    if (a.codeql && findTool('codeql')) return true;
+    return false;
+}
+
+/** What installing an analyser would add, for the languages of the project. */
+function missingAnalyzers(config: ProvenflowConfig, files: string[]): string[] {
+    const a = config.analyzers ?? {};
+    const has = (re: RegExp) => files.some(f => re.test(f));
+    const missing: string[] = [];
+    if (a.semgrep !== false) missing.push('Semgrep is not installed (pip install semgrep, or set SEMGREP_PATH): security and dataflow rules were not run.');
+    if (a.infer !== false && has(/\.(c|cc|cpp|cxx|m|mm|java)$/)) missing.push('Infer is not installed (set INFER_PATH): no interprocedural heap analysis (null dereferences, leaks).');
+    if (a.bmc !== false && has(/\.(c|cc|cpp|cxx)$/)) missing.push('Neither ESBMC nor CBMC is installed (set ESBMC_PATH or CBMC_PATH): memory safety and overflows of the C/C++ code were not model checked.');
+    if (a.kani !== false && has(/\.rs$/)) missing.push('Kani is not installed (cargo install --locked kani-verifier; cargo kani setup): the Rust code was not model checked.');
+    return missing;
+}
+
+/** Unreachable values of C state variables, checked on the code by ESBMC/CBMC with a harness. */
+async function confirmInC(findings: Finding[], models: ExtractedModel[], facts: Facts, root: string, config: ProvenflowConfig): Promise<Finding[]> {
+    if (config.analyzers?.bmc === false || (!findTool('esbmc') && !findTool('cbmc'))) return findings;
+    const out: Finding[] = [];
+    for (const f of findings) {
+        const model = models.find(m => m.id === f.model);
+        const variable = facts.stateVariables.find(v => v.id === model?.variableId);
+        const value = f.states?.[0];
+        if (f.rule !== 'unreachable-state' || !variable || !value || f.confirmation || !/\.c$/.test(variable.loc.file) || variable.owner === undefined) {
+            out.push(f);
+            continue;
+        }
+        const functions = facts.functions.filter(fn => fn.loc.file === variable.loc.file && fn.free && fn.params === 0 && fn.name !== 'main').map(fn => fn.name);
+        const field = variable.name.split('.').pop()!;
+        const r = await confirmUnreachableInC({ root, dir: root, facts, config, env: process.env }, variable.loc.file, field, value, functions);
+        out.push(r ? { ...f, confirmation: { by: 'bounded model checking', ...r } } : f);
+    }
+    return out;
 }
 
 function uncheckedNote(verdicts: SpecVerdict[]): string[] {

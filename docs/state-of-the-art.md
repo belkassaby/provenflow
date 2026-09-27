@@ -1,6 +1,7 @@
 # State of the art: designing, verifying and running agentic state machines
 
-*Survey date: 25 September 2026; section 2.9 on 27 September 2026. The claims about other tools
+*Survey date: 25 September 2026; section 2.9 on 27 September 2026, updated the same day when
+ProvenFlow started driving the analysers it lacked (Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL). The claims about other tools
 were checked against their documentation, repositories or arXiv abstracts on those dates (links in
 [Sources](#sources)). Items
 marked "not verified" come from general knowledge and were not re-checked.*
@@ -282,14 +283,21 @@ re-verification (a cited write exists, the property parses and nuXmv decides it,
 full re-run). None of the tools above, as far as their documentation shows, covers this whole
 chain.
 
-It is shallower than each of them in its own area:
-- it does no dataflow or security analysis (CodeQL, Semgrep);
-- it does not check memory safety or arithmetic (CBMC, Kani, ESBMC);
-- it has no interprocedural heap analysis (Infer);
-- its pattern recognition is heuristic.
+Rather than re-implement those analysers, ProvenFlow now drives them when they are installed, and
+puts their results in the same report, review and fix loop as its own models:
 
-Its models are abstractions, so a counterexample should be confirmed on the code: the scenarios
-it generates are for that.
+| Gap | Filled with | What it gives | Limits that remain |
+| --- | --- | --- | --- |
+| Dataflow and security analysis | **Semgrep** with 24 bundled taint and pattern rules (JS/TS, Python, Java, Go, C), plus any Semgrep registry config; **CodeQL** security suites (opt-in); SARIF of any other tool | command, code and SQL injection, path traversal, SSRF, XSS, unsafe deserialisation, disabled TLS checks, hard-coded secrets; data flows as related locations; Semgrep autofixes become proposals verified like quick fixes | Semgrep's open-source taint mode stays inside a function (across functions and files needs Semgrep Pro, or CodeQL); CodeQL's CLI is free only for open-source code and research |
+| Memory safety and arithmetic | **ESBMC** or **CBMC** on every C/C++ function (nondeterministic inputs); **Kani** `autoharness` on Rust crates | pointer, bounds, leak, overflow and division-by-zero checks for *every* input, with the failing trace; a function with no failure is a proof up to the unwinding bound | bounded (loops unwound 8 times by default); no caller preconditions, so a function whose callers guarantee a valid pointer is still reported; Kani's autoharness is an unstable feature |
+| Interprocedural heap analysis | **Infer** (Pulse) on C/C++/Objective-C (captured with `clang -fsyntax-only`, nothing written to the project) and Java | null dereferences, leaks and other manifest bugs across calls, with Infer's trace as counterexample | Infer reports manifest bugs only (latent ones, which depend on the caller, are not); Java needs a build command when the sources do not compile alone |
+| Pattern recognition | confidence levels | each pattern is *declared* (config or an `@pattern` comment), *structural* (types, `implements`, `providedIn`, a private constructor) or *heuristic* (names and shapes); findings on heuristic ones are notes, not warnings | recognition itself is still by shape; declaring the pattern is how a team makes it a contract |
+
+Its own models remain abstractions. Two checks now tie them back to the code: counterexamples of
+state-machine findings (TypeScript and Python), stale writes after an `await` and timer leaks are
+**replayed on the real classes** (with the dependencies mocked), and unreachable values of C
+state variables are checked on the code by ESBMC/CBMC with a generated harness that calls the
+file's functions in any order. Each finding says whether it was confirmed, refuted or not checked.
 
 ### 2.9 Code review with model checking and formal verification
 
@@ -361,14 +369,19 @@ Both check a design written by hand, beside the code.
 As far as the sources show, no other tool puts model extraction, temporal-logic checking and
 re-verified repair into one review loop.
 
-It is also more modest than these tools in several ways:
-- it does not prove memory safety or the absence of crashes (CBMC, Kani, Infer);
-- it has no security or dataflow rules (CodeQL, Snyk, Semgrep);
-- its models are abstractions, so a verified change removes the finding from the model, which is
-  not a full proof about the code;
-- it does not compile the code or run its tests, so a change can pass the checks and still break
-  the build (keeping CI in the loop covers that);
-- it runs as a local server or a CLI step, not as a hosted review bot.
+The gaps this section listed before, and where they stand:
+
+| Was lacking | Now | Still true |
+| --- | --- | --- |
+| Proofs of memory safety or of the absence of crashes | ESBMC/CBMC per C/C++ function and Kani per Rust crate: proved, refuted (with a finding and its trace) or unknown, in a *Tools & proofs* table; Infer for heap bugs across calls | bounded proofs, C/C++/Rust only; Java, Go, Python and TypeScript get no crash proof (Infer covers Java null dereferences) |
+| Security and dataflow rules | Semgrep (bundled rules, autofixes verified), CodeQL (opt-in), SARIF import | intraprocedural taint unless CodeQL runs |
+| A verified change was only a proof about the model | a change is verified when the full analysis re-run *and* the analysers (on the changed files) *and* the build pass; findings are replayed or model checked on the code | still not a full proof of the program: bounded checks, and replays of one scenario |
+| No compile or test run | each proposed change is applied to a temporary copy (dependencies linked, not copied) and built or type checked: `npm run typecheck` / `tsc --noEmit`, `py_compile`, `go build`, `cargo check`, `mvn compile`, Gradle, `dotnet build`, `clang`/`clang++ -fsyntax-only`; tests with `"verification": { "test": "auto" }` or a command; checks that already fail on the unchanged project are not held against the change | tests are opt-in (they can be slow); a project whose build needs services or secrets needs its own command |
+| Only a local server or a CLI step | `pflow review --base <ref> --github` and a GitHub Action (`uses: belkassaby/provenflow@main`): findings on the changed lines only (the diff-time reporting Infer found far more effective), posted as a pull-request review, with each verified single-file change as a one-click GitHub *suggestion* | it runs in the repository's own Actions with its token, not as a hosted GitHub App |
+
+So the loop is now: extract and check models; run the code-level analysers; confirm the model
+findings on the code; propose a change; accept it only if every check, the analysers and the
+build agree; review it on the diff.
 
 ## 3. Why it matters for LLM agents
 
@@ -418,6 +431,11 @@ It is also more modest than these tools in several ways:
     LLM patches are verified by re-running the analysis. The review shows the code and the model
     before and after, side by side, and the reviewer applies one change or all of them, in place
     (section 2.9).
+12. Code-level analysers in the same loop (sections 2.8 and 2.9): Semgrep and CodeQL for security
+    and dataflow, Infer for the heap, ESBMC/CBMC and Kani for memory safety and arithmetic (with a
+    table of proofs); model findings replayed or model checked on the real code; every proposed
+    change built or type checked on a copy; `pflow review` and a GitHub Action that review pull
+    requests with verified suggestions.
 
 **Lacks:**
 - *Structure*: no hierarchical or parallel states (Stately has statecharts), no multiple modules or
@@ -435,8 +453,9 @@ It is also more modest than these tools in several ways:
   languages are read syntactically, so types that come from another file's inference (`var x =
   f()`) are unknown. The extraction is an abstraction:
   conditions on other variables and aliasing are not tracked, and patterns are recognised by
-  shape. There is no dataflow, security or memory-safety analysis (use CodeQL, Semgrep, Infer or
-  CBMC alongside).
+  shape (graded by confidence; declare them to make them contracts). Security, heap and
+  memory-safety results come from external tools that must be installed; their proofs are bounded
+  and cover C, C++ and Rust only. Replays on the code cover TypeScript and Python classes.
 
 ## 5. When to use what
 
@@ -453,6 +472,14 @@ It is also more modest than these tools in several ways:
 
 All checked on 25 September 2026 unless marked otherwise.
 
+- Analysers ProvenFlow drives (sections 2.8 and 2.9; checked on 27 September 2026, and run on the
+  test fixtures: Semgrep 1.178.0, Infer 1.3.0):
+  - Semgrep taint mode (interprocedural taint is a Semgrep Pro feature): https://semgrep.dev/docs/writing-rules/data-flow/taint-mode
+  - Infer Pulse (manifest and latent issues): https://fbinfer.com/docs/checker-pulse
+  - CBMC: https://www.cprover.org/cbmc/ ; ESBMC: https://esbmc.org
+  - Kani autoharness (experimental, `-Z autoharness`): https://model-checking.github.io/kani/reference/experimental/autoharness.html
+  - CodeQL CLI licence (open-source code and research): https://github.com/github/codeql-cli-binaries/blob/main/LICENSE.md
+  - GitHub pull request reviews API: https://docs.github.com/en/rest/pulls/reviews
 - Code analysis (section 2.8):
   - Infer: https://fbinfer.com/docs/checker-topl , https://fbinfer.com/docs/all-issue-types
   - CodeQL: https://codeql.github.com/docs/codeql-overview/about-codeql/

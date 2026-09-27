@@ -53,6 +53,31 @@ export interface Limits {
     functionParams: number;
 }
 
+/** External analysers: each runs when its tool is installed, unless turned off (CodeQL is opt-in: it is slow). */
+export interface AnalyzersConfig {
+    /** Security and dataflow rules. `config`: extra Semgrep configs (e.g. "p/default", a rules folder); the bundled rules always run. */
+    semgrep?: boolean | { config?: string[]; bundled?: boolean };
+    /** CodeQL security queries (needs the codeql CLI; opt-in). */
+    codeql?: boolean | { suite?: string };
+    /** Infer: interprocedural heap analysis (null dereferences, leaks) of C, C++, Objective-C and Java. */
+    infer?: boolean | { build?: string };
+    /** Bounded model checking of C/C++ functions (memory safety, overflows): ESBMC or CBMC. */
+    bmc?: boolean | { tool?: 'esbmc' | 'cbmc'; unwind?: number; timeoutSec?: number; maxFunctions?: number };
+    /** Kani: bounded model checking of Rust (cargo kani autoharness). */
+    kani?: boolean;
+    /** SARIF reports of other tools to include (paths relative to the project). */
+    sarif?: string[];
+}
+
+/** How a proposed change is checked on a copy of the project, besides re-running the analysis. */
+export interface VerificationConfig {
+    /** Build or type-check command (default: detected: tsc --noEmit, py_compile, go build, cargo check, mvn compile...; "" to skip). */
+    build?: string;
+    /** Test command (default: none for proposed changes; "auto" detects npm test, pytest, go test, cargo test, mvn test). */
+    test?: string;
+    timeoutSec?: number;
+}
+
 export interface ProvenflowConfig {
     include?: string[];
     exclude?: string[];
@@ -63,6 +88,8 @@ export interface ProvenflowConfig {
     patterns?: PatternExpectation[];
     ignore?: IgnoreRule[];
     limits?: Partial<Limits>;
+    analyzers?: AnalyzersConfig;
+    verification?: VerificationConfig;
 }
 
 export const DEFAULT_LIMITS: Limits = { classMethods: 30, classLines: 600, functionLines: 80, inheritanceDepth: 3, functionParams: 6 };

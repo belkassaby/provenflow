@@ -23,6 +23,18 @@ jobs:
       # Optional Python packages exercised by the generated-code tests (tracing, property-based tests,
       # framework exports).
       - run: pip install opentelemetry-sdk hypothesis pytest langgraph burr temporalio
+      # Analysers the code base review drives (their tests are skipped when they are missing):
+      # Semgrep (security and dataflow rules), CBMC (bounded model checking of C/C++) and Infer
+      # (interprocedural heap analysis).
+      - run: pip install semgrep
+      - name: Install CBMC
+        run: |
+          url=$(curl -fsSL -H "authorization: Bearer ${{ github.token }}" https://api.github.com/repos/diffblue/cbmc/releases/latest | grep -o 'https://[^"]*ubuntu-24.04-cbmc-[^"]*-Linux.deb' | head -1)
+          curl -fsSL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb && cbmc --version
+      - name: Install Infer
+        run: |
+          curl -fsSL https://github.com/facebook/infer/releases/download/v1.3.0/infer-linux-x86_64-v1.3.0.tar.xz | tar -xJ -C /opt
+          echo "INFER_PATH=/opt/infer-linux-x86_64-v1.3.0/bin/infer" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run build
       # The server tests use a stand-in for nuXmv; set NUXMV_PATH to run them against the real tool.

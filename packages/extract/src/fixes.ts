@@ -55,6 +55,9 @@ export interface RerunResult {
 /** Re-runs the analysis with some files replaced. */
 export type Rerun = (overrides: Map<string, string>) => Promise<RerunResult>;
 
+/** Builds/tests a copy of the project with the change (see buildcheck.ts). */
+export type BuildCheck = (overrides: Map<string, string>) => Promise<{ ok: boolean; results: Array<{ name: string; command: string; ok: boolean; output: string; ms: number }>; ignored: string[] }>;
+
 /** The models and verdicts before any change, to show each model as it becomes. */
 export interface Baseline {
     models: ExtractedModel[];
@@ -70,7 +73,8 @@ export async function verifyProposals(
     root: string,
     rerun: Rerun,
     read: (file: string) => string | undefined = f => readSafe(join(root, f)),
-    baseline?: Baseline
+    baseline?: Baseline,
+    buildCheck?: BuildCheck
 ): Promise<{ findings: Finding[]; accepted: string[]; rejected: string[] }> {
     const accepted: string[] = [];
     const rejected: string[] = [];
@@ -103,13 +107,24 @@ export async function verifyProposals(
         const stillThere = after.some(x => key(x) === key(p.finding));
         const added = after.filter(x => !before.has(key(x)) && x.severity !== 'info');
         const models = baseline ? modelChanges(baseline, rerunResult) : undefined;
-        const verified = !stillThere && added.length === 0;
-        const note = verified
-            ? `${p.explanation} Re-running every check on the changed code: the finding is gone and nothing new appears.`
+        let verified = !stillThere && added.length === 0;
+        let checks: NonNullable<Finding['suggestedPatch']>['checks'];
+        let checkNote = '';
+        if (verified && buildCheck) {
+            const built = await buildCheck(overrides);
+            checks = built.results;
+            verified = built.ok;
+            const failed = built.results.filter(r => !r.ok).map(r => r.name);
+            checkNote = built.results.length === 0 ? '' : built.ok ? ` The ${built.results.map(r => r.name).join(' and ')} of the changed project pass${built.ignored.length ? ` (${built.ignored.join(', ')} already failed before the change, not counted)` : ''}.` : ` But on the changed project, ${failed.join(' and ')} fail${failed.length === 1 ? 's' : ''}.`;
+        }
+        const note = !verified && checks?.some(c => !c.ok)
+            ? `${p.explanation} Re-running every check on the changed code removes the finding.${checkNote}`
+            : verified
+            ? `${p.explanation} Re-running every check on the changed code: the finding is gone and nothing new appears.${checkNote}`
             : stillThere
               ? `${p.explanation} The finding is still reported on the changed code.`
               : `${p.explanation} The change introduces: ${[...new Set(added.map(x => x.rule))].join(', ')}.`;
-        patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified, note, by: p.by, models, edits: p.edits, touches: p.touches } });
+        patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified, note, by: p.by, models, edits: p.edits, touches: p.touches, checks } });
         (verified ? accepted : rejected).push(`${p.by}: ${p.finding.rule} ${p.finding.subject}: ${verified ? 'verified' : 'not verified'}`);
     }
     return { findings: findings.map(f => patched.get(f) ?? f), accepted, rejected };

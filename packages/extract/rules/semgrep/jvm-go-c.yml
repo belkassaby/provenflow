@@ -1,0 +1,81 @@
+# ProvenFlow's bundled security rules for Java, Kotlin, Go, C and C++ (Semgrep).
+rules:
+  - id: java-sql-injection
+    languages: [java]
+    severity: ERROR
+    message: An SQL query is built by concatenation and run with a Statement.
+    metadata: { cwe: 'CWE-89: SQL Injection', fix: 'Use a PreparedStatement with ? placeholders and setString/setInt.' }
+    pattern-either:
+      - pattern: (java.sql.Statement $S).executeQuery("..." + $X)
+      - pattern: (java.sql.Statement $S).execute("..." + $X)
+      - pattern: (java.sql.Statement $S).executeUpdate("..." + $X)
+      - pattern: $S.executeQuery("..." + $X)
+  - id: java-command-injection
+    languages: [java]
+    severity: ERROR
+    message: A command built by concatenation is run through Runtime.exec.
+    metadata: { cwe: 'CWE-78: OS Command Injection', fix: 'Use ProcessBuilder with a list of arguments and validate them.' }
+    pattern-either:
+      - pattern: Runtime.getRuntime().exec("..." + $X)
+      - pattern: Runtime.getRuntime().exec($X + "...")
+  - id: java-xxe
+    languages: [java]
+    severity: WARNING
+    message: The XML parser resolves external entities by default (XXE).
+    metadata: { cwe: 'CWE-611: XML External Entity', fix: 'setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) on the factory.' }
+    patterns:
+      - pattern: DocumentBuilderFactory.newInstance()
+      - pattern-not-inside: |
+          $F = DocumentBuilderFactory.newInstance();
+          ...
+          $F.setFeature(...);
+  - id: go-sql-injection
+    languages: [go]
+    severity: ERROR
+    message: An SQL query is built with fmt.Sprintf.
+    metadata: { cwe: 'CWE-89: SQL Injection', fix: 'Use db.Query("... WHERE id = $1", id) with placeholders.' }
+    pattern-either:
+      - pattern: $DB.Query(fmt.Sprintf(...), ...)
+      - pattern: $DB.Exec(fmt.Sprintf(...), ...)
+      - pattern: $DB.QueryRow(fmt.Sprintf(...), ...)
+  - id: go-command-injection
+    languages: [go]
+    severity: WARNING
+    message: A shell runs a command built at run time.
+    metadata: { cwe: 'CWE-78: OS Command Injection', fix: 'Run the program directly (exec.Command("prog", arg1, arg2)) without sh -c.' }
+    pattern-either:
+      - pattern: exec.Command("sh", "-c", $X)
+      - pattern: exec.Command("bash", "-c", $X)
+  - id: go-insecure-tls
+    languages: [go]
+    severity: ERROR
+    message: TLS certificate checks are turned off (InsecureSkipVerify).
+    metadata: { cwe: 'CWE-295: Improper Certificate Validation', fix: 'Remove InsecureSkipVerify: true; add the CA to RootCAs if needed.' }
+    pattern: 'tls.Config{..., InsecureSkipVerify: true, ...}'
+  - id: c-gets
+    languages: [c, cpp]
+    severity: ERROR
+    message: gets() cannot limit the input to the buffer size (buffer overflow).
+    metadata: { cwe: 'CWE-242: Use of Inherently Dangerous Function', fix: 'Use fgets(buf, sizeof buf, stdin).' }
+    pattern: gets($B)
+    fix: fgets($B, sizeof($B), stdin)
+  - id: c-unbounded-copy
+    languages: [c, cpp]
+    severity: WARNING
+    message: strcpy/strcat/sprintf do not check the size of the destination (buffer overflow).
+    metadata: { cwe: 'CWE-120: Buffer Copy without Checking Size', fix: 'Use snprintf / strlcpy / strncat with the destination size.' }
+    pattern-either:
+      - pattern: strcpy($D, $S)
+      - pattern: strcat($D, $S)
+      - pattern: sprintf($D, ...)
+  - id: c-format-string
+    languages: [c, cpp]
+    severity: ERROR
+    message: The format string of printf is not a constant (format-string attack).
+    metadata: { cwe: 'CWE-134: Uncontrolled Format String', fix: 'printf("%s", value) instead of printf(value).' }
+    patterns:
+      - pattern-either:
+          - pattern: printf($F)
+          - pattern: fprintf($S, $F)
+      - pattern-not: printf("...")
+      - pattern-not: fprintf($S, "...")

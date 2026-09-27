@@ -1,0 +1,87 @@
+# ProvenFlow's bundled security rules for Python (Semgrep).
+rules:
+  - id: py-command-injection
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: Data from the request reaches a shell command.
+    metadata: { cwe: 'CWE-78: OS Command Injection', fix: 'Pass a list of arguments without shell=True, and validate them.' }
+    pattern-sources:
+      - pattern-either:
+          - pattern: flask.request.$ANY
+          - pattern: request.args
+          - pattern: request.form
+          - pattern: request.json
+          - pattern: request.GET
+          - pattern: request.POST
+          - pattern: input(...)
+          - pattern: sys.argv
+    pattern-sinks:
+      - pattern-either:
+          - pattern: os.system($X)
+          - pattern: os.popen($X, ...)
+          - pattern: subprocess.$F($X, ..., shell=True, ...)
+  - id: py-code-injection
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: Data from the request is evaluated as code.
+    metadata: { cwe: 'CWE-95: Eval Injection', fix: 'Use ast.literal_eval for literals, json.loads for data, or a fixed table of functions.' }
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args
+          - pattern: request.form
+          - pattern: request.json
+          - pattern: input(...)
+    pattern-sinks:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+  - id: py-sql-injection
+    languages: [python]
+    severity: ERROR
+    message: An SQL query is built with string formatting; values should be passed as parameters.
+    metadata: { cwe: 'CWE-89: SQL Injection', fix: 'cursor.execute("... WHERE id = %s", (value,)) instead of formatting the value into the query.' }
+    pattern-either:
+      - pattern: $CUR.execute(f"...", ...)
+      - pattern: $CUR.execute("..." % $X, ...)
+      - pattern: $CUR.execute("..." + $X, ...)
+      - pattern: $CUR.execute("...".format(...), ...)
+  - id: py-unsafe-yaml-load
+    languages: [python]
+    severity: ERROR
+    message: yaml.load without a safe loader can build arbitrary Python objects from the document.
+    metadata: { cwe: 'CWE-502: Deserialization of Untrusted Data', fix: 'Use yaml.safe_load.' }
+    patterns:
+      - pattern: yaml.load($X)
+    fix: yaml.safe_load($X)
+  - id: py-pickle-load
+    languages: [python]
+    severity: WARNING
+    message: pickle can run code while loading; only load data you produced yourself.
+    metadata: { cwe: 'CWE-502: Deserialization of Untrusted Data', fix: 'Use json (or a schema-checked format) for data that crosses a trust boundary.' }
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+  - id: py-requests-no-verify
+    languages: [python]
+    severity: ERROR
+    message: TLS certificate checks are turned off (verify=False).
+    metadata: { cwe: 'CWE-295: Improper Certificate Validation', fix: 'Remove verify=False (or point verify= at a CA bundle).' }
+    patterns:
+      - pattern: requests.$M(..., verify=False, ...)
+    fix-regex:
+      regex: verify\s*=\s*False
+      replacement: verify=True
+  - id: py-weak-hash-password
+    languages: [python]
+    severity: WARNING
+    message: MD5/SHA-1 are not suitable for passwords.
+    metadata: { cwe: 'CWE-916: Weak Password Hash', fix: 'Use hashlib.scrypt, bcrypt or argon2 with a salt.' }
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5($P)
+          - pattern: hashlib.sha1($P)
+      - metavariable-regex:
+          metavariable: $P
+          regex: (?i).*pass.*

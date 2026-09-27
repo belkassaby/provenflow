@@ -64,6 +64,7 @@ export function formatFindings(result: ExtractionResult, minimum: Finding['sever
     for (const f of result.findings.filter(x => order[x.severity] <= order[minimum])) {
         lines.push(`${f.loc ? formatLocation(f.loc) : '-'}: ${f.severity} [${f.rule}] ${f.message}`);
         lines.push(`    fix: ${f.fix}`);
+        if (f.confirmation) lines.push(`    on the code (${f.confirmation.by}): ${f.confirmation.status}: ${f.confirmation.detail}`);
         if (f.suggestedPatch) lines.push(`    patch (${f.suggestedPatch.verified ? 'verified' : 'not verified'}): ${f.suggestedPatch.note}`);
     }
     return lines.join('\n');
@@ -76,8 +77,14 @@ function markdownReport(result: ExtractionResult, models: string[], scenarios: s
     out.push(`${result.files} files, ${result.models.length} models (${count(result, 'state-machine')} state machines, ${count(result, 'lifecycle')} resource lifecycles, ${count(result, 'pattern')} pattern contracts${count(result, 'architecture') ? ', 1 architecture' : ''}), ${result.verdicts.length} properties checked with ${result.checkedWith === 'nuxmv' ? 'nuXmv' : 'the explicit-state checker (set NUXMV_PATH to use nuXmv)'}.`, '');
     out.push(`**${s.error} errors, ${s.warning} warnings, ${s.info} notes.**`, '');
     if (result.llm) out.push(`LLM (${result.llm.provider}): ${result.llm.accepted.length} proposals accepted after verification, ${result.llm.rejected.length} rejected.`, '');
+    if (result.tools.length > 0) out.push(`Analysers: ${result.tools.map(t => `${t.tool}${t.version ? ` ${t.version}` : ''} (${t.scope})`).join('; ')}.`, '');
+    if (result.changeChecks.length > 0) out.push(`Proposed changes were also checked with: ${result.changeChecks.map(c => `\`${c}\``).join(', ')}.`, '');
 
     const categories: Array<[Finding['category'], string]> = [
+        ['security', 'Security and dataflow'],
+        ['memory', 'Memory safety and arithmetic'],
+        ['heap', 'Heap (interprocedural)'],
+        ['build', 'Build and tests'],
         ['state-machine', 'State machines'],
         ['lifecycle', 'Resource lifecycles'],
         ['pattern', 'Design patterns'],
@@ -86,6 +93,7 @@ function markdownReport(result: ExtractionResult, models: string[], scenarios: s
     ];
     for (const [category, title] of categories) {
         const list = result.findings.filter(f => f.category === category);
+        if (list.length === 0 && ['security', 'memory', 'heap', 'build'].includes(category) && result.tools.length === 0) continue;
         out.push(`## ${title} (${list.length})`, '');
         if (list.length === 0) out.push('No findings.', '');
         for (const f of list) {
@@ -94,6 +102,7 @@ function markdownReport(result: ExtractionResult, models: string[], scenarios: s
             out.push(f.message, '');
             out.push(`**Fix:** ${f.fix}`, '');
             if (f.spec) out.push(`Property: \`${f.spec}\``, '');
+            if (f.confirmation) out.push(`**On the code** (${f.confirmation.by}, ${f.confirmation.status}): ${f.confirmation.detail}`, '');
             if (f.counterexample && f.counterexample.length > 1) {
                 out.push('| step | state | code |', '| --- | --- | --- |');
                 f.counterexample.forEach((c, i) => out.push(`| ${i} | ${c.state} | ${c.event ? `${c.event}${c.loc ? ` (\`${formatLocation(c.loc)}\`)` : ''}` : 'start'} |`));
@@ -101,6 +110,7 @@ function markdownReport(result: ExtractionResult, models: string[], scenarios: s
             }
             if (f.suggestedPatch) {
                 out.push(`**Suggested change** (${f.suggestedPatch.by ?? 'LLM'}, ${f.suggestedPatch.verified ? '✓ verified' : '✗ not verified'}): ${f.suggestedPatch.note}`, '', '```diff', f.suggestedPatch.diff.trim(), '```', '');
+                if (f.suggestedPatch.checks?.length) out.push(`Checks on the changed copy: ${f.suggestedPatch.checks.map(c => `${c.ok ? '✓' : '✗'} ${c.name}`).join(', ')}`, '');
             }
         }
     }
@@ -108,8 +118,14 @@ function markdownReport(result: ExtractionResult, models: string[], scenarios: s
     out.push('## Patterns found', '');
     if (result.patterns.length === 0) out.push('None.', '');
     else {
-        out.push('| pattern | subject | evidence | contract model |', '| --- | --- | --- | --- |');
-        for (const p of result.patterns) out.push(`| ${p.pattern} | ${p.subject} (\`${formatLocation(p.loc)}\`) | ${p.evidence} | ${p.model ? `\`models/${p.model}.pflow\`` : '-'} |`);
+        out.push('| pattern | subject | evidence | recognised | contract model |', '| --- | --- | --- | --- | --- |');
+        for (const p of result.patterns) out.push(`| ${p.pattern} | ${p.subject} (\`${formatLocation(p.loc)}\`) | ${p.evidence} | ${p.confidence ?? '-'} | ${p.model ? `\`models/${p.model}.pflow\`` : '-'} |`);
+        out.push('');
+    }
+
+    if (result.proofs.length > 0) {
+        out.push('## Proofs about the code', '', 'Each function model checked for every input, loops unwound up to the bound.', '', '| function | property | tool | bound | result |', '| --- | --- | --- | --- | --- |');
+        for (const p of result.proofs) out.push(`| ${p.subject}${p.loc ? ` (\`${formatLocation(p.loc)}\`)` : ''} | ${p.property} | ${p.tool} | ${p.bound ?? '-'} | ${p.status}${p.detail ? `: ${p.detail.replace(/\|/g, '\\|')}` : ''} |`);
         out.push('');
     }
 
@@ -159,7 +175,8 @@ function icon(severity: Finding['severity']): string {
 }
 
 function sourceLabel(source: Finding['source']): string {
-    return source === 'nuxmv' ? 'proved by nuXmv' : source === 'graph' ? 'found on the model graph' : source === 'llm' ? 'LLM' : 'static analysis';
+    const tools: Partial<Record<Finding['source'], string>> = { semgrep: 'Semgrep', codeql: 'CodeQL', infer: 'Infer', esbmc: 'proved by ESBMC on the code', cbmc: 'proved by CBMC on the code', kani: 'proved by Kani on the code', sarif: 'SARIF import', build: 'build' };
+    return source === 'nuxmv' ? 'proved by nuXmv' : source === 'graph' ? 'found on the model graph' : source === 'llm' ? 'LLM' : (tools[source] ?? 'static analysis');
 }
 
 /** Everything the editor shows for an imported code base, including the .pflow text of every model. */

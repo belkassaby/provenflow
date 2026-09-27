@@ -6,7 +6,7 @@ const POLYGLOT = fileURLToPath(new URL('./fixtures/polyglot', import.meta.url));
 
 let cached: ExtractionResult | undefined;
 async function polyglot(): Promise<ExtractionResult> {
-    cached ??= await extractProject(POLYGLOT, { config: {} });
+    cached ??= await extractProject(POLYGLOT, { analyzers: false, config: {} });
     return cached;
 }
 

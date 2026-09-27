@@ -15,7 +15,8 @@
   "files": [
     "out",
     "src",
-    "grammars"
+    "grammars",
+    "rules"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.json && cp src/python_facts.py out/",
@@ -26,7 +27,8 @@
     "@provenflow/language": "0.1.0",
     "typescript": "~6.0.3",
     "web-tree-sitter": "0.25.10",
-    "tree-sitter-wasms": "0.1.13"
+    "tree-sitter-wasms": "0.1.13",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

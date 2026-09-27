@@ -9,7 +9,7 @@ export interface CodeLocation {
 
 export interface CodeFinding {
     rule: string;
-    category: 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture';
+    category: 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build';
     severity: 'error' | 'warning' | 'info';
     subject: string;
     message: string;
@@ -18,7 +18,10 @@ export interface CodeFinding {
     model?: string;
     spec?: string;
     counterexample?: Array<{ state: string; event?: string; loc?: CodeLocation }>;
-    source: 'analysis' | 'nuxmv' | 'graph' | 'llm';
+    source: 'analysis' | 'nuxmv' | 'graph' | 'llm' | 'semgrep' | 'codeql' | 'infer' | 'esbmc' | 'cbmc' | 'kani' | 'sarif' | 'build';
+    /** Whether the problem was reproduced on the real code (counterexample replay, or a model checker on the code). */
+    confirmation?: { by: string; status: 'confirmed' | 'refuted' | 'unknown'; detail: string };
+    related?: CodeLocation[];
     suggestedPatch?: SuggestedChange;
     states?: string[];
 }
@@ -36,6 +39,19 @@ export interface SuggestedChange {
     touches?: { variable: string; adds?: string[]; removes?: string[] };
     /** Models re-extracted from the changed code: before/after .pflow and their false properties. */
     models?: Array<{ id: string; subject: string; before: string; after: string; falseBefore: string[]; falseAfter: string[] }>;
+    /** Build, type check and tests run on a copy of the project with the change. */
+    checks?: Array<{ name: string; command: string; ok: boolean; output: string; ms: number }>;
+}
+
+/** A property of the code itself proved (or refuted) by a model checker of the code (ESBMC, CBMC, Kani). */
+export interface CodeProof {
+    tool: string;
+    subject: string;
+    property: string;
+    status: 'proved' | 'refuted' | 'unknown';
+    bound?: number;
+    loc?: CodeLocation;
+    detail?: string;
 }
 
 export interface LlmProviders {
@@ -69,7 +85,12 @@ export interface CodeReport {
     findings: CodeFinding[];
     models: CodeModel[];
     verdicts: Array<{ model: string; spec: string; verdict: string }>;
-    patterns: Array<{ pattern: string; subject: string; loc: CodeLocation; evidence: string; model?: string }>;
+    patterns: Array<{ pattern: string; subject: string; loc: CodeLocation; evidence: string; model?: string; confidence?: 'declared' | 'structural' | 'heuristic' }>;
+    /** External analysers that ran (Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL). */
+    tools?: Array<{ tool: string; version?: string; ms: number; scope: string; ok: boolean }>;
+    proofs?: CodeProof[];
+    /** Build/test commands run on each proposed change. */
+    changeChecks?: string[];
     paradigm: Array<{ part: string; declared?: string; detected: string; files: number; classes: number; methods: number; freeFunctions: number; pureFunctions: number; mutationDensity: number; mutableGlobals: number }>;
     architecture: { edges: Array<{ from: string; to: string; count: number; typeOnly: boolean }> };
     notes: string[];
@@ -97,6 +118,8 @@ export class CodeImport {
     readonly llmProviders = signal<LlmProviders>({ anthropic: false, openai: false, ollama: false });
     /** Propose deterministic quick fixes, each verified by re-running the checks. */
     readonly quickFixes = signal(true);
+    /** Run the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and replay counterexamples on the code. */
+    readonly analyzers = signal(true);
     /** `anthropic:<model>`, `openai:<model>`, `ollama:<model>`, or '' for no LLM. */
     readonly llm = signal('');
     readonly llmFixes = signal(5);
@@ -137,7 +160,7 @@ export class CodeImport {
     }
 
     private fixOptions(): Record<string, unknown> {
-        return { quickFixes: this.quickFixes() ? 20 : 0, ...(this.llm().trim() ? { llm: this.llm().trim(), llmFixes: this.llmFixes() } : {}) };
+        return { quickFixes: this.quickFixes() ? 20 : 0, analyzers: this.analyzers(), ...(this.llm().trim() ? { llm: this.llm().trim(), llmFixes: this.llmFixes() } : {}) };
     }
 
     /** Writes a reviewed change into the analysed folder (refused if the file changed since the analysis). */

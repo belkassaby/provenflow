@@ -344,6 +344,18 @@ other languages use [tree-sitter](https://tree-sitter.github.io) grammars compil
   deep imports that bypass a facade, and file cycles. For the declared style of each layer
   (functional or object-oriented): mutated arguments, hidden global state, god classes, deep
   inheritance.
+- **Security, heap and memory safety,** from the analysers it drives when they are installed:
+  [Semgrep](https://semgrep.dev) with bundled taint rules (injection, path traversal, SSRF, XSS,
+  unsafe deserialisation, disabled TLS, secrets), [Infer](https://fbinfer.com) (null dereferences
+  and leaks across calls), [ESBMC](https://esbmc.org) or [CBMC](https://www.cprover.org/cbmc/)
+  (every C/C++ function proved free of invalid pointers, out-of-bounds accesses, leaks, overflow
+  and division by zero, up to a bound, or refuted with the failing inputs),
+  [Kani](https://model-checking.github.io/kani/) (Rust) and, opt-in, CodeQL. Any SARIF report can be
+  imported.
+
+Model findings are then **confirmed on the code** where possible: counterexamples are replayed on
+real TypeScript and Python instances (stale writes by interleaving the calls, timer leaks by
+counting timers), and unreachable C states are model checked on the code with a generated harness.
 
 In the editor, choose **File → Import code base…** and pick a folder on your computer (the sources
 are uploaded to the ProvenFlow server) or type a folder path. The path option is for when the
@@ -366,8 +378,9 @@ Findings can come with a **code change**. It is either an LLM's patch, or a quic
 
 **Model after the change** shows the model re-extracted from the changed code next to the current
 one. The
-change is applied in memory and every check is re-run, so "✓ verified" means the finding is gone
-and nothing new appears. **Review change** shows the original and the proposed code side by side,
+change is applied in memory and every check is re-run, then it is built or type checked on a copy
+of the project (tests too, if configured), so "✓ verified" means the finding is gone, nothing new
+appears and the code still builds. **Review change** shows the original and the proposed code side by side,
 with the differences highlighted. You can edit the proposed side, then **Apply** it to the file or
 download it. Applying works for folders opened with **Choose folder…** in Chrome/Edge (the browser
 writes the change) or analysed by path. **Apply all** applies every verified change in one go.
@@ -380,6 +393,17 @@ NUXMV_PATH=/path/to/nuXmv npx pflow extract path/to/project          # report in
 npx pflow extract . --fail-on warning                                # CI gate (exit 5), report.sarif for code scanning
 npx pflow extract . --fix                                            # + verified quick fixes (report.md, fixes/*/change.patch)
 npx pflow extract . --llm anthropic:claude-sonnet-5 --llm-fixes 5    # or openai:<model>, ollama:<model>
+npx pflow review . --base origin/main                                # only the findings on your changes
+```
+
+On pull requests, the GitHub Action posts the findings on the changed lines as a review, with each
+verified change as a one-click suggestion:
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }
+- uses: belkassaby/provenflow@main   # needs permissions: pull-requests: write
+  with: { fail-on: error, semgrep: 'true' }
 ```
 
 Each finding gives:
@@ -652,7 +676,8 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow prob <d.pflow> --reach EXPR [--within K] [--steps EXPR] [--visits EXPR --until EXPR]` | probabilistic analysis |
 | `pflow prism <d.pflow> [-o m.pm]` | PRISM / Storm model and properties |
 | `pflow nurv <d.pflow> [-o dir]` | NuRV full-LTL monitors (`NURV_PATH`) |
-| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--llm p:model] [--llm-fixes N]` | verified models of a code base, findings with fixes and verified code changes (exit 5 on findings) |
+| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--llm p:model] [--llm-fixes N] [--no-analyzers] [--no-confirm]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes (exit 5 on findings) |
+| `pflow review <dir> [--base ref] [--files] [--fix] [--github] [--fail-on …]` | the findings on the lines changed since `ref`; `--github` posts them as a pull-request review with verified suggestions |
 
 ## REST API
 
@@ -668,7 +693,7 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | POST   | `/api/apply` | `{ root, file, before, after }`: writes a reviewed change into a folder this server analysed by path (409 if the file changed since) |
 | POST   | `/api/apply-edits` | `{ root, changes: [{ id, edits }] }`: applies several changes in order, each on top of the previous ones; one that no longer matches is reported as a conflict |
 | GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
-| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm` and `llmFixes`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
+| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay): findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
 
 The response contains the raw `stdout`/`stderr` and the parsed `results` (property, verdict, trace),
 `errors` and `warnings`.
@@ -680,9 +705,13 @@ npm test            # language, extract, server and UI unit tests
 npm run check:code  # ProvenFlow model-checks its own code base (pflow extract . --fail-on warning)
 ```
 
-The extract tests run on two fixtures:
+The extract tests run on three fixtures:
 - `packages/extract/test/fixtures/shop`: a small TypeScript and Python project with one seeded bug
   of each kind.
+- `packages/extract/test/fixtures/security`: seeded injection, XSS, unsafe YAML, disabled TLS,
+  a null dereference in Java, and C functions with a null pointer, a division by zero, an overflow
+  and a leak, for the analysers. Their tests use a stand-in for CBMC, and run Semgrep and Infer for
+  real when they are installed (`SEMGREP_PATH`, `INFER_PATH`; CI installs them).
 - `packages/extract/test/fixtures/polyglot`: the same job lifecycle in each of the 13 tree-sitter
   languages, each with a state never set, a switch missing cases and a typical resource bug. With `NUXMV_PATH` set they also check the nuXmv
 counterexamples.

@@ -235,7 +235,20 @@ contract model for nuXmv to check.
 | Dispatch | a `switch` over a union (command kinds, strategy keys, message types) | every kind handled or an explicit default | `non-exhaustive-dispatch` |
 
 A pattern declared in the config but not found is an error (`pattern-expected`), and the report
-explains how to implement it.
+explains how to implement it. A comment just above a class declares it too:
+
+```ts
+// @pattern builder          (or: provenflow: pattern builder)
+export class QueryBuilder { ... }
+```
+
+Each pattern found is graded by how it was recognised (the *recognised* column of Patterns):
+
+| confidence | when | findings on it |
+| --- | --- | --- |
+| declared | in `patterns` of the config, or an `@pattern` comment | warnings and errors |
+| structural | types or language constructs say so: `providedIn`, a private constructor, `implements`, a subscribe/notify pair over one collection | warnings and errors |
+| heuristic | names and shapes only (builders, factories, commands, adapters, decorators) | notes, saying how to declare the pattern |
 
 ### Architecture
 
@@ -275,6 +288,60 @@ When the config declares a layer's style, these rules apply:
   - `deep-inheritance`;
   - `long-function` (note);
   - `many-parameters` (note).
+
+### Security, heap and memory safety: the analysers ProvenFlow drives
+
+ProvenFlow does not re-implement dataflow, heap or bounded model checking of code. It runs the
+established tools when they are installed (found on `PATH`, or with `SEMGREP_PATH`, `INFER_PATH`,
+`ESBMC_PATH`, `CBMC_PATH`, `CODEQL_PATH`), and their findings go into the same report, review,
+fix and CI loop. Without them, a note says what installing each would add.
+
+| analyser | install | languages | finds | rule prefix |
+| --- | --- | --- | --- | --- |
+| Semgrep, with the rules bundled in `packages/extract/rules/semgrep` | `pip install semgrep` | JS/TS, Python, Java, Go, C | taint from requests to `exec`, `eval`, SQL, file paths, `fetch`; XSS through `innerHTML`; unsafe YAML/pickle; disabled TLS checks; hard-coded secrets; `gets`, `strcpy`, format strings | `semgrep:` (category *security*) |
+| CodeQL (opt-in: `"analyzers": { "codeql": true }`) | the CodeQL CLI | the languages CodeQL supports | the standard security queries, with data-flow paths | `codeql:` |
+| Infer | a release from github.com/facebook/infer | C, C++, Objective-C, Java | null dereferences, leaks and other bugs *across calls* (Pulse), with the trace | `infer:` (category *heap*) |
+| ESBMC or CBMC | esbmc.org, or the CBMC `.deb`/Homebrew | C, C++ | every free function, for every input: invalid pointers, array bounds, leaks, signed overflow, division by zero; loops unwound 8 times | `esbmc:` / `cbmc:` (category *memory*) |
+| Kani | `cargo install --locked kani-verifier && cargo kani setup` | Rust | `cargo kani autoharness`: panics, overflows, memory safety of each function it can generate inputs for | `kani:` |
+| any tool with SARIF output | | | `"analyzers": { "sarif": ["reports/eslint.sarif"] }` imports it | `sarif:` |
+
+The model checkers of code also produce **proofs**: the *Tools & proofs* tab (and "Proofs about
+the code" in report.md) lists each function as *proved* (no failure up to the bound), *refuted*
+(a finding, with the failing trace as counterexample) or *unknown* (timeout, or code the tool
+could not parse). A proof is bounded: it covers loops up to the unwinding bound and says nothing
+about callers' preconditions, so `int first(int *v) { return v[0]; }` is refuted (a caller could
+pass `NULL`) even if no caller does.
+
+Semgrep's autofixes (`innerHTML` → `textContent`, `yaml.load` → `yaml.safe_load`, `verify=False`
+→ `verify=True`, `gets` → `fgets`) become proposed changes, verified like quick fixes.
+
+```json
+"analyzers": {
+  "semgrep": { "config": ["p/owasp-top-ten"] },
+  "infer": { "build": "mvn -q compile" },
+  "bmc": { "tool": "cbmc", "unwind": 12, "timeoutSec": 60, "maxFunctions": 100 },
+  "kani": false,
+  "codeql": true
+}
+```
+
+Each is on when its tool is installed (except CodeQL, which is slow); `false` turns it off, and
+`--no-analyzers` skips them all for one run.
+
+### Confirmed on the code
+
+A model finding is about the model. Where it can, ProvenFlow checks it on the real code, and the
+finding says **✓ confirmed on the code**, **✗ not reproduced** or nothing:
+
+| finding | how it is checked | languages |
+| --- | --- | --- |
+| a state-machine counterexample (`never-reaches`, `cannot-settle`, ...) | the calls of the counterexample are made on a real instance of the class (its dependencies replaced by permissive mocks), and the state read after each | TypeScript (run with tsx), Python (`unittest.mock`) |
+| `stale-write-after-await` | the async method is started, the other writer called while it awaits, then it is let finish: the write that was lost is named | TypeScript, Python |
+| `resource-leak` of a timer | the acquiring method is called twice and the running timers counted | TypeScript |
+| `unreachable-state` of a C state variable | ESBMC/CBMC run a generated harness calling the file's functions in any order, 6 calls deep, and assert the value is never reached: *proved* confirms the finding, a trace refutes it (the model missed a transition) | C |
+
+The replay runs the project's code, with timers and I/O mocked, in a child process with a
+timeout; turn it off with `--no-confirm`.
 
 ## How it works
 
@@ -376,9 +443,26 @@ sources:
 - **The LLM:** `--llm ... --llm-fixes N`, or "Also ask an LLM" in the editor; the keys stay on the
   server.
 
-Every change is applied in memory, and the whole analysis runs again on the changed files. It is
-marked **✓ verified** only if the finding is gone and no new warning or error appears. Nothing is
-written to your files until you apply a change.
+Every change is applied in memory, and the whole analysis runs again on the changed files (with
+the analysers, on those files). Then the change is applied to a temporary copy of the project
+(dependencies such as `node_modules` are linked, not copied), which is **built or type checked**:
+
+| project | check |
+| --- | --- |
+| TypeScript | `npm run typecheck` if the package has it, otherwise `tsc --noEmit` |
+| Python | `python3 -m py_compile` of the changed files |
+| Go, Rust | `go build ./...`, `cargo check` |
+| Java, Kotlin, Groovy | `mvn -q -o compile`, or `./gradlew compileJava` |
+| C#, C, C++ | `dotnet build`, `clang -fsyntax-only`, `clang++ -fsyntax-only` |
+
+Tests run too when asked: `"verification": { "test": "auto" }` (npm test, pytest, go test, cargo
+test, mvn test) or a command of your own; `"build"` replaces the detected build command (`""`
+turns it off). A check that already fails on the unchanged project is reported, not held against
+the change.
+
+A change is marked **✓ verified** only if the finding is gone, no new warning or error appears,
+and the checks pass. The review shows each check (✓ type check, ✗ Python compile, with its
+output). Nothing is written to your files until you apply a change.
 
 | finding | quick fix | behaviour |
 | --- | --- | --- |
@@ -475,6 +559,42 @@ itself:
 - uses: github/codeql-action/upload-sarif@v3
   if: always()
   with: { sarif_file: provenflow-report/report.sarif, category: provenflow }
+```
+
+## Pull-request review
+
+`pflow review` reviews a change rather than the whole project: it runs the analysis, then keeps
+the findings on the lines changed since `--base` (`git diff`, plus files git does not know yet).
+Reporting at the diff is what gets findings fixed.
+
+```sh
+pflow review . --base origin/main            # the findings on your changes, exit 5 on errors
+pflow review . --base origin/main --files    # in the changed files, not only the changed lines
+pflow review . --fix --github                # in GitHub Actions: post a pull-request review
+```
+
+With `--github` (in a `pull_request` run, with `GITHUB_TOKEN`) the findings become a review:
+- one comment per finding on its line: the message, the fix, the counterexample, and whether it
+  was confirmed on the code;
+- a verified single-file change becomes a GitHub **suggestion**, applied with one click;
+- a summary with the counts, the tools that ran and the proofs.
+
+The repository ships a GitHub Action for it:
+
+```yaml
+on: pull_request
+permissions: { contents: read, pull-requests: write }
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: belkassaby/provenflow@main
+        with:
+          fail-on: error        # or warning, none
+          semgrep: 'true'       # installs Semgrep
+          cbmc: 'true'          # installs CBMC (C/C++ projects)
 ```
 
 ## ProvenFlow checked by ProvenFlow

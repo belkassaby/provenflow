@@ -1,0 +1,147 @@
+# ProvenFlow's bundled security rules for JavaScript/TypeScript (Semgrep, taint mode where it matters).
+# They run offline and give the same results every time; add registry packs (e.g. p/default) in provenflow.config.json.
+rules:
+  - id: js-command-injection
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Data from the request reaches a shell command. An attacker can run any command on the server.
+    metadata: { cwe: 'CWE-78: OS Command Injection', fix: 'Pass the arguments as an array to execFile/spawn (no shell), and validate them against an allow-list.' }
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: $REQ.query
+              - pattern: $REQ.body
+              - pattern: $REQ.params
+              - pattern: $REQ.headers
+              - pattern: process.argv
+    pattern-sinks:
+      - pattern-either:
+          - pattern: require('child_process').exec($X, ...)
+          - pattern: child_process.exec($X, ...)
+          - pattern: exec($X, ...)
+          - pattern: execSync($X, ...)
+          - pattern: 'spawn($X, $ARGS, {..., shell: true, ...})'
+  - id: js-code-injection
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Data from the request is evaluated as code.
+    metadata: { cwe: 'CWE-95: Eval Injection', fix: 'Never evaluate input: parse it (JSON.parse) or map it to a fixed set of functions.' }
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.query
+          - pattern: $REQ.body
+          - pattern: $REQ.params
+    pattern-sinks:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function(..., $X)
+          - pattern: vm.runInNewContext($X, ...)
+          - pattern: vm.runInThisContext($X, ...)
+  - id: js-sql-injection
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Data from the request is concatenated into an SQL query.
+    metadata: { cwe: 'CWE-89: SQL Injection', fix: 'Use a parameterised query (placeholders such as ? or $1) and pass the values separately.' }
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.query
+          - pattern: $REQ.body
+          - pattern: $REQ.params
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $DB.query($Q, ...)
+              - pattern: $DB.execute($Q, ...)
+              - pattern: $DB.raw($Q, ...)
+          - focus-metavariable: $Q
+  - id: js-path-traversal
+    mode: taint
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: A file path built from the request can escape the intended folder (../).
+    metadata: { cwe: 'CWE-22: Path Traversal', fix: 'Resolve the path and check it stays inside the base folder (path.relative must not start with ..).' }
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.query
+          - pattern: $REQ.body
+          - pattern: $REQ.params
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: fs.readFile($P, ...)
+              - pattern: fs.readFileSync($P, ...)
+              - pattern: fs.writeFile($P, ...)
+              - pattern: fs.writeFileSync($P, ...)
+              - pattern: readFile($P, ...)
+              - pattern: writeFile($P, ...)
+              - pattern: $RES.sendFile($P, ...)
+          - focus-metavariable: $P
+    pattern-sanitizers:
+      - pattern: path.basename(...)
+      - pattern: basename(...)
+      # A path compared with its base folder (relative(base, p) checked for ..) is contained.
+      - by-side-effect: true
+        patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  $REL = relative($BASE, $P);
+                  ...
+              - pattern-inside: |
+                  $REL = path.relative($BASE, $P);
+                  ...
+          - pattern: $P
+  - id: js-ssrf
+    mode: taint
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: A URL from the request is fetched by the server (server-side request forgery).
+    metadata: { cwe: 'CWE-918: Server-Side Request Forgery', fix: 'Only fetch URLs whose host is on an allow-list.' }
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.query
+          - pattern: $REQ.body
+          - pattern: $REQ.params
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: fetch($U, ...)
+              - pattern: axios.get($U, ...)
+              - pattern: http.get($U, ...)
+              - pattern: https.get($U, ...)
+          - focus-metavariable: $U
+  - id: js-xss-inner-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: A value that is not a constant is assigned to innerHTML, which runs any markup or script it contains.
+    metadata: { cwe: 'CWE-79: Cross-site Scripting', fix: 'Assign to textContent, or build the elements with createElement.' }
+    patterns:
+      - pattern: $EL.innerHTML = $V
+      - pattern-not: $EL.innerHTML = "..."
+      - pattern-not: $EL.innerHTML = `...`
+    fix: $EL.textContent = $V
+  - id: js-hardcoded-secret
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: A secret (API key, password or token) is written in the source.
+    metadata: { cwe: 'CWE-798: Hard-coded Credentials', fix: 'Read it from the environment or a secret store, and rotate the leaked value.' }
+    patterns:
+      - pattern-either:
+          - pattern: 'const $K = "$V"'
+          - pattern: 'let $K = "$V"'
+          - pattern: '$O.$K = "$V"'
+          - pattern: '{..., $K: "$V", ...}'
+      - metavariable-regex:
+          metavariable: $K
+          regex: (?i).*(password|passwd|secret|api_?key|token|private_?key).*
+      - metavariable-regex:
+          metavariable: $V
+          regex: ^[A-Za-z0-9_\-/+=.]{12,}$
+  - id: js-insecure-tls
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: TLS certificate checks are turned off, so any server can impersonate the real one.
+    metadata: { cwe: 'CWE-295: Improper Certificate Validation', fix: 'Remove rejectUnauthorized: false; trust a specific CA instead if needed.' }
+    pattern: '{..., rejectUnauthorized: false, ...}'

@@ -11,7 +11,9 @@
  *
  * Patterns declared in provenflow.config.json must be found and must pass.
  */
-import type { PatternName, ProvenflowConfig } from './config.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { PATTERNS, type PatternExpectation, type PatternName, type ProvenflowConfig } from './config.js';
 import { formatLocation, type ClassFact, type Facts, type Location, type MethodFact } from './ir.js';
 import { ModelBuilder, slug, type ExtractedModel, type Finding } from './models.js';
 
@@ -23,7 +25,15 @@ export interface PatternInstance {
     evidence: string;
     /** Model checking the behaviour of the pattern, when it has one. */
     model?: string;
+    /**
+     * How sure the recognition is: declared (provenflow.config.json or an `@pattern` comment),
+     * structural (the language or the types say so: implements, providedIn, private constructor),
+     * heuristic (names and shapes only). Findings on heuristic instances are notes, not warnings.
+     */
+    confidence?: PatternConfidence;
 }
+
+export type PatternConfidence = 'declared' | 'structural' | 'heuristic';
 
 export interface PatternResult {
     instances: PatternInstance[];
@@ -54,8 +64,56 @@ export function analysePatterns(facts: Facts, config: ProvenflowConfig): Pattern
     commands(facts, families, byName, result);
     factories(facts, classes, byName, result);
     exhaustiveDispatch(facts, result);
-    void config;
+    const declared = [...(config.patterns ?? []), ...declaredInCode(facts)];
+    for (const i of result.instances) {
+        i.confidence ??= declared.some(d => d.pattern === i.pattern && (i.subject === d.subject || i.subject.startsWith(`${d.subject}.`))) ? 'declared' : STRUCTURAL.has(i.pattern) ? 'structural' : 'heuristic';
+    }
     return result;
+}
+
+/** Patterns whose recognition rests on types or language constructs; the others rest on names and shapes. */
+const STRUCTURAL = new Set<PatternName>(['singleton', 'observer', 'strategy', 'state']);
+
+/**
+ * Patterns declared in the code: a comment `@pattern <name>` or `provenflow: pattern <name>`
+ * just before a class (or on its line) says the class implements it.
+ */
+export function declaredInCode(facts: Facts): PatternExpectation[] {
+    const found: PatternExpectation[] = [];
+    const byFile = new Map<string, ClassFact[]>();
+    for (const c of facts.classes) byFile.set(c.loc.file, [...(byFile.get(c.loc.file) ?? []), c]);
+    for (const [file, classes] of byFile) {
+        let text: string;
+        try {
+            text = readFileSync(join(facts.root, file), 'utf8');
+        } catch {
+            continue;
+        }
+        if (!/pattern/.test(text)) continue;
+        const lines = text.split('\n');
+        lines.forEach((line, index) => {
+            const m = /(?:@pattern|provenflow:\s*pattern)\s+([a-z-]+)/i.exec(line);
+            const pattern = m?.[1].toLowerCase() as PatternName | undefined;
+            if (!pattern || !(PATTERNS as readonly string[]).includes(pattern)) return;
+            const next = classes.filter(c => c.loc.line >= index + 1 && c.loc.line <= index + 12).sort((a, b) => a.loc.line - b.loc.line)[0];
+            if (next) found.push({ subject: next.name, pattern });
+        });
+    }
+    return found;
+}
+
+/** Findings on patterns recognised only by heuristics become notes: the code may not mean to be that pattern. */
+export function gradePatternFindings(findings: Finding[], instances: PatternInstance[]): Finding[] {
+    return findings.map(f => {
+        if (f.category !== 'pattern' || f.rule === 'pattern-expected' || f.severity === 'info') return f;
+        const instance = instances.find(i => (f.model && i.model === f.model) || i.subject === f.subject || f.subject.startsWith(`${i.subject}.`));
+        if (instance?.confidence !== 'heuristic') return f;
+        return {
+            ...f,
+            severity: 'info',
+            message: `${f.message} (Recognised as a ${instance.pattern} from names and shapes only; add \`@pattern ${instance.pattern}\` above ${instance.subject} or list it under "patterns" in provenflow.config.json to make this a warning.)`
+        };
+    });
 }
 
 // ------------------------------------------------------------------ singleton
@@ -389,9 +447,9 @@ function exhaustiveDispatch(facts: Facts, result: PatternResult): void {
 // ------------------------------------------------------------ expectations
 
 /** Patterns declared in provenflow.config.json that the code does not implement. */
-export function checkExpectations(config: ProvenflowConfig, instances: PatternInstance[]): Finding[] {
+export function checkExpectations(config: ProvenflowConfig, instances: PatternInstance[], inCode: PatternExpectation[] = []): Finding[] {
     const findings: Finding[] = [];
-    for (const expected of config.patterns ?? []) {
+    for (const expected of [...(config.patterns ?? []), ...inCode]) {
         const found = instances.find(i => i.pattern === expected.pattern && (i.subject === expected.subject || i.subject.startsWith(`${expected.subject}.`)));
         if (!found) {
             findings.push({
@@ -399,7 +457,7 @@ export function checkExpectations(config: ProvenflowConfig, instances: PatternIn
                 category: 'pattern',
                 severity: 'error',
                 subject: expected.subject,
-                message: `provenflow.config.json declares ${expected.subject} as a ${expected.pattern}, but the code does not implement it as one.`,
+                message: `${inCode.includes(expected) ? 'An @pattern comment' : 'provenflow.config.json'} declares ${expected.subject} as a ${expected.pattern}, but the code does not implement it as one.`,
                 fix: patternRecipe(expected.pattern, expected.subject),
                 source: 'analysis'
             });

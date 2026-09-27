@@ -2,7 +2,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { analyse, checkConformance, exportPrism, exportToFramework, importGraph, serializeDiagram, type ProbabilisticQuery, FRAMEWORKS, generateNotebook, generatePython, generatePythonTests, generateSmv, matchResults, parseDiagram, parseTrace, type Framework } from '@provenflow/language';
-import { extractProject, formatFindings, providerFromSpec, summary, writeOutputs } from '@provenflow/extract';
+import { changedLines, extractProject, formatFindings, githubTargetFromEnv, onChanged, postGithubReview, providerFromSpec, reviewComments, reviewSummary, summary, writeOutputs } from '@provenflow/extract';
+import { readFileSync } from 'node:fs';
 import { configFromEnv, ENGINES, nuxmvInfo, runNuxmv, type Engine } from './nuxmv-runner.js';
 import { nurvExecutable, runNurv } from './nurv-runner.js';
 import { spawnSync } from 'node:child_process';
@@ -33,12 +34,20 @@ const USAGE = `Usage:
                                                  check a recorded run against the model (exit 4 if it deviates)
   pflow extract <project-dir> [-o dir] [--config file] [--fail-on error|warning|none]
                 [--fix] [--llm anthropic:<model>|openai:<model>|ollama:<model>] [--llm-fixes N]
+                [--no-analyzers] [--no-confirm]
                                                  extract verified models of a code base (state machines,
                                                  resource lifecycles, design patterns, architecture) and
                                                  report bugs with fixes (exit 5 on findings at --fail-on);
                                                  --fix proposes verified code changes (report.md, fixes/).
+                                                 Runs the installed Semgrep, Infer, ESBMC/CBMC, Kani
+                                                 (--no-analyzers skips them) and replays counterexamples
+                                                 on the code (--no-confirm skips it).
                                                  TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++,
-                                                 C#, Go, Rust, Swift, Ruby, PHP, R`;
+                                                 C#, Go, Rust, Swift, Ruby, PHP, R
+  pflow review <project-dir> [--base <git-ref>] [--files] [--fix] [--github] [--fail-on error|warning|none]
+                                                 review a change: the findings on the lines changed since
+                                                 --base (all when omitted); --github posts them as a pull
+                                                 request review with verified fixes as suggestions`;
 
 async function main(): Promise<number> {
     const { positionals, values } = parseArgs({
@@ -59,7 +68,12 @@ async function main(): Promise<number> {
             llm: { type: 'string' },
             'llm-fixes': { type: 'string', default: '0' },
             fix: { type: 'boolean', default: false },
-            quiet: { type: 'boolean', short: 'q', default: false }
+            quiet: { type: 'boolean', short: 'q', default: false },
+            base: { type: 'string' },
+            files: { type: 'boolean', default: false },
+            github: { type: 'boolean', default: false },
+            'no-analyzers': { type: 'boolean', default: false },
+            'no-confirm': { type: 'boolean', default: false }
         }
     });
     const [command, ...rest] = positionals;
@@ -81,7 +95,9 @@ async function main(): Promise<number> {
             checker,
             llm: values.llm ? providerFromSpec(values.llm) : undefined,
             llmFixes: Number(values['llm-fixes']),
-            quickFixes: values.fix ? 50 : 0
+            quickFixes: values.fix ? 50 : 0,
+            analyzers: !values['no-analyzers'],
+            confirm: !values['no-confirm']
         });
         const out = values.output ?? join(file, '.provenflow', 'extract');
         const written = writeOutputs(result, out);
@@ -94,6 +110,52 @@ async function main(): Promise<number> {
         );
         const failOn = values['fail-on'];
         const failing = failOn === 'none' ? 0 : failOn === 'warning' ? counts.error + counts.warning : counts.error;
+        return failing > 0 ? 5 : 0;
+    }
+
+    if (command === 'review') {
+        const nuxmv = configFromEnv();
+        const available = (await nuxmvInfo(nuxmv)).available;
+        const result = await extractProject(file, {
+            configFile: values.config,
+            checker: available ? (smv: string) => runNuxmv(smv, { engine: values.engine as Engine, bound: Number(values.bound) }, nuxmv) : undefined,
+            quickFixes: values.fix ? 50 : 0,
+            llm: values.llm ? providerFromSpec(values.llm) : undefined,
+            llmFixes: Number(values['llm-fixes']),
+            analyzers: !values['no-analyzers'],
+            confirm: !values['no-confirm']
+        });
+        const base = values.base ?? githubBase();
+        const changed = base ? changedLines(file, base) : undefined;
+        const relevant = changed ? onChanged(result.findings, changed, values.files ? 'files' : 'lines') : result.findings;
+        const read = (f: string) => {
+            try {
+                return readFileSync(join(file, f), 'utf8');
+            } catch {
+                return undefined;
+            }
+        };
+        const comments = changed ? reviewComments(relevant, changed, read) : [];
+        const body = reviewSummary(result, relevant, comments.length, base);
+        console.log(body);
+        if (!values.quiet) console.log(formatFindings({ ...result, findings: relevant }, 'warning'));
+        if (values.github) {
+            const target = githubTargetFromEnv();
+            if (!target) {
+                console.error('--github: not in a GitHub Actions pull_request run (GITHUB_TOKEN, GITHUB_REPOSITORY and GITHUB_EVENT_PATH are needed).');
+                return 1;
+            }
+            try {
+                const posted = await postGithubReview(target, body, comments);
+                console.log(`Posted a review with ${posted.posted} inline comment(s)${posted.url ? `: ${posted.url}` : ''}.`);
+            } catch (error) {
+                // e.g. a pull request from a fork, whose token cannot write reviews: the log still has the findings.
+                console.error(`warning: ${(error as Error).message}`);
+            }
+        }
+        const count = (s: string) => relevant.filter(f => f.severity === s).length;
+        const failOn = values['fail-on'];
+        const failing = failOn === 'none' ? 0 : failOn === 'warning' ? count('error') + count('warning') : count('error');
         return failing > 0 ? 5 : 0;
     }
 
@@ -231,6 +293,17 @@ async function main(): Promise<number> {
     }
     console.error(USAGE);
     return 2;
+}
+
+/** The base of the pull request in a GitHub Actions run. */
+function githubBase(): string | undefined {
+    try {
+        const path = process.env['GITHUB_EVENT_PATH'];
+        const event = path ? (JSON.parse(readFileSync(path, 'utf8')) as { pull_request?: { base?: { sha?: string } } }) : undefined;
+        return event?.pull_request?.base?.sha;
+    } catch {
+        return undefined;
+    }
 }
 
 main().then(
