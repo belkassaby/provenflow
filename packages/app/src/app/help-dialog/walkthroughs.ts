@@ -201,6 +201,23 @@ export const WALKTHROUGHS: Walkthrough[] = [
         ]
     },
     {
+        id: 'analyzers',
+        keywords: 'install analyser analyzer semgrep infer esbmc cbmc kani codeql security dataflow taint injection xss heap null leak memory safety overflow proof brew pip homebrew path SEMGREP_PATH INFER_PATH CBMC_PATH ESBMC_PATH',
+        title: 'Install the code analysers (Semgrep, Infer, ESBMC/CBMC, Kani)',
+        goal: 'Add security, heap and memory-safety checks to the Code base review, by installing the tools ProvenFlow drives.',
+        steps: [
+            { text: 'They are optional: without them the review still extracts and checks its models, and Tools & proofs lists what each missing tool would add. Install the ones that fit your languages and what you want checked.' },
+            { text: 'Semgrep: security and dataflow problems (command, code and SQL injection, path traversal, SSRF, XSS, unsafe YAML/pickle, disabled TLS checks, hard-coded secrets, gets/strcpy) in JS/TS, Python, Java, Go and C. Some come with a fix, verified like the quick fixes. Takes seconds.', code: 'brew install semgrep              # macOS\npython3 -m pip install --user semgrep   # Linux, Windows' },
+            { text: 'ESBMC or CBMC (one is enough): proves, for every input, that each C/C++ function has no invalid pointer, out-of-bounds access, leak, signed overflow or division by zero (loops unwound up to a bound), or shows the input that breaks it. Also confirms ProvenFlow\'s state-machine findings on C code.', code: 'brew install cbmc esbmc           # macOS\n# Ubuntu: the cbmc .deb from github.com/diffblue/cbmc/releases\nsudo apt-get install ./ubuntu-24.04-cbmc-6.11.0-Linux.deb\n# Windows: cbmc-*-win64.msi or esbmc-windows.zip from their releases' },
+            { text: 'Infer: bugs that go through several functions, null dereferences and memory or resource leaks, in C, C++, Objective-C and Java. No Homebrew formula: unpack the release (Linux x86-64 or Apple silicon; on Windows use WSL) and point INFER_PATH at it.', code: 'curl -fsSL https://github.com/facebook/infer/releases/download/v1.3.0/infer-osx-arm64-v1.3.0.tar.xz | tar -xJ -C ~/.local\nexport INFER_PATH=~/.local/infer-osx-arm64-v1.3.0/bin/infer\n# Linux: infer-linux-x86_64-v1.3.0.tar.xz' },
+            { text: 'Kani: the same proofs as ESBMC/CBMC for Rust (panics, overflows, memory safety). Needs Rust (rustup).', code: 'cargo install --locked kani-verifier && cargo kani setup' },
+            { text: 'CodeQL (optional, slow): GitHub\'s security queries with data flow across files. Its CLI is free for open-source code and research. Turn it on in provenflow.config.json.', code: 'brew install --cask codeql\n# provenflow.config.json\n"analyzers": { "codeql": true }' },
+            { text: 'ProvenFlow looks for each tool on the PATH of the ProvenFlow server, or at SEMGREP_PATH, INFER_PATH, ESBMC_PATH, CBMC_PATH, CODEQL_PATH, KANI_PATH. Set them where you start the server, then restart it.', code: 'SEMGREP_PATH=$(which semgrep) CBMC_PATH=$(which cbmc) npm start' },
+            { text: 'Run the analysis again (with "Run the installed analysers" ticked). Tools & proofs shows each tool that ran with its version, the proofs about the code, and what is still not installed. Their findings appear under Security and dataflow, Memory safety and arithmetic, and Heap.' },
+            { text: 'Tune them in provenflow.config.json: extra Semgrep rules, a build command for Infer, the loop bound and time limit of ESBMC/CBMC, or false to turn one off.', code: '"analyzers": {\n  "semgrep": { "config": ["p/owasp-top-ten"] },\n  "infer": { "build": "mvn -q compile" },\n  "bmc": { "tool": "cbmc", "unwind": 12, "timeoutSec": 60 },\n  "kani": false\n}' }
+        ]
+    },
+    {
         id: 'nurv',
         keywords: 'ltl monitor runtime verification fbk',
         title: 'Full-LTL runtime monitors with NuRV',

@@ -32,7 +32,7 @@ export async function semgrep(ctx: AnalyzerContext): Promise<AnalyzerOutput> {
     if (!on) return out;
     const exe = findTool('semgrep', ctx.env);
     if (!exe) {
-        out.notes.push('Semgrep is not installed (pip install semgrep, or set SEMGREP_PATH): security and dataflow rules were not run.');
+        out.notes.push('Semgrep is not installed (brew install semgrep or pip install semgrep, or set SEMGREP_PATH): security and dataflow rules were not run.');
         return out;
     }
     const configs = [...(options.bundled === false ? [] : [BUNDLED_RULES]), ...(options.config ?? [])];

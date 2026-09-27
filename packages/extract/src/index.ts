@@ -265,9 +265,9 @@ function missingAnalyzers(config: ProvenflowConfig, files: string[]): string[] {
     const a = config.analyzers ?? {};
     const has = (re: RegExp) => files.some(f => re.test(f));
     const missing: string[] = [];
-    if (a.semgrep !== false) missing.push('Semgrep is not installed (pip install semgrep, or set SEMGREP_PATH): security and dataflow rules were not run.');
-    if (a.infer !== false && has(/\.(c|cc|cpp|cxx|m|mm|java)$/)) missing.push('Infer is not installed (set INFER_PATH): no interprocedural heap analysis (null dereferences, leaks).');
-    if (a.bmc !== false && has(/\.(c|cc|cpp|cxx)$/)) missing.push('Neither ESBMC nor CBMC is installed (set ESBMC_PATH or CBMC_PATH): memory safety and overflows of the C/C++ code were not model checked.');
+    if (a.semgrep !== false) missing.push('Semgrep is not installed (brew install semgrep or pip install semgrep, or set SEMGREP_PATH): security and dataflow rules were not run.');
+    if (a.infer !== false && has(/\.(c|cc|cpp|cxx|m|mm|java)$/)) missing.push('Infer is not installed (github.com/facebook/infer releases, or set INFER_PATH): no interprocedural heap analysis (null dereferences, leaks).');
+    if (a.bmc !== false && has(/\.(c|cc|cpp|cxx)$/)) missing.push('Neither ESBMC nor CBMC is installed (brew install cbmc esbmc, the CBMC .deb on Ubuntu, or set ESBMC_PATH or CBMC_PATH): memory safety and overflows of the C/C++ code were not model checked.');
     if (a.kani !== false && has(/\.rs$/)) missing.push('Kani is not installed (cargo install --locked kani-verifier; cargo kani setup): the Rust code was not model checked.');
     return missing;
 }

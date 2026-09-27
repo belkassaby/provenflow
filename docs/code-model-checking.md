@@ -328,6 +328,76 @@ Semgrep's autofixes (`innerHTML` → `textContent`, `yaml.load` → `yaml.safe_l
 Each is on when its tool is installed (except CodeQL, which is slow); `false` turns it off, and
 `--no-analyzers` skips them all for one run.
 
+### Installing the analysers
+
+None of them is needed: without them ProvenFlow still extracts and checks its models, and the
+*Tools & proofs* tab lists what each missing tool would add. Install the ones that match your
+languages and what you want checked:
+
+| install it if you want | tool | languages |
+| --- | --- | --- |
+| security and dataflow problems: injection (command, code, SQL), path traversal, SSRF, XSS, unsafe deserialisation, disabled TLS checks, hard-coded secrets, unsafe C string functions, with verified fixes for some | **Semgrep** | JS/TS, Python, Java, Go, C (the bundled rules); many more with registry rules |
+| bugs that go through several functions: null dereferences, memory and resource leaks | **Infer** | C, C++, Objective-C, Java |
+| proofs that C/C++ functions are memory safe for every input: no invalid pointer, out-of-bounds access, leak, signed overflow or division by zero (up to a loop bound); also confirms ProvenFlow's state-machine findings on C code | **ESBMC** or **CBMC** (one is enough; ESBMC is tried first) | C, C++ |
+| the same for Rust: panics, overflows, memory safety | **Kani** | Rust |
+| GitHub's security queries, with deeper data flow across files (slow, so opt-in; its CLI is free for open-source code and research) | **CodeQL** | most languages |
+
+**macOS** (Homebrew):
+
+```sh
+brew install semgrep cbmc esbmc          # Semgrep, CBMC and ESBMC
+brew install --cask codeql               # optional, then "analyzers": { "codeql": true }
+
+# Infer: no Homebrew formula; Apple silicon only (on Intel Macs, use Docker or build it)
+curl -fsSL https://github.com/facebook/infer/releases/download/v1.3.0/infer-osx-arm64-v1.3.0.tar.xz | tar -xJ -C ~/.local
+export INFER_PATH=~/.local/infer-osx-arm64-v1.3.0/bin/infer    # or add its bin/ to PATH
+```
+
+**Linux** (Ubuntu/Debian, x86-64):
+
+```sh
+python3 -m pip install --user semgrep    # or: pipx install semgrep
+
+# CBMC: the .deb of your Ubuntu release (22.04, 24.04, 24.04-arm64) from github.com/diffblue/cbmc/releases
+curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
+sudo apt-get install ./ubuntu-24.04-cbmc-6.11.0-Linux.deb
+
+# ESBMC (instead of, or besides, CBMC): unzip esbmc-linux.zip from github.com/esbmc/esbmc/releases
+# and set ESBMC_PATH to its bin/esbmc
+
+curl -fsSL https://github.com/facebook/infer/releases/download/v1.3.0/infer-linux-x86_64-v1.3.0.tar.xz | sudo tar -xJ -C /opt
+export INFER_PATH=/opt/infer-linux-x86_64-v1.3.0/bin/infer
+```
+
+**Windows:** `pip install semgrep`; CBMC has an installer (`cbmc-*-win64.msi`) and ESBMC a zip
+(`esbmc-windows.zip`) on their release pages. Infer has no Windows build: run it in WSL with the
+Linux instructions.
+
+**Rust (Kani)**, any system with Rust (`rustup`):
+
+```sh
+cargo install --locked kani-verifier && cargo kani setup
+```
+
+**How ProvenFlow finds them.** On the `PATH` of the ProvenFlow server (or of `pflow`), or at the
+path in `SEMGREP_PATH`, `INFER_PATH`, `ESBMC_PATH`, `CBMC_PATH`, `CODEQL_PATH` or `KANI_PATH`.
+Set these where the server starts, for example:
+
+```sh
+SEMGREP_PATH=$(which semgrep) CBMC_PATH=$(which cbmc) npm start
+```
+
+Then run the analysis again: **Tools & proofs** lists each tool that ran, with its version, and
+the proofs; the tools still missing are listed under *Not installed*. In CI, the ProvenFlow GitHub
+Action installs Semgrep (and CBMC with `cbmc: 'true'`); see `.github/workflows/ci.yml` for Infer.
+
+**What each costs.** Semgrep takes seconds. Infer compiles the C/Java files it analyses (with
+`clang` or `javac`; set `"infer": { "build": "mvn -q compile" }` when the files need the project's
+build), so allow a minute on large projects. ESBMC/CBMC check each C/C++ function separately (up
+to 60 by default, 30 s each at most, four at a time); raise `unwind` for deeper loops, lower
+`maxFunctions` to go faster. CodeQL builds a database of the project first: minutes, which is
+why it is off by default.
+
 ### Confirmed on the code
 
 A model finding is about the model. Where it can, ProvenFlow checks it on the real code, and the

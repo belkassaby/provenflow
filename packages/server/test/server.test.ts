@@ -431,6 +431,18 @@ describe('LLM settings (Help → LLM settings)', () => {
         expect((await (await call('PUT', '/api/llm-settings', { anthropic: { workspaceId: '' } })).json()).anthropic.workspaceId).toBeUndefined();
     });
 
+    it('takes a key out of pasted text, and refuses text that holds no key', async () => {
+        const { apiKey } = await import('../src/llm-settings.js');
+        expect(apiKey('anthropic', '"sk-ant-api03-abcdefghijklmnopqrstuvwx"')).toBe('sk-ant-api03-abcdefghijklmnopqrstuvwx');
+        expect(apiKey('anthropic', '{ "ANTHROPIC_API_KEY": "sk-ant-api03-abcdefghijklmnopqrstuvwx" }')).toBe('sk-ant-api03-abcdefghijklmnopqrstuvwx');
+        expect(() => apiKey('anthropic', 'anthropic: {"model": "claude-sonnet-5", "key": "cX"}')).toThrow(/starts with sk-ant-/);
+        expect(apiKey('openai', 'local-server-key')).toBe('local-server-key');
+        expect(() => apiKey('openai', '{"a": 1}')).toThrow(/Paste the key alone/);
+        const res = await call('PUT', '/api/llm-settings', { anthropic: { apiKey: '{"type":"error"}' } });
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toMatch(/Claude Console/);
+    });
+
     it('rejects bad input and forgets the file when not remembered', async () => {
         expect((await call('PUT', '/api/llm-settings', { openai: { baseUrl: 'not a url' } })).status).toBe(400);
         await call('PUT', '/api/llm-settings', { remember: false });

@@ -353,6 +353,17 @@ other languages use [tree-sitter](https://tree-sitter.github.io) grammars compil
   [Kani](https://model-checking.github.io/kani/) (Rust) and, opt-in, CodeQL. Any SARIF report can be
   imported.
 
+The analysers are optional. Install the ones that fit your languages; on macOS:
+
+```sh
+brew install semgrep cbmc esbmc     # security and dataflow rules; memory safety of C/C++
+```
+
+Infer (C/C++/Java heap bugs) and Kani (Rust) are installed from their releases. Linux and Windows
+commands, what each tool is for, and how ProvenFlow finds them (`PATH`, or `SEMGREP_PATH`,
+`INFER_PATH`, `CBMC_PATH`, `ESBMC_PATH`...) are in
+[Installing the analysers](docs/code-model-checking.md#installing-the-analysers).
+
 Model findings are then **confirmed on the code** where possible: counterexamples are replayed on
 real TypeScript and Python instances (stale writes by interleaving the calls, timer leaks by
 counting timers), and unreachable C states are model checked on the code with a generated harness.

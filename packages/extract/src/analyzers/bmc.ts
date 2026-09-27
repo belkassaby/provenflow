@@ -34,7 +34,7 @@ export async function bmc(ctx: AnalyzerContext): Promise<AnalyzerOutput> {
     if (sources.length === 0) return out;
     const checker = bmcChecker(ctx);
     if (!checker) {
-        out.notes.push('Neither ESBMC nor CBMC is installed (set ESBMC_PATH or CBMC_PATH): memory safety and overflows of the C/C++ code were not model checked.');
+        out.notes.push('Neither ESBMC nor CBMC is installed (brew install cbmc esbmc, the CBMC .deb on Ubuntu, or set ESBMC_PATH or CBMC_PATH): memory safety and overflows of the C/C++ code were not model checked.');
         return out;
     }
     const unwind = options.unwind ?? 8;

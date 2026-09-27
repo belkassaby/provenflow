@@ -303,6 +303,12 @@ export class CodeImportDialog {
         this.llmSettings.emit();
     }
 
+    /** Help → how to install Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL. */
+    installHelp(): void {
+        this.close();
+        this.help.walkthrough('analyzers');
+    }
+
     walkthrough(): void {
         this.close();
         this.help.walkthrough('code');

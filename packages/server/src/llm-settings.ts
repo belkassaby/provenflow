@@ -118,7 +118,7 @@ export class LlmSettingsStore {
         };
         for (const kind of ['anthropic', 'openai'] as const) {
             const i = input[kind] ?? {};
-            const key = text(i.apiKey, 1000);
+            const key = apiKey(kind, text(i.apiKey, 1000));
             if (i.clearKey) delete s[kind].apiKey;
             else if (key) s[kind].apiKey = key;
             s[kind].model = model(i.model, s[kind].model);
@@ -161,6 +161,26 @@ export interface UpdateInput {
     ollama?: { host?: unknown; model?: unknown };
     preferred?: unknown;
     remember?: unknown;
+}
+
+/**
+ * The key as the provider expects it: surrounding quotes are dropped, and a key pasted inside
+ * other text (a JSON snippet, `ANTHROPIC_API_KEY=...`) is taken out of it. Anything else that is
+ * not a key is refused here, rather than by the provider with an HTTP 401.
+ */
+export function apiKey(kind: 'anthropic' | 'openai', value: string | undefined): string | undefined {
+    if (!value) return value;
+    const bare = value.replace(/^["'`]+|["'`]+$/g, '');
+    if (kind === 'anthropic') {
+        if (/^sk-ant-[\w-]+$/.test(bare)) return bare;
+        const inside = value.match(/sk-ant-[\w-]{20,}/g);
+        if (inside?.length === 1) return inside[0];
+        throw new Error('That is not an Anthropic API key: a key starts with sk-ant- and has no spaces, quotes or braces. Copy it from the Claude Console (Settings → API keys).');
+    }
+    if (/^[^\s"'{}]+$/.test(bare)) return bare;
+    const inside = value.match(/sk-[\w-]{20,}/g);
+    if (inside?.length === 1) return inside[0];
+    throw new Error('That does not look like an API key: it has spaces, quotes or braces. Paste the key alone.');
 }
 
 function mask(key: string): string {

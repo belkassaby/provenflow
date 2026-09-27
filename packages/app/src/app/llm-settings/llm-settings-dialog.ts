@@ -39,7 +39,7 @@ export class LlmSettingsDialog {
         this.keys.update(k => ({ ...k, [kind]: value }));
     }
 
-    async save(form: HTMLFormElement): Promise<void> {
+    async save(form: HTMLFormElement): Promise<boolean> {
         const value = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null)?.value ?? '';
         const checked = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | null)?.checked ?? false;
         const ok = await this.llm.save({
@@ -53,6 +53,7 @@ export class LlmSettingsDialog {
             this.keys.set({ anthropic: '', openai: '' });
             this.saved.set(true);
         }
+        return ok;
     }
 
     async clearKey(kind: 'anthropic' | 'openai'): Promise<void> {
@@ -61,7 +62,10 @@ export class LlmSettingsDialog {
 
     async test(kind: LlmKind, form: HTMLFormElement): Promise<void> {
         // Test what is on screen: save first (the key goes to the server, not back).
-        await this.save(form);
+        if (!(await this.save(form))) {
+            this.tests.update(t => ({ ...t, [kind]: { ok: false, text: `Not tested: ${this.llm.error() ?? 'the settings could not be saved'}` } }));
+            return;
+        }
         this.tests.update(t => ({ ...t, [kind]: 'running' }));
         const result = await this.llm.test(kind);
         this.tests.update(t => ({ ...t, [kind]: result }));
