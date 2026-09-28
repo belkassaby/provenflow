@@ -424,10 +424,18 @@ function releaseResource(f: Finding, facts: Facts, models: ExtractedModel[], tex
     const lines = text.split('\n');
     const reacquire = (model.evidence['held->leaked'] ?? []).some(e => !/discarded|ngOnDestroy|dispose|destroy/i.test(e.event));
     if (reacquire) {
-        const line = lines[acquire.loc.line - 1];
-        const indent = /^(\s*)/.exec(line)![1];
-        edits.push({ file, search: `${lines[acquire.loc.line - 2] ?? ''}\n${line}`, replace: `${lines[acquire.loc.line - 2] ?? ''}\n${indent}${release} // release the previous one before acquiring again\n${line}` });
-        explanation.push(`Releases the previous ${acquire.kind} (${release}) before acquiring a new one.`);
+        // Every place the class acquires it (a second one in a callback, say), unless it already releases just before.
+        const sites = facts.resources
+            .filter(r => r.op === 'acquire' && r.loc.file === file && r.handle === acquire.handle && r.owner === acquire.owner)
+            .map(r => r.loc.line)
+            .filter((l, i, all) => all.indexOf(l) === i && !(lines[l - 2] ?? '').includes(release))
+            .sort((a, b) => a - b);
+        for (const l of sites) {
+            const line = lines[l - 1];
+            const indent = /^(\s*)/.exec(line)![1];
+            edits.push({ file, search: `${lines[l - 2] ?? ''}\n${line}`, replace: `${lines[l - 2] ?? ''}\n${indent}${release} // release the previous one before acquiring again\n${line}` });
+        }
+        if (sites.length > 0) explanation.push(`Releases the previous ${acquire.kind} (${release}) before acquiring a new one${sites.length > 1 ? `, at each of the ${sites.length} places it is acquired (lines ${sites.join(', ')})` : ''}.`);
     }
     const discarded = (model.evidence['held->leaked'] ?? []).some(e => /discarded/.test(e.event));
     const cls = facts.classes.find(c => c.id === acquire.owner);
@@ -444,13 +452,13 @@ function releaseResource(f: Finding, facts: Facts, models: ExtractedModel[], tex
             const insertAt = ownLine ? lineStart : end;
             const method = `\n${memberIndent}/** Releases what the object holds (added by pflow: it was lost when the object was discarded). */\n${memberIndent}${name}(): void {\n${memberIndent}    ${release}\n${memberIndent}}\n`;
             const search = text.slice(classStart, end + 1);
-            // The class text is replaced whole: combine with the first edit when it is inside the class.
-            const current = edits.length > 0 && search.includes(edits[0].search) ? search.replace(edits[0].search, edits[0].replace) : search;
-            const offset = current.length - search.length;
-            const at = insertAt - classStart + (edits.length > 0 && search.includes(edits[0].search) ? offset : 0);
+            // The class text is replaced whole: the release edits inside the class become part of it (they all come before its end).
+            const inside = edits.filter(e => search.split(e.search).length === 2);
+            const current = inside.reduce((t, e) => t.replace(e.search, () => e.replace), search);
+            const at = insertAt - classStart + (current.length - search.length);
             const replace = current.slice(0, at) + (ownLine ? method : `\n${method}`) + current.slice(at);
             if (text.split(search).length === 2) {
-                if (edits.length > 0 && search.includes(edits[0].search)) edits.splice(0, 1);
+                for (const e of inside) edits.splice(edits.indexOf(e), 1);
                 edits.push({ file, search, replace });
                 explanation.push(`Adds ${name}() releasing it when the ${cls.name} is disposed${angular ? ' (Angular calls ngOnDestroy)' : ' (call it when the object is no longer used)'}.`);
             }

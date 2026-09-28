@@ -127,6 +127,47 @@ describe('quick fixes, verified by re-running every check', () => {
         }
     }, 120_000);
 
+    it('releases before every place a resource is acquired, so the finding goes away', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'provenflow-two-sites-'));
+        try {
+            const code = [
+                "import { Subscription, interval } from 'rxjs';",
+                '',
+                'export class Saver {',
+                '    private sub?: Subscription;',
+                '    private timer?: ReturnType<typeof setTimeout>;',
+                '',
+                '    saveAll(): void {',
+                '        this.sub = interval(10).subscribe();',
+                '    }',
+                '',
+                '    saveLater(): void {',
+                '        this.timer = setTimeout(() => {',
+                '            this.sub = interval(20).subscribe();',
+                '        }, 5);',
+                '    }',
+                '',
+                '    stop(): void {',
+                '        clearTimeout(this.timer);',
+                '        this.sub?.unsubscribe();',
+                '    }',
+                '}',
+                ''
+            ].join('\n');
+            writeFileSync(join(dir, 'saver.ts'), code);
+            const r = await extractProject(dir, { analyzers: false, confirm: false, config: {}, quickFixes: 20 });
+            const leak = r.findings.find(f => f.rule === 'resource-leak' && f.subject.includes('this.sub'))!;
+            expect(leak.suggestedPatch?.verified, leak.suggestedPatch?.note).toBe(true);
+            const after = leak.suggestedPatch!.files![0].after;
+            expect(after.match(/this\.sub\?\.unsubscribe\(\); \/\/ release the previous one/g)).toHaveLength(2);
+            writeFileSync(join(dir, 'saver.ts'), after); // Apply
+            const again = await extractProject(dir, { analyzers: false, confirm: false, config: {}, quickFixes: 20 });
+            expect(again.findings.some(f => f.rule === 'resource-leak' && f.subject.includes('this.sub'))).toBe(false);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it('does not propose again a change already in the code when the finding remains', async () => {
         const finding = { rule: 'resource-leak', category: 'lifecycle', severity: 'warning', subject: 'Poller', message: 'm', fix: 'Release it.', loc: { file: 'a.ts', line: 2, column: 1 }, source: 'nuxmv' } as const;
         const edit = { file: 'a.ts', search: '    this.timer = setInterval(f);', replace: '    clearInterval(this.timer);\n    this.timer = setInterval(f);' };
