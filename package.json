@@ -2,7 +2,7 @@
   "name": "provenflow",
   "version": "0.1.0",
   "private": true,
-  "description": "ProvenFlow: design, verify (nuXmv) and run state machines for LLM agents: model checking with counterexample replay, generated runtimes with monitors, live views, trace conformance and probabilistic analysis.",
+  "description": "Design and verify state machines with nuXmv, and review code: model-check a code base or pull request, with verified fixes.",
   "license": "MIT",
   "type": "module",
   "workspaces": [

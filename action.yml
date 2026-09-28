@@ -1,5 +1,5 @@
 name: ProvenFlow review
-description: Model-check the code a pull request changes (state machines, lifecycles, patterns, layers, plus Semgrep, Infer and CBMC) and review it, with verified fixes as one-click suggestions.
+description: 'Review pull requests by model checking the changed code: findings with counterexamples and verified one-click fixes.'
 author: belkassaby
 branding:
   icon: check-circle

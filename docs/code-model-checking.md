@@ -735,7 +735,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }          # the base of the pull request is needed for the diff
-      - uses: belkassaby/provenflow@main
+      - uses: belkassaby/provenflow@v1
         with:
           fail-on: error                  # the check fails on errors of the changed lines (warning, none)
 ```
@@ -775,7 +775,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { name: provenflow-review, run-id: '${{ github.event.workflow_run.id }}', github-token: '${{ github.token }}' }
-      - uses: belkassaby/provenflow@main
+      - uses: belkassaby/provenflow@v1
         with: { post-review-file: provenflow-review.json }
 ```
 

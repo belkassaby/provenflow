@@ -1,18 +1,40 @@
 # ProvenFlow
 
-Design, verify and run state machines for LLM agents. ProvenFlow is a browser-based diagram editor
-for the [nuXmv](https://nuxmv.fbk.eu) model checker. Draw a directed finite state transition system,
-or type it in a `.pflow` file, label its states with atoms, write LTL, CTL or invariant properties,
-and check them with nuXmv. When a property is false, the counterexample is replayed step by step on
-the diagram. From the same diagram it generates a Python runtime with monitors, live views in the
-editor or Jupyter, trace conformance checks and probabilistic analysis. The `pflow` command-line tool
-does the same from a terminal or CI.
+Design and verify state machines, and review code, with a model checker
+([nuXmv](https://nuxmv.fbk.eu)).
 
-It also works the other way round, from code to model: `pflow extract` builds verified models of an
-existing (or AI-generated) code base in TypeScript/JavaScript (with Angular templates), Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rust, Swift, Ruby, PHP and R. It extracts the code's state machines, resource lifecycles,
-design-pattern contracts and layer dependencies, and checks them with nuXmv. It reports each bug
-with the code path that shows it and a fix, and an optional LLM can propose patches that the tool
-re-checks. See [Model-checking a code base](#model-checking-a-code-base).
+**Design and verify.** ProvenFlow is a browser-based diagram editor for nuXmv. Draw a directed
+finite state transition system, or type it in a `.pflow` file, label its states with atoms, write
+LTL, CTL or invariant properties, and check them with nuXmv. When a property is false, the
+counterexample is replayed step by step on the diagram. From the same diagram it generates a Python
+runtime with monitors, live views in the editor or Jupyter, trace conformance checks and
+probabilistic analysis. The `pflow` command-line tool does the same from a terminal or CI.
+
+**Review code.** It also works the other way round, from code to model, to review an existing or
+AI-generated code base, or a pull request:
+- it extracts the code's state machines, resource lifecycles, design-pattern contracts and layer
+  dependencies, in TypeScript/JavaScript (with Angular templates), Python, Java, Kotlin, Groovy,
+  Scala, C, C++, C#, Go, Rust, Swift, Ruby, PHP and R, and checks them with nuXmv;
+- it runs the analysers that are installed alongside: Semgrep (security and dataflow), Infer (heap),
+  ESBMC/CBMC and Kani (memory safety, proved per function);
+- each finding comes with the code path that shows it (confirmed by replaying it on the real code
+  where possible) and a fix;
+- fixes are proposed without an LLM (automatic fixes) or with one, and each is marked verified only
+  when re-running the analysis and the build on the changed code shows the finding gone and nothing
+  new.
+
+Review a code base in the editor (File → Import code base…), with `pflow extract` / `pflow review`,
+or on every pull request with the GitHub Action, which posts the findings on the changed lines
+with verified fixes as one-click suggestions:
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }
+- uses: belkassaby/provenflow@v1   # permissions: pull-requests: write
+```
+
+See [Model-checking a code base](#model-checking-a-code-base) and
+[the GitHub Action](docs/code-model-checking.md#the-github-action).
 
 The project was called `nuxmv-editor-js` until it was renamed, and diagrams used the `.nxd` extension.
 The editor still opens `.nxd` files and saves them as `.pflow`.
@@ -423,7 +445,7 @@ the fixed ones and update one summary; pull requests from forks are supported
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: belkassaby/provenflow@main   # needs permissions: pull-requests: write
+- uses: belkassaby/provenflow@v1   # needs permissions: pull-requests: write
   with: { fail-on: error, semgrep: 'true' }
 ```
 
