@@ -30,7 +30,7 @@ with verified fixes as one-click suggestions:
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: belkassaby/provenflow@v1   # permissions: pull-requests: write
+- uses: belkassaby/provenflow@v0   # permissions: pull-requests: write
 ```
 
 See [Model-checking a code base](#model-checking-a-code-base) and
@@ -445,7 +445,7 @@ the fixed ones and update one summary; pull requests from forks are supported
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- uses: belkassaby/provenflow@v1   # needs permissions: pull-requests: write
+- uses: belkassaby/provenflow@v0   # needs permissions: pull-requests: write
   with: { fail-on: error, semgrep: 'true' }
 ```
 
