@@ -38,6 +38,8 @@ export interface SuggestedChange {
     edits?: Array<{ file: string; search: string; replace: string }>;
     /** State values the change adds as cases or removes from a declaration. */
     touches?: { variable: string; adds?: string[]; removes?: string[] };
+    /** For a change the LLM wrote on request: its token usage and thinking. */
+    llm?: { usage?: { input: number; output: number; thinking?: number; cacheRead?: number }; thinking?: string; ms: number };
     /** Models re-extracted from the changed code: before/after .pflow and their false properties. */
     models?: Array<{ id: string; subject: string; before: string; after: string; falseBefore: string[]; falseAfter: string[] }>;
     /** Build, type check and tests run on a copy of the project with the change. */

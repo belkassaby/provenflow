@@ -398,6 +398,39 @@ describe('one change for one finding: LLM fix, and Verify this version', () => {
         expect(typeof patch.verified).toBe('boolean');
         expect((await post('/api/fix', { path: copy, finding: leak })).status).toBe(400);
     });
+
+    it('fixes without an LLM: the automatic fix on request, or a draft with the suggested fix', async () => {
+        const report = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 0 })).json();
+        const stale = report.findings.find((f: { rule: string }) => f.rule === 'stale-write-after-await');
+        expect(stale.suggestedPatch).toBeUndefined(); // no quick fixes were asked for
+        const quick = await (await post('/api/fix', { path: copy, finding: stale, how: 'analysis' })).json();
+        expect(quick.finding.suggestedPatch).toMatchObject({ verified: true, by: 'quick fix' });
+        // A finding no automatic fix handles: the suggested fix as a comment where to change.
+        const other = { ...stale, rule: 'some-rule', fix: 'Check the status again after the await.' };
+        const draft = await (await post('/api/fix', { path: copy, finding: other, how: 'analysis' })).json();
+        expect(draft.finding.suggestedPatch).toMatchObject({ verified: false, by: 'draft' });
+        const [file] = draft.finding.suggestedPatch.files;
+        expect(file.after.split('\n')[stale.loc.line - 1].trim()).toBe('// TODO(pflow some-rule): Check the status again after the await.');
+        expect(readFileSync(join(copy, file.file), 'utf8')).toBe(file.before); // nothing written
+    });
+
+    it('streams what the LLM does (the stage, the answer, the tokens) and logs its usage', async () => {
+        const report = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 0 })).json();
+        const leak = report.findings.find((f: { rule: string; subject: string }) => f.rule === 'resource-leak' && f.subject.startsWith('Poller'));
+        const logs: string[] = [];
+        const original = console.log;
+        console.log = (line: string) => logs.push(line);
+        try {
+            const res = await fetch(`${url}/api/fix`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify({ path: copy, finding: leak, llm: 'openai:test-model' }) });
+            const lines = (await res.text()).trim().split('\n').map(l => JSON.parse(l));
+            const events = lines.filter(l => l.event).map(l => l.event.type);
+            expect(events).toEqual(expect.arrayContaining(['stage', 'text']));
+            expect(lines.at(-1).result.finding.suggestedPatch.llm.ms).toBeGreaterThanOrEqual(0);
+        } finally {
+            console.log = original;
+        }
+        expect(logs.some(l => /^\[llm\] openai:test-model fix resource-leak on Poller/.test(l))).toBe(true);
+    });
 });
 
 describe('code changes: proposed, verified, applied', () => {

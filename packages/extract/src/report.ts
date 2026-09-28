@@ -76,7 +76,7 @@ function markdownReport(result: ExtractionResult, models: string[], scenarios: s
     out.push(`# ProvenFlow code model report`, '');
     out.push(`${result.files} files, ${result.models.length} models (${count(result, 'state-machine')} state machines, ${count(result, 'lifecycle')} resource lifecycles, ${count(result, 'pattern')} pattern contracts${count(result, 'architecture') ? ', 1 architecture' : ''}), ${result.verdicts.length} properties checked with ${result.checkedWith === 'nuxmv' ? 'nuXmv' : 'the explicit-state checker (set NUXMV_PATH to use nuXmv)'}.`, '');
     out.push(`**${s.error} errors, ${s.warning} warnings, ${s.info} notes.**`, '');
-    if (result.llm) out.push(`LLM (${result.llm.provider}): ${result.llm.accepted.length} proposals accepted after verification, ${result.llm.rejected.length} rejected.`, '');
+    if (result.llm) out.push(`LLM (${result.llm.provider}): ${result.llm.accepted.length} proposals accepted after verification, ${result.llm.rejected.length} rejected; ${result.llm.usage.calls} call(s), ${result.llm.usage.input} input + ${result.llm.usage.output} output tokens${result.llm.usage.cached ? ` (${result.llm.usage.cached} answered from the cache)` : ''}.`, '');
     if (result.tools.length > 0) out.push(`Analysers: ${result.tools.map(t => `${t.tool}${t.version ? ` ${t.version}` : ''} (${t.scope})`).join('; ')}.`, '');
     if (result.changeChecks.length > 0) out.push(`Proposed changes were also checked with: ${result.changeChecks.map(c => `\`${c}\``).join(', ')}.`, '');
 

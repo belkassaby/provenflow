@@ -598,6 +598,16 @@ verified change in one go, or all changes with the box ticked:
 writes each change to `fixes/NN-rule/` (the changed files and `change.patch`), and report.md shows
 the diff.
 
+## Fix (no LLM), one finding at a time
+
+**Fix (no LLM)** is on every finding that has no proposed change yet. Without an LLM call, it
+gives the change the analysis can make itself, opened in the review before/after:
+- when one of the automatic fixes applies to the finding (the quick fixes above; an analysis
+  proposes at most 20, so later findings get theirs here), that fix, verified;
+- otherwise a **draft**: the finding's suggested fix written as a comment at the line to change
+  (`// TODO(pflow <rule>): …`). Write the change on the right in its place, then **Verify this
+  version**; the draft itself is never marked verified, since it changes nothing yet.
+
 ## LLM fix, one finding at a time
 
 Each warning or error without a verified change has an **LLM fix** button. The LLM (the one
@@ -605,6 +615,19 @@ chosen for the analysis, or the first configured in Help → LLM settings) gets:
 - the finding, its **suggested fix** (the *Fix:* line), and the counterexample as calls in the code;
 - the whole file, with line numbers, when it is up to 600 lines (otherwise the 120 lines around
   the finding), and the related places in other files.
+
+While it works, the finding shows what it is doing: the step (writing the change, verifying it),
+its **thinking** as it is written (when the model gives it: turn it on in LLM settings, *Show the
+model's thinking*, with a token budget; a model without thinking is asked again without it), the
+answer, and the **token usage** (input, output, thinking). The review keeps them next to the
+change. The server also writes one line per LLM call to its log, for example:
+
+```text
+[llm] anthropic:claude-sonnet-5 fix resource-leak on Poller: 3210 input + 812 output tokens (540 of them thinking), 14.2 s
+```
+
+so `tail -f` on the server's output follows every call, including those of an analysis with an
+LLM (whose totals are also in report.md).
 
 It answers with exact search/replace edits. ProvenFlow turns them into the changed files and
 their diff, and verifies them like the quick fixes (the analysis again on the changed files, then

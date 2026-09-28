@@ -74,6 +74,8 @@ export interface PatchFile {
 export interface SuggestedPatch {
     /** Unified diff of all files. */
     diff: string;
+    /** For a change the LLM wrote on request: its token usage and thinking (when it gave any). */
+    llm?: { usage?: import('./llm-types.js').LlmUsage; thinking?: string; ms: number };
     files?: PatchFile[];
     verified: boolean;
     note: string;

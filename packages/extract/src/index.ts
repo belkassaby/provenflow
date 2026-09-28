@@ -21,7 +21,7 @@ import { reporter, type OnProgress } from './progress.js';
 import { changedFiles, findingKey, fingerprints, isToolFinding, settingsKey, touches, type IncrementalInfo, type PreviousRun } from './incremental.js';
 import { findTool } from './tools/process.js';
 import { materialize } from './tools/workspace.js';
-import { cachedProvider, resolveDynamicWrites, suggestFixes, suggestProperties, type LlmLog, type LlmProvider } from './llm.js';
+import { cachedProvider, metered, resolveDynamicWrites, suggestFixes, suggestProperties, type LlmLog, type LlmProvider, type LlmUsage } from './llm.js';
 import { buildStateMachines } from './machines.js';
 import type { CodeProof, ExtractedModel, Finding } from './models.js';
 import { analyseParadigm, type ParadigmProfile } from './paradigm.js';
@@ -43,7 +43,8 @@ export * from './review.js';
 export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export type { IncrementalInfo, PreviousRun } from './incremental.js';
-export { fixWithLlm, verifyVersion, type ChangeContext, type SingleChange } from './single-change.js';
+export { fixWithLlm, verifyVersion, type ChangeContext, type ChangeEvent, type SingleChange } from './single-change.js';
+import { fixWithoutLlm as fixFromAnalysis, type ChangeEvent as SingleChangeEvent, type SingleChange as SingleChangeResult } from './single-change.js';
 export * from './report.js';
 export { listSourceFiles } from './scan.js';
 export { LANGUAGES } from './treesitter/frontend.js';
@@ -94,7 +95,8 @@ export interface ExtractionResult {
     patterns: PatternInstance[];
     paradigm: ParadigmProfile[];
     architecture: Pick<ArchitectureResult, 'edges'>;
-    llm?: LlmLog & { provider: string };
+    /** LLM proposals kept and rejected, and the tokens used (`cached`: calls answered from the cache). */
+    llm?: LlmLog & { provider: string; usage: LlmUsage & { calls: number; cached: number } };
     /** Quick fixes proposed and whether each was verified. */
     quickFixes?: LlmLog;
     /** Notes about the run (skipped files, nuXmv errors, analysers not installed). */
@@ -141,7 +143,7 @@ export async function extractProject(root: string, options: ExtractOptions = {})
         llmLog.accepted.push(...log.accepted);
         llmLog.rejected.push(...log.rejected);
     };
-    const llm = options.llm ? cachedProvider(options.llm, options.cacheDir ?? join(root, '.provenflow', 'cache')) : undefined;
+    const llm = options.llm ? metered(cachedProvider(options.llm, options.cacheDir ?? join(root, '.provenflow', 'cache'))) : undefined;
     let facts = parsed;
     if (llm) {
         await progress('parse', `Asking ${llm.name} which values the computed writes can set…`, 3, 3);
@@ -273,7 +275,7 @@ export async function extractProject(root: string, options: ExtractOptions = {})
         patterns: instances,
         paradigm: paradigm.profiles,
         architecture: { edges: architecture.edges },
-        llm: llm ? { provider: llm.name, ...llmLog } : undefined,
+        llm: llm ? { provider: llm.name, ...llmLog, usage: llm.usage() } : undefined,
         quickFixes: (options.quickFixes ?? 0) > 0 ? fixLog : undefined,
         notes: [...facts.notes, ...verification.errors, ...uncheckedNote(verification.verdicts), ...tools.notes],
         checkedWith: options.checker && verification.errors.length < models.length ? 'nuxmv' : 'explicit',
@@ -313,6 +315,14 @@ export async function changeContext(root: string, options: ExtractOptions = {}):
     const detected = options.buildChecks !== false ? detectChecks(root, files, config) : { build: [], test: [] };
     const checker = new ChangeChecker(root, [...detected.build, ...detected.test], config.verification?.timeoutSec ?? 300);
     return { root, baseline, rerun: rerunner(root, config, options), buildCheck: checker.enabled ? overrides => checker.check(overrides) : undefined };
+}
+
+/** The fix the analysis can make for one finding, without an LLM (a verified quick fix, or a draft to complete). */
+export async function fixWithoutLlm(ctx: ChangeContext, finding: Finding, options: ExtractOptions = {}, onEvent?: (e: SingleChangeEvent) => void): Promise<SingleChangeResult> {
+    onEvent?.({ type: 'stage', text: 'Analysing the project again to compute the fix…' });
+    const config = options.config ?? loadConfig(ctx.root, options.configFile);
+    const r = await extractProject(ctx.root, { ...options, config, previous: undefined, analyzers: false, confirm: false, quickFixes: 0, llm: undefined, llmFixes: 0 });
+    return fixFromAnalysis(ctx, finding, { findings: r.findings, facts: r.facts, models: r.models, config }, onEvent);
 }
 
 /** The previous proposal for a finding, when neither the finding nor the proposal touches a changed file. */

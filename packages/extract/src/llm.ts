@@ -26,80 +26,22 @@ import { verifyProposals, type Baseline, type BuildCheck, type Edit, type Propos
 
 export type { Edit, Rerun } from './fixes.js';
 
-export interface LlmProvider {
-    /** e.g. `anthropic:claude-sonnet-5`. */
-    name: string;
-    complete(system: string, user: string): Promise<string>;
-}
-
-type Fetch = typeof fetch;
-
-/** `anthropic:<model>`, `openai:<model>` (any OpenAI-compatible server via OPENAI_BASE_URL) or `ollama:<model>`. */
-export function providerFromSpec(spec: string, env: NodeJS.ProcessEnv = process.env, fetchImpl: Fetch = fetch): LlmProvider {
-    const [kind, ...rest] = spec.split(':');
-    const model = rest.join(':');
-    const post = async (url: string, headers: Record<string, string>, body: unknown): Promise<unknown> => {
-        const response = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
-        if (!response.ok) {
-            const text = (await response.text()).slice(0, 300);
-            const hint = /anthropic-workspace-id/.test(text) ? ' Set the workspace ID (LLM settings, or ANTHROPIC_WORKSPACE_ID): it is in the Claude Console under Settings → Workspaces. Or create the key inside a workspace.' : '';
-            throw new Error(`${spec}: HTTP ${response.status} ${text}${hint}`);
-        }
-        return response.json();
-    };
-    switch (kind) {
-        case 'anthropic': {
-            const key = env['ANTHROPIC_API_KEY'];
-            if (!key) throw new Error('Set ANTHROPIC_API_KEY to use anthropic:<model>.');
-            return {
-                name: spec,
-                async complete(system, user) {
-                    // A key not scoped to a workspace needs the workspace named in each request.
-                    const workspace: Record<string, string> = env['ANTHROPIC_WORKSPACE_ID'] ? { 'anthropic-workspace-id': env['ANTHROPIC_WORKSPACE_ID'] } : {};
-                    const json = (await post(`${env['ANTHROPIC_BASE_URL'] ?? 'https://api.anthropic.com'}/v1/messages`, { 'x-api-key': key, 'anthropic-version': '2023-06-01', ...workspace }, { model: model || 'claude-sonnet-5', max_tokens: 4096, system, messages: [{ role: 'user', content: user }] })) as { content: Array<{ type: string; text?: string }> };
-                    return json.content.filter(c => c.type === 'text').map(c => c.text).join('');
-                }
-            };
-        }
-        case 'openai': {
-            const key = env['OPENAI_API_KEY'] ?? '';
-            return {
-                name: spec,
-                async complete(system, user) {
-                    const url = `${env['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1'}/chat/completions`;
-                    const headers: Record<string, string> = key ? { authorization: `Bearer ${key}` } : {};
-                    const body = { model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
-                    // Reasoning models refuse a temperature: ask again without it.
-                    const json = (await post(url, headers, { ...body, temperature: 0 }).catch(error => {
-                        if (/HTTP 400.*temperature/s.test((error as Error).message)) return post(url, headers, body);
-                        throw error;
-                    })) as { choices: Array<{ message: { content: string } }> };
-                    return json.choices[0]?.message.content ?? '';
-                }
-            };
-        }
-        case 'ollama':
-            return {
-                name: spec,
-                async complete(system, user) {
-                    const json = (await post(`${env['OLLAMA_HOST'] ?? 'http://localhost:11434'}/api/chat`, {}, { model, stream: false, options: { temperature: 0 }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })) as { message: { content: string } };
-                    return json.message.content;
-                }
-            };
-        default:
-            throw new Error(`Unknown LLM provider '${kind}': use anthropic:<model>, openai:<model> or ollama:<model>.`);
-    }
-}
+export { logged, metered, providerFromSpec } from './llm-providers.js';
+export type { LlmEvent, LlmProvider, LlmUsage } from './llm-types.js';
+import type { LlmEvent, LlmProvider } from './llm-types.js';
 
 /** Caches answers on disk by the hash of provider, system prompt and user prompt. */
 export function cachedProvider(provider: LlmProvider, dir: string): LlmProvider {
     return {
         name: provider.name,
-        async complete(system, user) {
+        async complete(system, user, onEvent?: (e: LlmEvent) => void) {
             const key = createHash('sha256').update(`${provider.name}\n${system}\n${user}`).digest('hex');
             const file = join(dir, `${key}.json`);
-            if (existsSync(file)) return (JSON.parse(readFileSync(file, 'utf8')) as { answer: string }).answer;
-            const answer = await provider.complete(system, user);
+            if (existsSync(file)) {
+                onEvent?.({ type: 'note', text: 'cached answer (asked before with the same code): no tokens used' });
+                return (JSON.parse(readFileSync(file, 'utf8')) as { answer: string }).answer;
+            }
+            const answer = await provider.complete(system, user, onEvent);
             mkdirSync(dir, { recursive: true });
             writeFileSync(file, JSON.stringify({ provider: provider.name, answer }, null, 2));
             return answer;
@@ -222,7 +164,7 @@ export async function suggestProperties(models: ExtractedModel[], root: string, 
  * (otherwise the code around the finding), the counterexample and the related places. The answer
  * is exact search/replace edits, which the caller turns into a diff and verifies.
  */
-export async function proposeFixFor(f: Finding, root: string, provider: LlmProvider): Promise<Proposal | undefined> {
+export async function proposeFixFor(f: Finding, root: string, provider: LlmProvider, onEvent?: (e: LlmEvent) => void): Promise<Proposal | undefined> {
     if (!f.loc) return undefined;
     const whole = readFileText(root, f.loc.file);
     const numbered = (text: string) => text.split('\n').map((l, i) => `${String(i + 1).padStart(5)}| ${l}`).join('\n');
@@ -238,7 +180,7 @@ export async function proposeFixFor(f: Finding, root: string, provider: LlmProvi
         'Answer with exact search/replace edits: each search is copied verbatim from the file (without the line numbers), is long enough to occur exactly once, and replace is its new text.',
         'Answer: {"edits": [{"file": "...", "search": "...", "replace": "..."}], "explanation": "one or two sentences"}'
     ].join('\n\n');
-    const answer = jsonIn(await provider.complete(SYSTEM, user)) as { edits?: Edit[]; explanation?: string } | undefined;
+    const answer = jsonIn(await provider.complete(SYSTEM, user, onEvent)) as { edits?: Edit[]; explanation?: string } | undefined;
     const edits = (answer?.edits ?? []).filter(e => typeof e?.file === 'string' && typeof e.search === 'string' && typeof e.replace === 'string');
     return edits.length > 0 ? { finding: f, edits, explanation: answer?.explanation ?? '', by: provider.name } : undefined;
 }

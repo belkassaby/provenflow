@@ -399,7 +399,9 @@ download it. Applying works for folders opened with **Choose folder…** in Chro
 writes the change) or analysed by path. **Apply all** applies every verified change in one go. **Run the analysis again** then redoes
 only what the changed files can affect (the models are checked again in full; the analysers,
 change checks and replays run for the changed files, and the rest is kept from the last run).
-Any finding can also get an **LLM fix**: the LLM writes the change from the finding's suggested
+Any finding can get a **Fix (no LLM)**: the analysis's own automatic fix when one applies, or a
+draft with the suggested fix where the code has to change. It can also get an **LLM fix**, shown
+live with the model's thinking and its token usage (also logged by the server): the LLM writes the change from the finding's suggested
 fix, and it is verified and shown before/after like the others; **Verify this version** checks
 your own edit of a proposal the same way before you apply it. LLM keys and models (and the workspace ID of an Anthropic key not scoped to a workspace) are set in **Help → LLM settings**.
 

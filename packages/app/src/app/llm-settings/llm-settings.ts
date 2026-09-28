@@ -8,6 +8,8 @@ export interface LlmSettingsView {
     openai: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string };
     ollama: { host: string; model: string };
     preferred?: LlmKind;
+    /** Tokens the model may spend thinking (0: off). */
+    thinking: number;
     remember: boolean;
     file: string;
     configured: Record<LlmKind, boolean>;
@@ -19,6 +21,7 @@ export interface LlmSettingsUpdate {
     openai?: { apiKey?: string; clearKey?: boolean; model?: string; baseUrl?: string };
     ollama?: { host?: string; model?: string };
     preferred?: LlmKind | '';
+    thinking?: number;
     remember?: boolean;
 }
 

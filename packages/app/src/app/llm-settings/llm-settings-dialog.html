@@ -61,6 +61,7 @@
               <option value="ollama" [selected]="s.preferred === 'ollama'">Ollama</option>
             </select>
           </label>
+          <label class="llm-remember"><input type="checkbox" name="thinking" [checked]="s.thinking > 0" /> Show the model's thinking while it writes a fix (extended thinking, up to <input name="thinkingBudget" type="number" min="1024" max="64000" step="1024" class="mono llm-budget" [value]="s.thinking || 4096" /> tokens: it uses more tokens; a model without thinking is asked again without it)</label>
           <label class="llm-remember"><input type="checkbox" name="remember" [checked]="s.remember" /> Remember on this computer (in <code>{{ s.file }}</code>, readable only by your user); otherwise kept until the server stops</label>
         </fieldset>
         <div class="code-review-actions">

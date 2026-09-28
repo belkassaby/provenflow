@@ -339,6 +339,51 @@ export class Lamp {
         expect(sent[1]['anthropic-workspace-id']).toBeUndefined();
     });
 
+    it('streams the thinking, the answer and the token usage of each provider', async () => {
+        const sse = (events: unknown[]) => new Response(events.map(e => `event: x\ndata: ${JSON.stringify(e)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
+        const got: string[] = [];
+        const log = (e: { type: string; text?: string; usage?: { input: number; output: number; thinking?: number } }) => got.push(e.type === 'usage' ? `usage ${e.usage!.input}/${e.usage!.output}${e.usage!.thinking ? `/${e.usage!.thinking}` : ''}` : `${e.type} ${e.text}`);
+        const bodies: Array<Record<string, unknown>> = [];
+        const anthropic = providerFromSpec('anthropic:claude-sonnet-5', { ANTHROPIC_API_KEY: 'k', LLM_THINKING: '2048' }, (async (_u: string, init: { body: string }) => {
+            const body = JSON.parse(init.body);
+            bodies.push(body);
+            if (bodies.length === 1) return new Response('{"type":"error","error":{"message":"thinking is not supported for this model"}}', { status: 400 });
+            return sse([
+                { type: 'message_start', message: { usage: { input_tokens: 120, output_tokens: 1 } } },
+                { type: 'content_block_delta', delta: { type: 'text_delta', text: '{"edits"' } },
+                { type: 'content_block_delta', delta: { type: 'text_delta', text: ': []}' } },
+                { type: 'message_delta', usage: { output_tokens: 42 } }
+            ]);
+        }) as unknown as typeof fetch);
+        expect(await anthropic.complete('s', 'u', log)).toBe('{"edits": []}');
+        expect(bodies[0]).toMatchObject({ thinking: { type: 'enabled', budget_tokens: 2048 }, stream: true });
+        expect(bodies[1]).not.toHaveProperty('thinking');
+        expect(got).toEqual([expect.stringMatching(/^note .*does not offer its thinking/), 'text {"edits"', 'text : []}', 'usage 120/42']);
+
+        got.length = 0;
+        const thinking = providerFromSpec('anthropic:claude-sonnet-5', { ANTHROPIC_API_KEY: 'k', LLM_THINKING: '2048' }, (async () =>
+            sse([
+                { type: 'message_start', message: { usage: { input_tokens: 10 } } },
+                { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'The timer is set twice…' } },
+                { type: 'content_block_delta', delta: { type: 'text_delta', text: 'OK' } },
+                { type: 'message_delta', usage: { output_tokens: 7 } }
+            ])) as unknown as typeof fetch);
+        expect(await thinking.complete('s', 'u', log)).toBe('OK');
+        expect(got).toEqual(['thinking The timer is set twice…', 'text OK', 'usage 10/7']);
+
+        got.length = 0;
+        const openai = providerFromSpec('openai:r1', { OPENAI_API_KEY: 'k' }, (async () =>
+            sse([{ choices: [{ delta: { reasoning_content: 'Hmm.' } }] }, { choices: [{ delta: { content: 'OK' } }] }, { choices: [], usage: { prompt_tokens: 5, completion_tokens: 9, completion_tokens_details: { reasoning_tokens: 4 } } }])) as unknown as typeof fetch);
+        expect(await openai.complete('s', 'u', log)).toBe('OK');
+        expect(got).toEqual(['thinking Hmm.', 'text OK', 'usage 5/9/4']);
+
+        got.length = 0;
+        const ollama = providerFromSpec('ollama:qwen3', {}, (async () =>
+            new Response(['{"message":{"thinking":"Let me see."}}', '{"message":{"content":"O"}}', '{"message":{"content":"K"},"done":true,"prompt_eval_count":3,"eval_count":2}'].join('\n'), { headers: { 'content-type': 'application/x-ndjson' } })) as unknown as typeof fetch);
+        expect(await ollama.complete('s', 'u', log)).toBe('OK');
+        expect(got).toEqual(['thinking Let me see.', 'text O', 'text K', 'usage 3/2']);
+    });
+
     it('sends no temperature to Anthropic, and retries without it when an OpenAI-compatible model refuses it', async () => {
         const bodies: Array<Record<string, unknown>> = [];
         const fake = (answer: (body: Record<string, unknown>) => Response) => (async (_url: string, init: { body: string }) => {

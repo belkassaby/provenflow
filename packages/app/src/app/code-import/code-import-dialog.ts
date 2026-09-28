@@ -3,6 +3,7 @@ import { CodeDiff } from './code-diff';
 import { downloadText } from '../file-io';
 import { HelpService } from '../help-dialog/help.service';
 import { LlmSettings } from '../llm-settings/llm-settings';
+import { ChangeActivity } from './change-activity';
 import { CodeChange } from './code-change';
 import { changeKey, CodeImport, type CodeFinding, type CodeModel } from './code-import';
 
@@ -45,7 +46,7 @@ const SOURCE_LABELS: Partial<Record<CodeFinding['source'], string>> = {
  */
 @Component({
     selector: 'app-code-import-dialog',
-    imports: [CodeDiff],
+    imports: [CodeDiff, ChangeActivity],
     templateUrl: './code-import-dialog.html'
 })
 export class CodeImportDialog {
@@ -206,20 +207,24 @@ export class CodeImportDialog {
     }
 
     /**
-     * LLM fix: the LLM implements the finding's suggested fix; the change is verified on the server
-     * and opens in the review, before/after. `again` (from the review) replaces the current proposal.
+     * A change for one finding, opened in the review before/after: `llm`, the LLM implements the
+     * suggested fix; `analysis`, the analysis's own fix (a verified quick fix, or a draft to complete).
      */
-    async llmFix(f: CodeFinding): Promise<void> {
+    async requestFix(f: CodeFinding, how: 'llm' | 'analysis'): Promise<void> {
         const spec = this.llmSpec();
-        if (!spec) {
+        if (how === 'llm' && !spec) {
             this.outcome.set({ key: changeKey(f), ok: false, text: 'No LLM is configured: set one in Help → LLM settings.' });
             return;
         }
         this.outcome.set(null);
-        const result = await this.change.llmFix(f, spec);
-        if (result.finding) this.review(result.finding);
-        else this.outcome.set({ key: changeKey(f), ok: false, text: result.error ?? 'No change.' });
-        if (result.finding && this.view() === 'change') this.applyMessage.set({ ok: result.finding.suggestedPatch!.verified, text: `${spec}: ${result.finding.suggestedPatch!.verified ? '✓ verified' : '✗ not verified'}: ${result.finding.suggestedPatch!.note}` });
+        const result = how === 'llm' ? await this.change.llmFix(f, spec) : await this.change.quickFix(f);
+        if (!result.finding) {
+            this.outcome.set({ key: changeKey(f), ok: false, text: result.error ?? 'No change.' });
+            return;
+        }
+        this.review(result.finding);
+        const p = result.finding.suggestedPatch!;
+        this.applyMessage.set({ ok: p.verified, text: p.by === 'draft' ? p.note : `${p.by ?? 'LLM'}: ${p.verified ? '✓ verified' : '✗ not verified'}: ${p.note}` });
     }
 
     /** Verify this version: checks the right-hand text (with your edits) like a proposed change. */

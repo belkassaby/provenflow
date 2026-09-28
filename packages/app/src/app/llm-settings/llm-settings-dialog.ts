@@ -47,6 +47,7 @@ export class LlmSettingsDialog {
             openai: { apiKey: this.keys().openai || undefined, model: value('openaiModel'), baseUrl: value('openaiBaseUrl') },
             ollama: { host: value('ollamaHost'), model: value('ollamaModel') },
             preferred: value('preferred') as LlmKind | '',
+            thinking: checked('thinking') ? Math.max(1024, Number(value('thinkingBudget')) || 4096) : 0,
             remember: checked('remember')
         });
         if (ok) {

@@ -246,6 +246,9 @@ dialog.code-import header h2 { flex: 1; }
 .progress-bar.indeterminate .progress-fill { position: absolute; animation: progress-slide 1.4s ease-in-out infinite; }
 @keyframes progress-slide { from { left: -30%; } to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .progress-bar.indeterminate .progress-fill { animation: none; left: 0; width: 100% !important; opacity: .4; } }
+.change-activity { margin: 6px 0; }
+.change-activity pre { max-height: 220px; }
+.llm-budget { width: 7em; }
 .code-recent { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .code-recent .active { font-weight: 600; }
 .code-steps { list-style: none; padding: 0; margin: 8px 0; columns: 2; }

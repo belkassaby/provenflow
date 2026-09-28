@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { changeContext, extractProject, fixWithLlm, isApplied, providerFromSpec, verifyVersion, webReport, type Finding, type PreviousRun, type ProvenflowConfig } from '@provenflow/extract';
+import { changeContext, extractProject, fixWithLlm, fixWithoutLlm, isApplied, logged, providerFromSpec, verifyVersion, webReport, type ChangeEvent, type Finding, type PreviousRun, type ProvenflowConfig } from '@provenflow/extract';
 import { generateSmv, GenerationError, parseDiagram } from '@provenflow/language';
 import { ENGINES, nuxmvInfo, runNuxmv, type Engine, type RunnerConfig } from './nuxmv-runner.js';
 import { LlmSettingsStore, type LlmKind, type UpdateInput } from './llm-settings.js';
@@ -161,7 +161,7 @@ export function createApp(options: AppOptions): express.Express {
                     config: body.config as ProvenflowConfig | undefined,
                     checker: available ? smv => runNuxmv(smv, { engine: 'bdd' }, options.runner) : undefined,
                     quickFixes: Math.min(100, quickFixes),
-                    llm,
+                    llm: llm ? logged(llm, line => console.log(line), `analysis of ${root}`) : undefined,
                     llmFixes: llm ? Math.min(20, llmFixes) : 0,
                     analyzers: body.analyzers !== false,
                     confirm: body.analyzers !== false,
@@ -190,18 +190,23 @@ export function createApp(options: AppOptions): express.Express {
      * changed files, build or type check on a copy). The folder is given as for /api/extract
      * (`path`, or `files` and `name`); its last run on this server is the reference.
      *   POST /api/fix { finding, llm }: the LLM implements the finding's suggested fix;
+     *   POST /api/fix { finding, how: 'analysis' }: the fix the analysis makes itself (a verified quick
+     *     fix), or a draft with the suggested fix as a comment where the code has to change;
      *   POST /api/verify-change { finding, changed: [{ file, after }] }: verifies the reviewer's version.
      * Both answer { finding } (with its suggestedPatch: the files before/after, the diff, verified and
-     * why), and `error` when there was nothing to check.
+     * why), and `error` when there was nothing to check. With `Accept: application/x-ndjson` they
+     * stream { event } lines first: { type: 'stage' | 'thinking' | 'text' | 'usage' | 'note', ... }.
+     * Every LLM call is also logged by the server, with its token usage.
      */
     const singleChange = (kind: 'fix' | 'verify') => async (req: Request, res: Response, next: NextFunction) => {
         let temp: string | undefined;
         try {
-            const body = (req.body ?? {}) as { path?: unknown; files?: unknown; name?: unknown; config?: unknown; finding?: unknown; llm?: unknown; changed?: unknown; analyzers?: unknown };
+            const body = (req.body ?? {}) as { path?: unknown; files?: unknown; name?: unknown; config?: unknown; finding?: unknown; llm?: unknown; how?: unknown; changed?: unknown; analyzers?: unknown };
             const finding = body.finding as Finding | undefined;
             if (!finding || typeof finding !== 'object' || typeof finding.rule !== 'string' || typeof finding.subject !== 'string') throw new HttpError(400, "Provide the 'finding' to change.");
-            const provider = kind === 'fix' ? providerOf(body.llm) : undefined;
-            if (kind === 'fix' && !provider) throw new HttpError(400, "Provide 'llm' (anthropic:<model>, openai:<model> or ollama:<model>).");
+            const byAnalysis = kind === 'fix' && body.how === 'analysis';
+            const provider = kind === 'fix' && !byAnalysis ? providerOf(body.llm) : undefined;
+            if (kind === 'fix' && !byAnalysis && !provider) throw new HttpError(400, "Provide 'llm' (anthropic:<model>, openai:<model> or ollama:<model>), or how: 'analysis' for the fix without an LLM.");
             const changed = kind === 'verify' ? body.changed : undefined;
             if (kind === 'verify' && (!Array.isArray(changed) || changed.length === 0 || changed.some(c => typeof c?.file !== 'string' || typeof c?.after !== 'string'))) throw new HttpError(400, "Provide 'changed': [{ file, after }].");
             if (body.config !== undefined && (typeof body.config !== 'object' || body.config === null)) throw new HttpError(400, "'config' must be an object.");
@@ -210,17 +215,46 @@ export function createApp(options: AppOptions): express.Express {
             const folderKey = temp ? `upload:${typeof body.name === 'string' ? body.name : ''}` : source.root;
             if (running >= maxRuns) throw new HttpError(429, 'Too many runs in progress, try again shortly.');
             running++;
+            const stream = /application\/x-ndjson/.test(req.headers.accept ?? '');
+            const write = (line: unknown) => {
+                if (stream && !res.destroyed && !res.writableEnded) res.write(`${JSON.stringify(line)}\n`);
+            };
+            let last: ChangeEvent | undefined;
+            const heartbeat = stream ? setInterval(() => write({ event: last ?? { type: 'stage', text: 'Working…' }, heartbeat: true }), 15_000) : undefined;
+            if (stream) {
+                res.status(200).setHeader('content-type', 'application/x-ndjson; charset=utf-8');
+                res.setHeader('cache-control', 'no-cache');
+                res.flushHeaders();
+            }
+            const onEvent = (event: ChangeEvent) => {
+                if (event.type === 'stage' || event.type === 'usage') last = event;
+                write({ event });
+            };
             try {
                 const available = (await nuxmvInfo(options.runner)).available;
-                const ctx = await changeContext(source.root, {
+                const analysisOptions = {
                     config: body.config as ProvenflowConfig | undefined,
-                    checker: available ? smv => runNuxmv(smv, { engine: 'bdd' }, options.runner) : undefined,
+                    checker: available ? (smv: string) => runNuxmv(smv, { engine: 'bdd' }, options.runner) : undefined,
                     analyzers: body.analyzers !== false,
                     previous: previousRuns.get(folderKey)
-                });
-                const result = kind === 'fix' ? await fixWithLlm(ctx, finding, provider!) : await verifyVersion(ctx, finding, changed as Array<{ file: string; after: string }>);
-                res.json(result);
+                };
+                onEvent({ type: 'stage', text: previousRuns.has(folderKey) ? 'Preparing the check (from the last analysis of this folder)…' : 'Analysing the folder first (the server has no analysis of it since it started)…' });
+                const ctx = await changeContext(source.root, analysisOptions);
+                const result = byAnalysis
+                    ? await fixWithoutLlm(ctx, finding, analysisOptions, onEvent)
+                    : kind === 'fix'
+                      ? await fixWithLlm(ctx, finding, logged(provider!, line => console.log(line), `fix ${finding.rule} on ${finding.subject}`), onEvent)
+                      : await verifyVersion(ctx, finding, changed as Array<{ file: string; after: string }>, 'your version', onEvent);
+                if (stream) {
+                    write({ result });
+                    res.end();
+                } else res.json(result);
+            } catch (error) {
+                if (!stream) throw error;
+                write({ error: (error as Error).message });
+                res.end();
             } finally {
+                clearInterval(heartbeat);
                 running--;
             }
         } catch (error) {

@@ -17,6 +17,8 @@ export interface LlmSettings {
     ollama: { host?: string; model: string };
     /** Provider offered first in Import code base. */
     preferred?: LlmKind;
+    /** Tokens the model may spend thinking, shown while it works (0: off). */
+    thinking?: number;
     /** Saved to the settings file. */
     remember: boolean;
 }
@@ -27,6 +29,7 @@ export interface PublicLlmSettings {
     openai: { key?: string; keyFrom?: 'settings' | 'environment'; model: string; baseUrl?: string };
     ollama: { host: string; model: string };
     preferred?: LlmKind;
+    thinking: number;
     remember: boolean;
     file: string;
     configured: Record<LlmKind, boolean>;
@@ -69,7 +72,8 @@ export class LlmSettingsStore {
             ...(s.anthropic.workspaceId ? { ANTHROPIC_WORKSPACE_ID: s.anthropic.workspaceId } : {}),
             ...(s.openai.apiKey ? { OPENAI_API_KEY: s.openai.apiKey } : {}),
             ...(s.openai.baseUrl ? { OPENAI_BASE_URL: s.openai.baseUrl } : {}),
-            ...(s.ollama.host ? { OLLAMA_HOST: s.ollama.host } : {})
+            ...(s.ollama.host ? { OLLAMA_HOST: s.ollama.host } : {}),
+            ...(s.thinking ? { LLM_THINKING: String(s.thinking) } : {})
         };
     }
 
@@ -92,6 +96,7 @@ export class LlmSettingsStore {
             openai: { ...key(s.openai.apiKey, 'OPENAI_API_KEY'), model: s.openai.model, baseUrl: s.openai.baseUrl ?? this.env['OPENAI_BASE_URL'] },
             ollama: { host: s.ollama.host ?? this.env['OLLAMA_HOST'] ?? 'http://localhost:11434', model: s.ollama.model },
             preferred: s.preferred,
+            thinking: s.thinking ?? Number(this.env['LLM_THINKING'] ?? 0),
             remember: s.remember,
             file: this.file,
             configured: this.configured()
@@ -140,6 +145,12 @@ export class LlmSettingsStore {
         if (input.preferred === null || input.preferred === '') delete s.preferred;
         else if (input.preferred === 'anthropic' || input.preferred === 'openai' || input.preferred === 'ollama') s.preferred = input.preferred;
         if (typeof input.remember === 'boolean') s.remember = input.remember;
+        if (input.thinking !== undefined) {
+            const budget = Number(input.thinking);
+            if (!Number.isInteger(budget) || budget < 0 || budget > 64_000) throw new Error('The thinking budget is a number of tokens from 0 (off) to 64000.');
+            if (budget > 0 && budget < 1024) throw new Error('A thinking budget is at least 1024 tokens (0 turns it off).');
+            s.thinking = budget || undefined;
+        }
         await this.persist();
     }
 
@@ -160,6 +171,7 @@ export interface UpdateInput {
     openai?: { apiKey?: unknown; clearKey?: unknown; model?: unknown; baseUrl?: unknown };
     ollama?: { host?: unknown; model?: unknown };
     preferred?: unknown;
+    thinking?: unknown;
     remember?: unknown;
 }
 
@@ -193,6 +205,7 @@ function merge(base: LlmSettings, saved: Partial<LlmSettings>): LlmSettings {
         openai: { ...base.openai, ...(saved.openai ?? {}) },
         ollama: { ...base.ollama, ...(saved.ollama ?? {}) },
         preferred: saved.preferred,
+        thinking: saved.thinking,
         remember: saved.remember ?? false
     };
 }
