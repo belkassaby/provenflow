@@ -416,7 +416,9 @@ npx pflow review . --base origin/main                                # only the 
 ```
 
 On pull requests, the GitHub Action posts the findings on the changed lines as a review, with each
-verified change as a one-click suggestion:
+verified change as a one-click suggestion. Later pushes only comment on new findings, reply under
+the fixed ones and update one summary; pull requests from forks are supported
+([details](docs/code-model-checking.md#the-github-action)):
 
 ```yaml
 - uses: actions/checkout@v4

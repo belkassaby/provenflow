@@ -1,5 +1,6 @@
 name: ProvenFlow review
-description: Model-check the code base (state machines, lifecycles, patterns, layers), run the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL) and review the pull request, with verified fixes as suggestions.
+description: Model-check the code a pull request changes (state machines, lifecycles, patterns, layers, plus Semgrep, Infer and CBMC) and review it, with verified fixes as one-click suggestions.
+author: belkassaby
 branding:
   icon: check-circle
   color: blue
@@ -7,40 +8,138 @@ inputs:
   path:
     description: Folder to analyse, relative to the repository.
     default: .
-  fix:
-    description: Propose verified quick fixes (as GitHub suggestions).
-    default: 'true'
   fail-on:
-    description: error, warning or none.
+    description: Fail the check on findings of the changed lines at this level or above (error, warning or none).
     default: error
+  fix:
+    description: Propose verified fixes, posted as GitHub suggestions.
+    default: 'true'
+  files:
+    description: Review the whole changed files, not only the changed lines.
+    default: 'false'
   semgrep:
-    description: Install Semgrep for security and dataflow rules.
+    description: Install Semgrep (security and dataflow rules).
     default: 'true'
   cbmc:
-    description: Install CBMC for bounded model checking of C/C++ (Ubuntu runners).
+    description: Install CBMC (memory safety and overflows of C/C++, proved per function). Linux runners.
     default: 'false'
+  infer:
+    description: Install Infer (null dereferences and leaks across calls in C, C++, Java). Linux x86-64 runners.
+    default: 'false'
+  incremental:
+    description: Keep each run in the Actions cache, so a new push re-analyses only what it changed.
+    default: 'true'
+  llm:
+    description: Also ask an LLM for fixes (verified like the others), e.g. anthropic:claude-sonnet-5, openai:<model>. Needs the matching key.
+    default: ''
+  llm-fixes:
+    description: How many findings the LLM is asked to fix.
+    default: '5'
+  anthropic-api-key:
+    description: For llm anthropic:<model> (pass a secret).
+    default: ''
+  openai-api-key:
+    description: For llm openai:<model> (pass a secret).
+    default: ''
+  openai-base-url:
+    description: An OpenAI-compatible server, for llm openai:<model>.
+    default: ''
   github-token:
-    description: Token used to post the review.
+    description: Token that posts the review (needs pull-requests write).
     default: ${{ github.token }}
+  post-review-file:
+    description: Only post this review file (written by the run of a pull request from a fork), from a trusted workflow_run workflow; no analysis.
+    default: ''
+outputs:
+  review-file:
+    description: For a pull request from a fork, the review written to a file (uploaded as the provenflow-review artifact) instead of posted.
+    value: ${{ steps.review.outputs.review-file }}
 runs:
   using: composite
   steps:
     - uses: actions/setup-node@v4
       with:
         node-version: 22
-    - if: inputs.semgrep == 'true'
-      shell: bash
-      run: python3 -m pip install --quiet semgrep
-    - if: inputs.cbmc == 'true' && runner.os == 'Linux'
+    - id: keys
       shell: bash
       run: |
-        url=$(curl -s https://api.github.com/repos/diffblue/cbmc/releases/latest | grep -o 'https://[^"]*ubuntu-24.04-cbmc-[^"]*-Linux.deb' | head -1)
-        curl -sL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb
+        echo "npm=provenflow-npm-${{ runner.os }}-$(sha256sum "${{ github.action_path }}/package-lock.json" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        echo "state=provenflow-state-${{ github.event.pull_request.number || github.ref_name }}" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ steps.keys.outputs.npm }}
+    - if: inputs.post-review-file == '' && inputs.semgrep == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: provenflow-pip-semgrep-${{ runner.os }}
+    - if: inputs.post-review-file == '' && inputs.semgrep == 'true'
+      shell: bash
+      run: python3 -m pip install --quiet --user semgrep && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+    - if: inputs.post-review-file == '' && inputs.cbmc == 'true' && runner.os == 'Linux'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        release=$(. /etc/os-release && echo "ubuntu-${VERSION_ID}")
+        url=$(curl -fsSL -H "authorization: Bearer $GH_TOKEN" https://api.github.com/repos/diffblue/cbmc/releases/latest | grep -o "https://[^\"]*${release}-cbmc-[^\"]*-Linux.deb" | head -1)
+        curl -fsSL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb
+    - if: inputs.post-review-file == '' && inputs.infer == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        curl -fsSL https://github.com/facebook/infer/releases/download/v1.3.0/infer-linux-x86_64-v1.3.0.tar.xz | tar -xJ -C "$RUNNER_TEMP"
+        echo "INFER_PATH=$RUNNER_TEMP/infer-linux-x86_64-v1.3.0/bin/infer" >> "$GITHUB_ENV"
     - shell: bash
       working-directory: ${{ github.action_path }}
-      run: npm ci --no-audit --no-fund && npm run build -w @provenflow/language && npm run build -w @provenflow/extract && npm run build -w @provenflow/server
-    - shell: bash
+      # Only the packages the review needs (not the editor).
+      run: |
+        npm ci --no-audit --no-fund --include-workspace-root -w @provenflow/language -w @provenflow/extract -w @provenflow/server
+        npm run build -w @provenflow/language && npm run build -w @provenflow/extract && npm run build -w @provenflow/server
+    - if: inputs.post-review-file == '' && inputs.incremental == 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/provenflow-state
+        key: ${{ steps.keys.outputs.state }}-${{ github.sha }}
+        restore-keys: ${{ steps.keys.outputs.state }}-
+    - id: review
+      if: inputs.post-review-file == ''
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
       run: |
-        node "${{ github.action_path }}/packages/server/out/cli.js" review "${{ inputs.path }}" --github --fail-on "${{ inputs.fail-on }}" $([ "${{ inputs.fix }}" = "true" ] && echo --fix) -q
+        args=(review "${{ inputs.path }}" --github --fail-on "${{ inputs.fail-on }}" -q)
+        [ "${{ inputs.fix }}" = "true" ] && args+=(--fix)
+        [ "${{ inputs.files }}" = "true" ] && args+=(--files)
+        [ "${{ inputs.incremental }}" = "true" ] && args+=(--state "$RUNNER_TEMP/provenflow-state")
+        [ -n "${{ inputs.llm }}" ] && args+=(--llm "${{ inputs.llm }}" --llm-fixes "${{ inputs.llm-fixes }}")
+        set +e
+        node "${{ github.action_path }}/packages/server/out/cli.js" "${args[@]}" | tee "$RUNNER_TEMP/provenflow-review.txt"
+        code=${PIPESTATUS[0]}
+        set -e
+        sed -n '/^### ProvenFlow review/,/^$/p;/^Checked:/p' "$RUNNER_TEMP/provenflow-review.txt" >> "$GITHUB_STEP_SUMMARY" || true
+        if [ -f provenflow-review.json ]; then echo "review-file=provenflow-review.json" >> "$GITHUB_OUTPUT"; fi
+        echo "code=$code" >> "$GITHUB_OUTPUT"
+    - if: inputs.post-review-file == '' && inputs.incremental == 'true' && always()
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/provenflow-state
+        key: ${{ steps.keys.outputs.state }}-${{ github.sha }}
+    - if: steps.review.outputs.review-file != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: provenflow-review
+        path: provenflow-review.json
+        retention-days: 3
+    - if: inputs.post-review-file != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      # Checked against the pull request (same repository, same head commit) before posting.
+      run: node "${{ github.action_path }}/packages/server/out/cli.js" post-review "${{ inputs.post-review-file }}"
+    - if: inputs.post-review-file == ''
+      shell: bash
+      run: exit ${{ steps.review.outputs.code }}

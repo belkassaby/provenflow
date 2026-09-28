@@ -8,7 +8,7 @@
  */
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 const LINKED = new Set(['node_modules', 'vendor', '.venv', 'venv', 'target', 'Pods', '.gradle', 'bower_components', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.cache']);
 const SKIPPED = new Set(['.git', '.provenflow', '.angular', 'coverage', '.DS_Store', '__pycache__', '.pytest_cache', '.mypy_cache']);
@@ -45,7 +45,9 @@ export interface Workspace {
     dispose(): void;
 }
 
-export function materialize(root: string, overrides: Map<string, string>): Workspace {
+export function materialize(folder: string, overrides: Map<string, string>): Workspace {
+    // Links are made to absolute paths: a relative one would point inside the temporary copy.
+    const root = resolve(folder);
     const dir = mkdtempSync(join(tmpdir(), 'provenflow-ws-'));
     const copy = (from: string, to: string) => {
         for (const entry of readdirSync(from, { withFileTypes: true })) {

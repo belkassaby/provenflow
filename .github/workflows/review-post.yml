@@ -1,0 +1,29 @@
+name: ProvenFlow review (post for forks)
+
+# A pull request from a fork gets a read-only token, so its review run writes the review to a file
+# (the provenflow-review artifact). This workflow runs in the base repository, on its default
+# branch's code (never the fork's), and posts that file after checking it is for the same pull
+# request and head commit.
+on:
+  workflow_run:
+    workflows: [ProvenFlow review]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  actions: read
+
+jobs:
+  post:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_repository.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: provenflow-review
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - uses: ./
+        with:
+          post-review-file: provenflow-review.json

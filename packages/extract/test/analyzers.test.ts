@@ -7,7 +7,7 @@ import { ChangeChecker, detectChecks } from '../src/buildcheck.js';
 import { extractProject, parseCbmcJson, parseEsbmc, parseKani, sarifToFindings, type Finding } from '../src/index.js';
 import { declaredInCode, gradePatternFindings } from '../src/patterns.js';
 import { emptyFacts } from '../src/ir.js';
-import { onChanged, parseUnifiedDiff, postGithubReview, reviewComments } from '../src/review.js';
+import { annotations, checkPayload, onChanged, parseUnifiedDiff, publishReview, reviewComments, type ReviewPayload } from '../src/review.js';
 import { findTool } from '../src/tools/process.js';
 import { cleanStaleWorkspaces, materialize } from '../src/tools/workspace.js';
 import { lstatSync, mkdirSync, readFileSync, utimesSync } from 'node:fs';
@@ -193,17 +193,75 @@ describe('pull request review', () => {
         expect(comment.body).toContain('```suggestion\nconst a = el.textContent = v;\n```');
     });
 
-    it('posts the review, folding comments GitHub rejects into the body', async () => {
-        const calls: Array<{ url: string; body: { comments: unknown[]; body: string } }> = [];
-        const fetchImpl = (async (url: string, init: { body: string }) => {
-            calls.push({ url, body: JSON.parse(init.body) });
-            return calls.length === 1 ? new Response('{"message":"Line could not be resolved"}', { status: 422 }) : new Response('{"html_url":"https://github.com/o/r/pull/7#review"}', { status: 200 });
+    /** A fake GitHub: pull request comments, issue comments, reviews and replies, kept in memory. */
+    function fakeGithub(head = 'abc') {
+        const inline: Array<{ id: number; body: string; in_reply_to_id?: number; path?: string }> = [];
+        const issue: Array<{ id: number; body: string }> = [];
+        const calls: string[] = [];
+        let next = 1;
+        const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
+        const fetchImpl = (async (url: string, init?: { method?: string; body?: string }) => {
+            const path = url.replace('https://api.github.com', '').replace(/[?&]per_page=100&page=\d+/, '');
+            const method = init?.method ?? 'GET';
+            const body = init?.body ? JSON.parse(init.body) : undefined;
+            calls.push(`${method} ${path}`);
+            if (method === 'GET' && path === '/repos/o/r/pulls/7/comments') return json(inline);
+            if (method === 'GET' && path === '/repos/o/r/issues/7/comments') return json(issue);
+            if (method === 'GET' && path === '/repos/o/r/pulls/7') return json({ head: { sha: head } });
+            if (method === 'POST' && path === '/repos/o/r/pulls/7/reviews') {
+                for (const c of body.comments) inline.push({ id: next++, body: c.body, path: c.path });
+                return json({ html_url: 'https://github.com/o/r/pull/7#review' });
+            }
+            const reply = /^\/repos\/o\/r\/pulls\/7\/comments\/(\d+)\/replies$/.exec(path);
+            if (method === 'POST' && reply) {
+                inline.push({ id: next++, body: body.body, in_reply_to_id: Number(reply[1]) });
+                return json({});
+            }
+            if (method === 'POST' && path === '/repos/o/r/issues/7/comments') {
+                issue.push({ id: next++, body: body.body });
+                return json({ html_url: 'https://github.com/o/r/pull/7#summary' });
+            }
+            const edit = /^\/repos\/o\/r\/issues\/comments\/(\d+)$/.exec(path);
+            if (method === 'PATCH' && edit) {
+                issue.find(c => c.id === Number(edit[1]))!.body = body.body;
+                return json({ html_url: 'https://github.com/o/r/pull/7#summary' });
+            }
+            return json({ message: 'not found' }, 404);
         }) as unknown as typeof fetch;
-        const r = await postGithubReview({ token: 't', repository: 'o/r', pull: 7, commit: 'abc' }, 'summary', [{ path: 'src/a.ts', line: 4, side: 'RIGHT', body: 'b' }], fetchImpl);
-        expect(calls[0].url).toBe('https://api.github.com/repos/o/r/pulls/7/reviews');
-        expect(calls[1].body.comments).toEqual([]);
-        expect(calls[1].body.body).toContain('src/a.ts:4');
-        expect(r).toEqual({ posted: 0, url: 'https://github.com/o/r/pull/7#review' });
+        return { inline, issue, calls, fetchImpl };
+    }
+
+    it('posts only new findings on later pushes, marks fixed ones, and keeps one summary', async () => {
+        const gh = fakeGithub();
+        const target = { token: 't', repository: 'o/r', pull: 7, commit: 'abc' };
+        const leak = finding(4, { rule: 'resource-leak', subject: 'Poller' });
+        const inj = finding(11, { rule: 'semgrep:js-command-injection', subject: 'exec' });
+        const payload = (findings: Finding[], commit = 'abc'): ReviewPayload => ({ repository: 'o/r', pull: 7, commit, summary: '### ProvenFlow review', comments: reviewComments(findings, changed, () => undefined), keys: findings.map(f => `${f.rule}|${f.subject}|${f.loc?.file ?? ''}`) });
+        // First push: both findings commented, one summary.
+        expect(await publishReview(target, payload([leak, inj]), gh.fetchImpl)).toMatchObject({ posted: 2, alreadyReported: 0, fixed: 0 });
+        expect(gh.issue).toHaveLength(1);
+        // Second push, nothing new: no review, the summary is edited.
+        expect(await publishReview({ ...target, commit: 'def' }, payload([leak, inj], 'def'), gh.fetchImpl)).toMatchObject({ posted: 0, alreadyReported: 2, fixed: 0 });
+        expect(gh.calls.filter(c => c === 'POST /repos/o/r/pulls/7/reviews')).toHaveLength(1);
+        expect(gh.issue).toHaveLength(1);
+        // Third push: the leak is fixed: a reply under its comment, once.
+        expect(await publishReview(target, payload([inj], 'f00'), gh.fetchImpl)).toMatchObject({ posted: 0, fixed: 1 });
+        expect(await publishReview(target, payload([inj], 'f01'), gh.fetchImpl)).toMatchObject({ fixed: 0 });
+        expect(gh.inline.filter(c => c.in_reply_to_id).map(c => c.body.split('\n')[0])).toEqual(['✓ No longer reported at f00.']);
+        expect(gh.issue[0].body).toContain('0 new, 1 already reported, 0 no longer reported');
+    });
+
+    it('checks a review file from a fork against the pull request before posting it', async () => {
+        const gh = fakeGithub('abc');
+        const target = { token: 't', repository: 'o/r', pull: 7, commit: 'abc' };
+        const ok: ReviewPayload = { repository: 'o/r', pull: 7, commit: 'abc', summary: 's', comments: [], keys: [] };
+        await expect(checkPayload(target, ok, gh.fetchImpl)).resolves.toBeUndefined();
+        await expect(checkPayload(target, { ...ok, commit: 'old' }, gh.fetchImpl)).rejects.toThrow(/made for old/);
+        await expect(checkPayload(target, { ...ok, repository: 'x/y' }, gh.fetchImpl)).rejects.toThrow(/not o\/r/);
+    });
+
+    it('writes GitHub Actions annotations, escaped', () => {
+        expect(annotations([finding(4, { message: 'a, b: 50%\nnext', fix: 'f' })])).toEqual(['::error file=src/a.ts,line=4,title=ProvenFlow r::a, b: 50%25%0AnextFix: f'.replace('nextFix', 'next%0AFix')]);
     });
 });
 
@@ -227,6 +285,25 @@ describe('temporary copies of a project', () => {
             expect(readFileSync(join(root, 'src/a.ts'), 'utf8')).toBe('export const a = 1;\n');
         } finally {
             ws.dispose();
+        }
+    });
+
+    it('links the dependencies by absolute path, also for a project given by a relative path', () => {
+        const root = mkdtempSync(join(scratch, 'rel-'));
+        mkdirSync(join(root, 'node_modules', 'dep'), { recursive: true });
+        writeFileSync(join(root, 'node_modules', 'dep', 'index.js'), 'module.exports = 1;');
+        writeFileSync(join(root, 'a.ts'), '');
+        const cwd = process.cwd();
+        process.chdir(root);
+        try {
+            const ws = materialize('.', new Map());
+            try {
+                expect(readFileSync(join(ws.dir, 'node_modules', 'dep', 'index.js'), 'utf8')).toBe('module.exports = 1;');
+            } finally {
+                ws.dispose();
+            }
+        } finally {
+            process.chdir(cwd);
         }
     });
 

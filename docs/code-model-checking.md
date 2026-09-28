@@ -710,11 +710,23 @@ With `--github` (in a `pull_request` run, with `GITHUB_TOKEN`) the findings beco
 - one comment per finding on its line: the message, the fix, the counterexample, and whether it
   was confirmed on the code;
 - a verified single-file change becomes a GitHub **suggestion**, applied with one click;
-- a summary with the counts, the tools that ran and the proofs.
+- one **summary** comment with the counts, the tools that ran and the proofs;
+- the findings also appear as **annotations** on the Files tab and in the run's summary.
 
-The repository ships a GitHub Action for it:
+Later pushes do not repeat the review. Each comment carries a hidden marker with its finding
+(rule, subject and file, so moved lines do not matter):
+- only findings not reported before get a new comment;
+- a finding that is gone gets a reply "✓ No longer reported at `<commit>`" under its comment;
+- the summary comment is edited in place, with the new, still-reported and fixed counts.
+
+`--state <dir>` keeps the run between pushes; the Action keeps it in the Actions cache, so a push
+re-analyses only the files it changed.
+
+### The GitHub Action
 
 ```yaml
+# .github/workflows/review.yml
+name: ProvenFlow review
 on: pull_request
 permissions: { contents: read, pull-requests: write }
 jobs:
@@ -722,13 +734,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0 }          # the base of the pull request is needed for the diff
       - uses: belkassaby/provenflow@main
         with:
-          fail-on: error        # or warning, none
-          semgrep: 'true'       # installs Semgrep
-          cbmc: 'true'          # installs CBMC (C/C++ projects)
+          fail-on: error                  # the check fails on errors of the changed lines (warning, none)
 ```
+
+| input | default | what |
+| --- | --- | --- |
+| `path` | `.` | the folder to analyse |
+| `fail-on` | `error` | fail the check on findings at this level on the changed lines (`warning`, `none`) |
+| `fix` | `true` | propose verified fixes, posted as suggestions |
+| `files` | `false` | review the whole changed files, not only the changed lines |
+| `semgrep` / `cbmc` / `infer` | `true` / `false` / `false` | install the analyser on the runner |
+| `incremental` | `true` | keep each run in the Actions cache, and re-analyse only what a push changed |
+| `llm`, `llm-fixes` | none, `5` | also ask an LLM for fixes (verified like the others), e.g. `anthropic:claude-sonnet-5` |
+| `anthropic-api-key`, `openai-api-key`, `openai-base-url` | none | the LLM's key: pass a secret, `${{ secrets.ANTHROPIC_API_KEY }}` |
+| `github-token` | the job's token | posts the review |
+
+It installs only the three packages the review needs (not the editor), with the npm and pip
+downloads cached; a run takes about a minute on a small project, plus the analysis.
+
+Make the check **required** (repository settings → branches) to block merges on its findings.
+
+**Pull requests from forks** get a read-only token, which cannot post. Their run writes the review
+to a file instead (the `provenflow-review` artifact), and a second workflow, which runs in the base
+repository on its own code (never the fork's), posts it after checking that it is for the same
+pull request and head commit:
+
+```yaml
+# .github/workflows/review-post.yml
+name: ProvenFlow review (post for forks)
+on:
+  workflow_run: { workflows: [ProvenFlow review], types: [completed] }
+permissions: { pull-requests: write, actions: read }
+jobs:
+  post:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_repository.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: provenflow-review, run-id: '${{ github.event.workflow_run.id }}', github-token: '${{ github.token }}' }
+      - uses: belkassaby/provenflow@main
+        with: { post-review-file: provenflow-review.json }
+```
+
+The review posts as `github-actions[bot]`. The analysis runs the pull request's code only where
+your CI already does (the build check, and the replay of counterexamples), inside the runner.
 
 ## ProvenFlow checked by ProvenFlow
 

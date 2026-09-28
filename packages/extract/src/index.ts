@@ -7,7 +7,7 @@
  *     -> paradigm and structural rules               -> findings
  *     -> optional LLM: computed writes, properties, fixes (each verified)
  */
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { CONFIG_FILE, loadConfig, type ProvenflowConfig } from './config.js';
 import { mergeFacts, type Facts } from './ir.js';
 import { analyseArchitecture, type ArchitectureResult } from './architecture.js';
@@ -43,6 +43,7 @@ export * from './review.js';
 export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export type { IncrementalInfo, PreviousRun } from './incremental.js';
+export { findingKey } from './incremental.js';
 export { fixWithLlm, verifyVersion, type ChangeContext, type ChangeEvent, type SingleChange } from './single-change.js';
 import { fixWithoutLlm as fixFromAnalysis, type ChangeEvent as SingleChangeEvent, type SingleChange as SingleChangeResult } from './single-change.js';
 export * from './report.js';
@@ -114,7 +115,8 @@ export interface ExtractionResult {
     previous: PreviousRun;
 }
 
-export async function extractProject(root: string, options: ExtractOptions = {}): Promise<ExtractionResult> {
+export async function extractProject(folder: string, options: ExtractOptions = {}): Promise<ExtractionResult> {
+    const root = resolve(folder);
     const progress = reporter(options.onProgress);
     const config = options.config ?? loadConfig(root, options.configFile);
     const files = listSourceFiles(root, config.include, config.exclude);

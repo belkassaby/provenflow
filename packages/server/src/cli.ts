@@ -2,8 +2,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { analyse, checkConformance, exportPrism, exportToFramework, importGraph, serializeDiagram, type ProbabilisticQuery, FRAMEWORKS, generateNotebook, generatePython, generatePythonTests, generateSmv, matchResults, parseDiagram, parseTrace, type Framework } from '@provenflow/language';
-import { changedLines, extractProject, formatFindings, githubTargetFromEnv, onChanged, postGithubReview, providerFromSpec, reviewComments, reviewSummary, summary, writeOutputs, type Progress } from '@provenflow/extract';
-import { readFileSync } from 'node:fs';
+import { annotations, changedLines, checkPayload, extractProject, findingKey, formatFindings, fromFork, githubTargetFromEnv, logged, onChanged, providerFromSpec, publishReview, reviewComments, reviewSummary, summary, writeOutputs, type PreviousRun, type Progress, type ReviewPayload } from '@provenflow/extract';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { configFromEnv, ENGINES, nuxmvInfo, runNuxmv, type Engine } from './nuxmv-runner.js';
 import { nurvExecutable, runNurv } from './nurv-runner.js';
 import { spawnSync } from 'node:child_process';
@@ -44,10 +44,16 @@ const USAGE = `Usage:
                                                  on the code (--no-confirm skips it).
                                                  TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++,
                                                  C#, Go, Rust, Swift, Ruby, PHP, R
-  pflow review <project-dir> [--base <git-ref>] [--files] [--fix] [--github] [--fail-on error|warning|none]
+  pflow review <project-dir> [--base <git-ref>] [--files] [--fix] [--github] [--github-out file] [--state dir]
+               [--fail-on error|warning|none]
                                                  review a change: the findings on the lines changed since
                                                  --base (all when omitted); --github posts them as a pull
-                                                 request review with verified fixes as suggestions`;
+                                                 request review with verified fixes as suggestions, only
+                                                 the new ones on later pushes; --github-out writes the
+                                                 review to a file instead (pull requests from forks);
+                                                 --state keeps the run, to re-analyse only what changed
+  pflow post-review <review.json>                posts a review written by --github-out (a trusted
+                                                 workflow, after the fork's run)`;
 
 async function main(): Promise<number> {
     const { positionals, values } = parseArgs({
@@ -72,6 +78,8 @@ async function main(): Promise<number> {
             base: { type: 'string' },
             files: { type: 'boolean', default: false },
             github: { type: 'boolean', default: false },
+            'github-out': { type: 'string' },
+            state: { type: 'string' },
             'no-analyzers': { type: 'boolean', default: false },
             'no-confirm': { type: 'boolean', default: false }
         }
@@ -118,17 +126,25 @@ async function main(): Promise<number> {
     if (command === 'review') {
         const nuxmv = configFromEnv();
         const available = (await nuxmvInfo(nuxmv)).available;
+        // --state <dir>: the last run of this pull request (e.g. from the Actions cache), so a push re-analyses only what changed.
+        const statePath = values.state ? join(values.state, 'previous.json') : undefined;
+        const previous = statePath && existsSync(statePath) ? (JSON.parse(readFileSync(statePath, 'utf8')) as PreviousRun) : undefined;
         const result = await extractProject(file, {
             configFile: values.config,
             checker: available ? (smv: string) => runNuxmv(smv, { engine: values.engine as Engine, bound: Number(values.bound) }, nuxmv) : undefined,
             quickFixes: values.fix ? 50 : 0,
-            llm: values.llm ? providerFromSpec(values.llm) : undefined,
+            llm: values.llm ? logged(providerFromSpec(values.llm), line => console.error(line)) : undefined,
             llmFixes: Number(values['llm-fixes']),
             analyzers: !values['no-analyzers'],
             confirm: !values['no-confirm'],
+            previous,
             onProgress: values.quiet ? undefined : terminalProgress()
         });
         clearProgress();
+        if (statePath) {
+            mkdirSync(values.state!, { recursive: true });
+            writeFileSync(statePath, JSON.stringify(result.previous));
+        }
         const base = values.base ?? githubBase();
         const changed = base ? changedLines(file, base) : undefined;
         const relevant = changed ? onChanged(result.findings, changed, values.files ? 'files' : 'lines') : result.findings;
@@ -142,25 +158,51 @@ async function main(): Promise<number> {
         const comments = changed ? reviewComments(relevant, changed, read) : [];
         const body = reviewSummary(result, relevant, comments.length, base);
         console.log(body);
+        if (result.incremental) console.log(`\n(Incremental: ${result.incremental.changed.length} file(s) changed since the last run of this pull request.)`);
         if (!values.quiet) console.log(formatFindings({ ...result, findings: relevant }, 'warning'));
-        if (values.github) {
+        // In GitHub Actions, the findings also show on the Files tab of the pull request.
+        if (process.env['GITHUB_ACTIONS'] === 'true') annotations(relevant.slice(0, 50)).forEach(line => console.log(line));
+        if (values.github || values['github-out']) {
             const target = githubTargetFromEnv();
             if (!target) {
-                console.error('--github: not in a GitHub Actions pull_request run (GITHUB_TOKEN, GITHUB_REPOSITORY and GITHUB_EVENT_PATH are needed).');
+                console.error('--github: not in a GitHub Actions pull_request run (GITHUB_REPOSITORY and GITHUB_EVENT_PATH are needed).');
                 return 1;
             }
-            try {
-                const posted = await postGithubReview(target, body, comments);
-                console.log(`Posted a review with ${posted.posted} inline comment(s)${posted.url ? `: ${posted.url}` : ''}.`);
-            } catch (error) {
-                // e.g. a pull request from a fork, whose token cannot write reviews: the log still has the findings.
-                console.error(`warning: ${(error as Error).message}`);
+            const payload: ReviewPayload = { repository: target.repository, pull: target.pull, commit: target.commit, summary: body, comments, keys: relevant.map(findingKey) };
+            const out = values['github-out'] ?? (fromFork() ? 'provenflow-review.json' : undefined);
+            if (out) {
+                // A fork's token cannot post: a trusted workflow posts this file (pflow post-review).
+                writeFileSync(out, JSON.stringify(payload));
+                console.log(`Review written to ${out}, to be posted by pflow post-review.`);
+            } else {
+                try {
+                    const posted = await publishReview(target, payload);
+                    console.log(`Review: ${posted.posted} new comment(s), ${posted.alreadyReported} already reported, ${posted.fixed} no longer reported${posted.summaryUrl ? `. Summary: ${posted.summaryUrl}` : ''}.`);
+                } catch (error) {
+                    console.error(`warning: ${(error as Error).message}`);
+                }
             }
         }
         const count = (s: string) => relevant.filter(f => f.severity === s).length;
         const failOn = values['fail-on'];
         const failing = failOn === 'none' ? 0 : failOn === 'warning' ? count('error') + count('warning') : count('error');
         return failing > 0 ? 5 : 0;
+    }
+
+    if (command === 'post-review') {
+        // Posts a review file written for a pull request from a fork, after checking it against the pull request.
+        const payload = JSON.parse(readFileSync(file, 'utf8')) as ReviewPayload;
+        const token = process.env['GITHUB_TOKEN'];
+        const repository = process.env['GITHUB_REPOSITORY'];
+        if (!token || !repository) {
+            console.error('post-review: GITHUB_TOKEN and GITHUB_REPOSITORY are needed.');
+            return 1;
+        }
+        const target = { token, repository, pull: payload.pull, commit: payload.commit, apiUrl: process.env['GITHUB_API_URL'] };
+        await checkPayload(target, payload);
+        const posted = await publishReview(target, payload);
+        console.log(`Review: ${posted.posted} new comment(s), ${posted.alreadyReported} already reported, ${posted.fixed} no longer reported${posted.summaryUrl ? `. Summary: ${posted.summaryUrl}` : ''}.`);
+        return 0;
     }
 
     if (command === 'import') {

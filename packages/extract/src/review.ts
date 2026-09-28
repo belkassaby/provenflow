@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import type { ExtractionResult } from './index.js';
 import { formatLocation } from './ir.js';
 import type { Finding } from './models.js';
+import { findingKey } from './incremental.js';
 
 /** New-file line numbers added or changed, per file (from `git diff --unified=0`). */
 export type ChangedLines = Map<string, Set<number>>;
@@ -69,7 +70,15 @@ export interface ReviewComment {
     side: 'RIGHT';
     start_side?: 'RIGHT';
     body: string;
+    /** The finding's identity across pushes (lines move): not sent to GitHub, it is in the body as a marker. */
+    key: string;
 }
+
+/** Hidden in each comment, so a later run knows which findings it already reported. */
+const marker = (key: string) => `<!-- provenflow:${key.replace(/--/g, '- -')} -->`;
+const MARKER = /<!-- provenflow:(.+?) -->/;
+const SUMMARY = 'summary';
+const FIXED = 'fixed';
 
 /** One review comment per finding on a changed line; verified single-file changes become suggestions. */
 export function reviewComments(findings: Finding[], changed: ChangedLines, read: (file: string) => string | undefined): ReviewComment[] {
@@ -87,11 +96,14 @@ export function reviewComments(findings: Finding[], changed: ChangedLines, read:
             `**Fix:** ${f.fix}`,
             ...(f.confirmation ? ['', `**On the code:** ${f.confirmation.status === 'confirmed' ? '✓ confirmed' : f.confirmation.status === 'refuted' ? '✗ not reproduced' : '? not checked'} (${f.confirmation.by}): ${f.confirmation.detail}`] : []),
             ...(f.counterexample && f.counterexample.length > 1 ? ['', '<details><summary>Counterexample</summary>', '', ...f.counterexample.map((s, i) => `${i}. ${s.event ? `\`${s.event}\` → ` : ''}**${s.state}**${s.loc ? ` (${formatLocation(s.loc)})` : ''}`), '', '</details>'] : []),
-            ...(suggestion ? ['', `**Suggested change** (${f.suggestedPatch!.by ?? 'LLM'}, ✓ verified: ${f.suggestedPatch!.note})`, '', '```suggestion', suggestion.text, '```'] : [])
+            ...(suggestion ? ['', `**Suggested change** (${f.suggestedPatch!.by ?? 'LLM'}, ✓ verified: ${f.suggestedPatch!.note})`, '', '```suggestion', suggestion.text, '```'] : []),
+            '',
+            marker(findingKey(f))
         ].join('\n');
+        const key = findingKey(f);
         comments.push(suggestion && suggestion.start < suggestion.end
-            ? { path: f.loc.file, line: suggestion.end, start_line: suggestion.start, side: 'RIGHT', start_side: 'RIGHT', body }
-            : { path: f.loc.file, line: suggestion ? suggestion.end : f.loc.line, side: 'RIGHT', body });
+            ? { path: f.loc.file, line: suggestion.end, start_line: suggestion.start, side: 'RIGHT', start_side: 'RIGHT', body, key }
+            : { path: f.loc.file, line: suggestion ? suggestion.end : f.loc.line, side: 'RIGHT', body, key });
     }
     return comments;
 }
@@ -155,22 +167,129 @@ export function githubTargetFromEnv(env: NodeJS.ProcessEnv = process.env): Githu
     }
 }
 
-/** Posts the review; comments GitHub rejects (lines outside the diff) are folded into the summary. */
-export async function postGithubReview(target: GithubTarget, body: string, comments: ReviewComment[], fetchImpl: typeof fetch = fetch): Promise<{ posted: number; url?: string }> {
+/** Everything a review posts; written to a file for pull requests from forks, posted by a trusted workflow. */
+export interface ReviewPayload {
+    repository: string;
+    pull: number;
+    commit: string;
+    summary: string;
+    comments: ReviewComment[];
+    /** Findings on the changed lines now (including those without an inline comment). */
+    keys: string[];
+}
+
+export interface PublishResult {
+    posted: number;
+    alreadyReported: number;
+    fixed: number;
+    url?: string;
+    summaryUrl?: string;
+}
+
+interface GithubComment {
+    id: number;
+    body?: string;
+    in_reply_to_id?: number;
+    html_url?: string;
+}
+
+/**
+ * Posts a review so that pushes do not repeat it: inline comments only for findings not reported
+ * before on this pull request; a reply "no longer reported" under earlier comments whose finding
+ * is gone; and one summary comment, edited on each run. Comments GitHub cannot attach to the diff
+ * are folded into the summary.
+ */
+export async function publishReview(target: GithubTarget, payload: ReviewPayload, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
     const api = target.apiUrl ?? 'https://api.github.com';
-    const post = (payload: unknown) =>
-        fetchImpl(`${api}/repos/${target.repository}/pulls/${target.pull}/reviews`, {
-            method: 'POST',
+    const call = async (method: string, path: string, body?: unknown) => {
+        const res = await fetchImpl(`${api}${path}`, {
+            method,
             headers: { authorization: `Bearer ${target.token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' },
-            body: JSON.stringify(payload)
+            body: body === undefined ? undefined : JSON.stringify(body)
         });
-    let res = await post({ commit_id: target.commit, event: 'COMMENT', body, comments });
-    if (res.status === 422 && comments.length > 0) {
-        const folded = `${body}\n\n<details><summary>${comments.length} comment(s) on lines GitHub could not attach</summary>\n\n${comments.map(c => `**${c.path}:${c.line}**\n\n${c.body}`).join('\n\n---\n\n')}\n\n</details>`;
-        res = await post({ commit_id: target.commit, event: 'COMMENT', body: folded, comments: [] });
-        if (!res.ok) throw new Error(`GitHub refused the review: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
-        return { posted: 0, url: ((await res.json()) as { html_url?: string }).html_url };
+        return res;
+    };
+    const all = async <T>(path: string): Promise<T[]> => {
+        const out: T[] = [];
+        for (let page = 1; page <= 20; page++) {
+            const res = await call('GET', `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
+            if (!res.ok) throw new Error(`GitHub: HTTP ${res.status} reading ${path}: ${(await res.text()).slice(0, 200)}`);
+            const items = (await res.json()) as T[];
+            out.push(...items);
+            if (items.length < 100) break;
+        }
+        return out;
+    };
+    const repo = `/repos/${payload.repository}`;
+    const inline = await all<GithubComment>(`${repo}/pulls/${payload.pull}/comments`);
+    const reported = new Map<string, GithubComment>();
+    const closed = new Set<number>();
+    for (const c of inline) {
+        const key = MARKER.exec(c.body ?? '')?.[1];
+        if (!key) continue;
+        if (key === FIXED && c.in_reply_to_id) closed.add(c.in_reply_to_id);
+        else if (!c.in_reply_to_id && !reported.has(key)) reported.set(key, c);
     }
-    if (!res.ok) throw new Error(`GitHub refused the review: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
-    return { posted: comments.length, url: ((await res.json()) as { html_url?: string }).html_url };
+    const current = new Set(payload.keys);
+    const fresh = payload.comments.filter(c => !reported.has(c.key.replace(/--/g, '- -')) && !reported.has(c.key));
+    const gone = [...reported].filter(([key, c]) => !current.has(key) && !current.has(key.replace(/- -/g, '--')) && !closed.has(c.id));
+    const short = payload.commit.slice(0, 7);
+    for (const [, c] of gone) await call('POST', `${repo}/pulls/${payload.pull}/comments/${c.id}/replies`, { body: `✓ No longer reported at ${short}.\n\n${marker(FIXED)}` });
+
+    let posted = 0;
+    let folded = '';
+    let url: string | undefined;
+    if (fresh.length > 0) {
+        const comments = fresh.map(({ key: _key, ...c }) => c);
+        const body = `ProvenFlow: ${fresh.length} new finding(s) at ${short}.`;
+        let res = await call('POST', `${repo}/pulls/${payload.pull}/reviews`, { commit_id: payload.commit, event: 'COMMENT', body, comments });
+        if (res.status === 422) {
+            folded = `\n\n<details><summary>${fresh.length} finding(s) on lines GitHub could not attach a comment to</summary>\n\n${fresh.map(c => `**${c.path}:${c.line}**\n\n${c.body}`).join('\n\n---\n\n')}\n\n</details>`;
+            res = { ok: true } as Response;
+        } else if (!res.ok) throw new Error(`GitHub refused the review: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+        else {
+            posted = fresh.length;
+            url = ((await res.json()) as { html_url?: string }).html_url;
+        }
+    }
+
+    const status = `\n\n<sub>At ${short}: ${fresh.length} new, ${payload.comments.length - fresh.length} already reported, ${gone.length} no longer reported since the last review.</sub>`;
+    const summary = `${payload.summary}${folded}${status}\n\n${marker(SUMMARY)}`;
+    const issueComments = await all<GithubComment>(`${repo}/issues/${payload.pull}/comments`);
+    const previous = issueComments.find(c => MARKER.exec(c.body ?? '')?.[1] === SUMMARY);
+    const res = previous ? await call('PATCH', `${repo}/issues/comments/${previous.id}`, { body: summary }) : await call('POST', `${repo}/issues/${payload.pull}/comments`, { body: summary });
+    if (!res.ok) throw new Error(`GitHub refused the summary comment: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+    const summaryUrl = ((await res.json()) as { html_url?: string }).html_url;
+    return { posted, alreadyReported: payload.comments.length - fresh.length, fixed: gone.length, url, summaryUrl };
+}
+
+/** Checks a review file against the pull request before posting it (it may come from a fork's run). */
+export async function checkPayload(target: GithubTarget, payload: ReviewPayload, fetchImpl: typeof fetch = fetch): Promise<void> {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(payload.repository) || payload.repository !== target.repository) throw new Error(`The review is for ${payload.repository}, not ${target.repository}.`);
+    if (!Number.isInteger(payload.pull) || payload.pull <= 0) throw new Error('The review has no pull request number.');
+    const res = await fetchImpl(`${target.apiUrl ?? 'https://api.github.com'}/repos/${payload.repository}/pulls/${payload.pull}`, { headers: { authorization: `Bearer ${target.token}`, accept: 'application/vnd.github+json' } });
+    if (!res.ok) throw new Error(`GitHub: HTTP ${res.status} reading pull request ${payload.pull}.`);
+    const pr = (await res.json()) as { head?: { sha?: string } };
+    if (pr.head?.sha !== payload.commit) throw new Error(`The review was made for ${payload.commit.slice(0, 7)}, but the pull request is now at ${pr.head?.sha?.slice(0, 7)}: not posted (a newer run will review it).`);
+    if (payload.comments.length > 200 || payload.comments.some(c => typeof c.path !== 'string' || typeof c.body !== 'string' || c.body.length > 60_000)) throw new Error('The review file is not a ProvenFlow review.');
+}
+
+/** GitHub Actions annotations (the Files tab of the pull request, and the run's summary). */
+export function annotations(findings: Finding[]): string[] {
+    const esc = (v: string) => v.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+    const prop = (v: string) => esc(v).replace(/:/g, '%3A').replace(/,/g, '%2C');
+    return findings
+        .filter(f => f.loc)
+        .map(f => `::${f.severity === 'error' ? 'error' : f.severity === 'warning' ? 'warning' : 'notice'} file=${prop(f.loc!.file)},line=${f.loc!.line},title=${prop(`ProvenFlow ${f.rule}`)}::${esc(`${f.message}\nFix: ${f.fix}`)}`);
+}
+
+/** Whether a pull request comes from a fork (its token cannot post reviews). */
+export function fromFork(env: NodeJS.ProcessEnv = process.env): boolean {
+    try {
+        const event = JSON.parse(readFileSync(env['GITHUB_EVENT_PATH'] ?? '', 'utf8')) as { pull_request?: { head?: { repo?: { full_name?: string } }; base?: { repo?: { full_name?: string } } } };
+        const head = event.pull_request?.head?.repo?.full_name;
+        return !!head && head !== event.pull_request?.base?.repo?.full_name;
+    } catch {
+        return false;
+    }
 }
