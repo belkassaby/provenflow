@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { extractProject, lineDiff, type ExtractionResult } from '../src/index.js';
+import { extractProject, isApplied, lineDiff, verifyProposals, type ExtractionResult } from '../src/index.js';
 
 const SHOP = fileURLToPath(new URL('./fixtures/shop', import.meta.url));
 const POLYGLOT = fileURLToPath(new URL('./fixtures/polyglot', import.meta.url));
@@ -126,6 +126,22 @@ describe('quick fixes, verified by re-running every check', () => {
             rmSync(dir, { recursive: true, force: true });
         }
     }, 120_000);
+
+    it('does not propose again a change already in the code when the finding remains', async () => {
+        const finding = { rule: 'resource-leak', category: 'lifecycle', severity: 'warning', subject: 'Poller', message: 'm', fix: 'Release it.', loc: { file: 'a.ts', line: 2, column: 1 }, source: 'nuxmv' } as const;
+        const edit = { file: 'a.ts', search: '    this.timer = setInterval(f);', replace: '    clearInterval(this.timer);\n    this.timer = setInterval(f);' };
+        expect(isApplied('start() {\n    this.timer = setInterval(f);\n}', edit)).toBe(false);
+        const applied = 'start() {\n    clearInterval(this.timer);\n    this.timer = setInterval(f);\n}';
+        expect(isApplied(applied, edit)).toBe(true);
+        let reruns = 0;
+        const r = await verifyProposals([finding], [{ finding, edits: [edit], explanation: 'e', by: 'quick fix' }], '/nowhere', async () => {
+            reruns++;
+            return { findings: [finding], models: [], verdicts: [] };
+        }, () => applied);
+        expect(reruns).toBe(0);
+        expect(r.findings[0].suggestedPatch).toBeUndefined();
+        expect(r.findings[0].fix).toMatch(/already in the code and the finding is still reported/);
+    });
 
     it('proposes nothing unless asked', async () => {
         const r = await extractProject(SHOP, { analyzers: false, config: {} });

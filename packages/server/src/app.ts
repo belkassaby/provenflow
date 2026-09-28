@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { extractProject, providerFromSpec, webReport, type PreviousRun, type ProvenflowConfig } from '@provenflow/extract';
+import { extractProject, isApplied, providerFromSpec, webReport, type PreviousRun, type ProvenflowConfig } from '@provenflow/extract';
 import { generateSmv, GenerationError, parseDiagram } from '@provenflow/language';
 import { ENGINES, nuxmvInfo, runNuxmv, type Engine, type RunnerConfig } from './nuxmv-runner.js';
 import { LlmSettingsStore, type LlmKind, type UpdateInput } from './llm-settings.js';
@@ -284,6 +284,10 @@ export function createApp(options: AppOptions): express.Express {
                     if (text === undefined && e.search === '') {
                         pending.set(e.file, e.replace);
                         continue;
+                    }
+                    if (isApplied(text, { file: e.file, search: e.search, replace: e.replace })) {
+                        conflict = `This change is already in ${e.file}: it was not applied a second time.`;
+                        break;
                     }
                     if (text === undefined || text.split(e.search).length !== 2) {
                         conflict = `${e.file} no longer contains the text this change replaces (another change or an edit touched it): run the analysis again for an up-to-date proposal.`;

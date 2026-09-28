@@ -67,6 +67,36 @@ export interface Baseline {
 const key = (f: Finding) => `${f.rule}|${f.subject}|${f.loc?.file ?? ''}`;
 
 /** Applies each proposal in memory, re-runs every check, and attaches the verified (or not) patch to its finding. */
+/**
+ * Whether an edit is already in a text, so that applying it would only add the same lines again:
+ * - the text already holds the replacement of an edit that inserts next to its anchor; or
+ * - the searched text is there, and every line the edit adds is already in it (a fix proposed
+ *   again on code where it was applied, and the finding remains).
+ */
+export function isApplied(text: string | undefined, edit: Edit): boolean {
+    if (text === undefined || edit.search === '' || edit.replace === edit.search) return false;
+    if (edit.replace.includes(edit.search) && text.includes(edit.replace)) return true;
+    if (!text.includes(edit.search)) return false;
+    const added = addedLines(edit.search, edit.replace);
+    const present = new Set(lines(edit.search));
+    return added.length > 0 && added.every(l => present.has(l));
+}
+
+const lines = (text: string) => text.split('\n').map(l => l.trim()).filter(l => l !== '');
+
+/** Lines (trimmed, not blank) the replacement has more of than the searched text. */
+function addedLines(search: string, replace: string): string[] {
+    const count = new Map<string, number>();
+    for (const l of lines(search)) count.set(l, (count.get(l) ?? 0) + 1);
+    const added: string[] = [];
+    for (const l of lines(replace)) {
+        const n = count.get(l) ?? 0;
+        if (n > 0) count.set(l, n - 1);
+        else added.push(l);
+    }
+    return added;
+}
+
 export async function verifyProposals(
     findings: Finding[],
     proposals: Proposal[],
@@ -83,9 +113,17 @@ export async function verifyProposals(
     const patched = new Map<Finding, Finding>();
     for (const [index, p] of proposals.entries()) {
         await onProposal?.(p, index, proposals.length);
+        // A change already in the code (applied earlier, and the finding is still there) is not proposed again.
+        const pending = p.edits.filter(e => !isApplied(read(e.file), e));
+        if (pending.length === 0) {
+            const note = ' (This proposed change is already in the code and the finding is still reported: the automatic fix does not resolve it here. Fix it by hand, or ask an LLM for a patch.)';
+            patched.set(p.finding, { ...p.finding, fix: `${p.finding.fix}${note}` });
+            rejected.push(`${p.by}: ${p.finding.rule} ${p.finding.subject}: already applied, the finding remains`);
+            continue;
+        }
         const overrides = new Map<string, string>();
         let problem = '';
-        for (const e of p.edits) {
+        for (const e of pending) {
             const current = overrides.get(e.file) ?? read(e.file);
             if (current === undefined && e.search === '') {
                 overrides.set(e.file, e.replace); // a new file (e.g. provenflow.config.json)
@@ -100,7 +138,7 @@ export async function verifyProposals(
         const files: PatchFile[] = [...overrides].map(([file, after]) => ({ file, before: read(file) ?? '', after }));
         const diff = files.map(f => lineDiff(f.file, f.before, f.after)).join('\n');
         if (problem) {
-            patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified: false, note: problem, by: p.by, edits: p.edits, touches: p.touches } });
+            patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified: false, note: problem, by: p.by, edits: pending, touches: p.touches } });
             rejected.push(`${p.by}: ${p.finding.rule} ${p.finding.subject}: ${problem}`);
             continue;
         }
@@ -126,7 +164,7 @@ export async function verifyProposals(
             : stillThere
               ? `${p.explanation} The finding is still reported on the changed code.`
               : `${p.explanation} The change introduces: ${[...new Set(added.map(x => x.rule))].join(', ')}.`;
-        patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified, note, by: p.by, models, edits: p.edits, touches: p.touches, checks } });
+        patched.set(p.finding, { ...p.finding, suggestedPatch: { diff, files, verified, note, by: p.by, models, edits: pending, touches: p.touches, checks } });
         (verified ? accepted : rejected).push(`${p.by}: ${p.finding.rule} ${p.finding.subject}: ${verified ? 'verified' : 'not verified'}`);
     }
     return { findings: findings.map(f => patched.get(f) ?? f), accepted, rejected };

@@ -386,6 +386,13 @@ describe('code changes: proposed, verified, applied', () => {
         expect(res.results.map((r: { id: string; status: string }) => `${r.id}:${r.status}`)).toEqual(['cases:applied', 'leak:applied', 'cases-again:conflict']);
         expect(readFileSync(join(copy, 'src/core/order.ts'), 'utf8')).toContain("case 'refunded':");
         expect(readFileSync(join(copy, 'src/ui/widgets.ts'), 'utf8')).toContain('dispose(): void');
+        // The same fix proposed on the changed code only repeats lines already there: not applied twice.
+        const widgets = readFileSync(join(copy, 'src/ui/widgets.ts'), 'utf8');
+        const [edit] = leak.suggestedPatch.edits as Array<{ file: string; search: string; replace: string }>;
+        const again = { file: edit.file, search: edit.replace, replace: edit.replace.replace('        clearInterval(this.timer); // release', '        clearInterval(this.timer); // release the previous one before acquiring again\n        clearInterval(this.timer); // release') };
+        const twice = await (await post('/api/apply-edits', { root: report.root, changes: [{ id: 'leak', edits: [again] }] })).json();
+        expect(twice.results[0]).toMatchObject({ status: 'conflict', message: expect.stringContaining('already in') });
+        expect(readFileSync(join(copy, 'src/ui/widgets.ts'), 'utf8')).toBe(widgets);
     });
 
     it('refuses to write outside an analysed folder', async () => {

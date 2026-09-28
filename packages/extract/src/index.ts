@@ -35,7 +35,7 @@ export * from './config.js';
 export * from './ir.js';
 export * from './models.js';
 export * from './llm.js';
-export { lineDiff, quickFixes, verifyProposals, type Proposal } from './fixes.js';
+export { isApplied, lineDiff, quickFixes, verifyProposals, type Edit, type Proposal } from './fixes.js';
 export { BUNDLED_RULES, parseCbmcJson, parseEsbmc, parseKani, sarifToFindings, type ToolRun } from './analyzers/index.js';
 export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './buildcheck.js';
 export * from './review.js';

@@ -323,6 +323,10 @@ export class CodeImport {
                             pending.set(e.file, e.replace);
                             continue;
                         }
+                        if (text !== undefined && isApplied(text, e)) {
+                            conflict = `This change is already in ${e.file}: it was not applied a second time.`;
+                            break;
+                        }
                         if (text === undefined || text.split(e.search).length !== 2) {
                             conflict = `${e.file} no longer contains the text this change replaces: run the analysis again for an up-to-date proposal.`;
                             break;
@@ -506,6 +510,23 @@ export class CodeImport {
     restore(): void {
         if (!this.report()) this.report.set(loadReport());
     }
+}
+
+/** An edit whose lines are already in the text: applying it would duplicate them (isApplied in @provenflow/extract). */
+function isApplied(text: string, e: { search: string; replace: string }): boolean {
+    if (e.search === '' || e.replace === e.search) return false;
+    if (e.replace.includes(e.search) && text.includes(e.replace)) return true;
+    if (!text.includes(e.search)) return false;
+    const lines = (t: string) => t.split('\n').map(l => l.trim()).filter(l => l !== '');
+    const count = new Map<string, number>();
+    for (const l of lines(e.search)) count.set(l, (count.get(l) ?? 0) + 1);
+    const added = lines(e.replace).filter(l => {
+        const n = count.get(l) ?? 0;
+        if (n > 0) count.set(l, n - 1);
+        return n === 0;
+    });
+    const present = new Set(lines(e.search));
+    return added.length > 0 && added.every(l => present.has(l));
 }
 
 /** The stream broke before the analysis ended (the analysis itself may still be running). */
