@@ -399,7 +399,9 @@ download it. Applying works for folders opened with **Choose folder…** in Chro
 writes the change) or analysed by path. **Apply all** applies every verified change in one go. **Run the analysis again** then redoes
 only what the changed files can affect (the models are checked again in full; the analysers,
 change checks and replays run for the changed files, and the rest is kept from the last run).
-LLM keys and models (and the workspace ID of an Anthropic key not scoped to a workspace) are set in **Help → LLM settings**.
+Any finding can also get an **LLM fix**: the LLM writes the change from the finding's suggested
+fix, and it is verified and shown before/after like the others; **Verify this version** checks
+your own edit of a proposal the same way before you apply it. LLM keys and models (and the workspace ID of an Anthropic key not scoped to a workspace) are set in **Help → LLM settings**.
 
 From a terminal:
 
@@ -707,6 +709,8 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | POST   | `/api/nurv` | `{ diagram }`: NuRV monitor sources and build commands (needs `NURV_PATH`) |
 | POST   | `/api/apply` | `{ root, file, before, after }`: writes a reviewed change into a folder this server analysed by path (409 if the file changed since) |
 | POST   | `/api/apply-edits` | `{ root, changes: [{ id, edits }] }`: applies several changes in order, each on top of the previous ones; one that no longer matches is reported as a conflict |
+| POST   | `/api/fix` | `{ path \| files, name, finding, llm }`: the LLM implements the finding's suggested fix; the change comes back verified or not, with the files before/after and the diff |
+| POST   | `/api/verify-change` | `{ path \| files, name, finding, changed: [{ file, after }] }`: verifies a reviewed version of the files like a proposed change (nothing is written) |
 | GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
 | POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay). With `Accept: application/x-ndjson` it streams `{ progress: { phase, message, percent } }` lines while it runs, then `{ result }`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
 

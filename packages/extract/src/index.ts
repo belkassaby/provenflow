@@ -14,7 +14,8 @@ import { analyseArchitecture, type ArchitectureResult } from './architecture.js'
 import { buildLifecycles } from './lifecycles.js';
 import { confirmUnreachableInC, runAnalyzers, type AnalyzerOutput, type ToolRun } from './analyzers/index.js';
 import { ChangeChecker, detectChecks } from './buildcheck.js';
-import { quickFixes, readSafe, verifyProposals, type Proposal } from './fixes.js';
+import { quickFixes, readSafe, verifyProposals, type Proposal, type Rerun } from './fixes.js';
+import type { ChangeContext } from './single-change.js';
 import { confirmFindings } from './replay.js';
 import { reporter, type OnProgress } from './progress.js';
 import { changedFiles, findingKey, fingerprints, isToolFinding, settingsKey, touches, type IncrementalInfo, type PreviousRun } from './incremental.js';
@@ -42,6 +43,7 @@ export * from './review.js';
 export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export type { IncrementalInfo, PreviousRun } from './incremental.js';
+export { fixWithLlm, verifyVersion, type ChangeContext, type SingleChange } from './single-change.js';
 export * from './report.js';
 export { listSourceFiles } from './scan.js';
 export { LANGUAGES } from './treesitter/frontend.js';
@@ -209,19 +211,7 @@ export async function extractProject(root: string, options: ExtractOptions = {})
     ]);
     findings = applyIgnores(gradePatternFindings(findings, instances), config).sort(bySeverity);
 
-    const rerun = async (overrides: Map<string, string>) => {
-        // A change of provenflow.config.json is part of the change being checked.
-        const changedConfig = overrides.get(CONFIG_FILE);
-        const r = await extractProject(root, {
-            config: changedConfig ? (JSON.parse(changedConfig) as ProvenflowConfig) : config,
-            checker: options.checker,
-            overrides: new Map([...(options.overrides ?? []), ...overrides]),
-            analyzers: options.analyzers,
-            confirm: false,
-            rerunOf: [...overrides.keys()]
-        });
-        return { findings: r.findings, models: r.models, verdicts: r.verdicts };
-    };
+    const rerun = rerunner(root, config, options);
     const proposing = (options.quickFixes ?? 0) > 0 || (!!llm && (options.llmFixes ?? 0) > 0);
     const detected = proposing && options.buildChecks !== false && !options.rerunOf ? detectChecks(root, files, config) : { build: [], test: [] };
     const changeChecker = new ChangeChecker(root, [...detected.build, ...detected.test], config.verification?.timeoutSec ?? 300);
@@ -291,8 +281,38 @@ export async function extractProject(root: string, options: ExtractOptions = {})
         proofs: tools.proofs,
         changeChecks: [...detected.build, ...detected.test].map(c => `${c.name}: ${c.command}`),
         incremental: changed ? { changed: [...changed].sort(), reused } : undefined,
-        previous: { fingerprints: prints, settings, findings, proofs: tools.proofs, tools: tools.ran }
+        previous: { fingerprints: prints, settings, findings, proofs: tools.proofs, tools: tools.ran, models, verdicts: verification.verdicts }
     };
+}
+
+/** Re-runs the analysis with some files replaced (in memory), to check a change. */
+function rerunner(root: string, config: ProvenflowConfig, options: ExtractOptions): Rerun {
+    return async overrides => {
+        // A change of provenflow.config.json is part of the change being checked.
+        const changedConfig = overrides.get(CONFIG_FILE);
+        const r = await extractProject(root, {
+            config: changedConfig ? (JSON.parse(changedConfig) as ProvenflowConfig) : config,
+            checker: options.checker,
+            overrides: new Map([...(options.overrides ?? []), ...overrides]),
+            analyzers: options.analyzers,
+            confirm: false,
+            rerunOf: [...overrides.keys()]
+        });
+        return { findings: r.findings, models: r.models, verdicts: r.verdicts };
+    };
+}
+
+/**
+ * What checking one change of a project needs (for fixWithLlm and verifyVersion): its last results
+ * (`options.previous`, or a new analysis without proposals), the re-run, and its build checks.
+ */
+export async function changeContext(root: string, options: ExtractOptions = {}): Promise<ChangeContext> {
+    const config = options.config ?? loadConfig(root, options.configFile);
+    const baseline = options.previous ?? (await extractProject(root, { ...options, previous: undefined, quickFixes: 0, llmFixes: 0, confirm: false })).previous;
+    const files = listSourceFiles(root, config.include, config.exclude);
+    const detected = options.buildChecks !== false ? detectChecks(root, files, config) : { build: [], test: [] };
+    const checker = new ChangeChecker(root, [...detected.build, ...detected.test], config.verification?.timeoutSec ?? 300);
+    return { root, baseline, rerun: rerunner(root, config, options), buildCheck: checker.enabled ? overrides => checker.check(overrides) : undefined };
 }
 
 /** The previous proposal for a finding, when neither the finding nor the proposal touches a changed file. */

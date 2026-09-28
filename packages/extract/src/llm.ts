@@ -217,6 +217,40 @@ export async function suggestProperties(models: ExtractedModel[], root: string, 
 
 // ----------------------------------------------------------------------- fixes
 
+/**
+ * One finding, fixed by the LLM from its suggested fix: the whole file when it is not too long
+ * (otherwise the code around the finding), the counterexample and the related places. The answer
+ * is exact search/replace edits, which the caller turns into a diff and verifies.
+ */
+export async function proposeFixFor(f: Finding, root: string, provider: LlmProvider): Promise<Proposal | undefined> {
+    if (!f.loc) return undefined;
+    const whole = readFileText(root, f.loc.file);
+    const numbered = (text: string) => text.split('\n').map((l, i) => `${String(i + 1).padStart(5)}| ${l}`).join('\n');
+    const others = [...new Set((f.related ?? []).map(r => r.file).filter(file => file !== f.loc!.file))].slice(0, 2);
+    const user = [
+        `Finding (${f.rule}, ${f.severity}) about ${f.subject}, at ${f.loc.file}:${f.loc.line}:`,
+        f.message,
+        `Suggested fix: ${f.fix}`,
+        ...(f.counterexample && f.counterexample.length > 1 ? [`How it goes wrong (counterexample, as calls in the code):\n${f.counterexample.map((c, i) => `${i}. ${c.event ? `${c.event} -> ` : ''}${c.state}${c.loc ? ` (${c.loc.file}:${c.loc.line})` : ''}`).join('\n')}`] : []),
+        whole !== undefined && whole.split('\n').length <= 600 ? `--- ${f.loc.file} (whole file, with line numbers for reference)\n${numbered(whole)}` : `--- ${f.loc.file} around line ${f.loc.line}\n${excerpt(root, f.loc.file, f.loc.line, 60)}`,
+        ...others.map(file => `--- ${file} (related)\n${excerpt(root, file, (f.related ?? []).find(r => r.file === file)!.line, 25)}`),
+        'Implement the suggested fix with the smallest change that makes the finding go away without introducing another problem, and that still compiles. Keep the style of the code.',
+        'Answer with exact search/replace edits: each search is copied verbatim from the file (without the line numbers), is long enough to occur exactly once, and replace is its new text.',
+        'Answer: {"edits": [{"file": "...", "search": "...", "replace": "..."}], "explanation": "one or two sentences"}'
+    ].join('\n\n');
+    const answer = jsonIn(await provider.complete(SYSTEM, user)) as { edits?: Edit[]; explanation?: string } | undefined;
+    const edits = (answer?.edits ?? []).filter(e => typeof e?.file === 'string' && typeof e.search === 'string' && typeof e.replace === 'string');
+    return edits.length > 0 ? { finding: f, edits, explanation: answer?.explanation ?? '', by: provider.name } : undefined;
+}
+
+function readFileText(root: string, file: string): string | undefined {
+    try {
+        return readFileSync(join(root, file), 'utf8');
+    } catch {
+        return undefined;
+    }
+}
+
 /** Proposals from the LLM for the first `limit` warnings/errors without a patch yet (verified by the caller). */
 export async function proposeFixes(findings: Finding[], root: string, provider: LlmProvider, limit = 5): Promise<Proposal[]> {
     const proposals: Proposal[] = [];

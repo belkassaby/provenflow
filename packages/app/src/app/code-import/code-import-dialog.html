@@ -132,8 +132,10 @@
         <app-code-diff [before]="pf.before" [after]="pf.after" [file]="pf.file" />
         <div class="code-review-actions">
           <button type="button" class="primary" (click)="applyChange()" [disabled]="!codeImport.writeMode().via || isApplied(f)" [title]="codeImport.writeMode().via ? 'Write the proposed text (with your edits) to ' + pf.file : codeImport.writeMode().reason">{{ isApplied(f) ? 'Applied to ' : 'Apply to ' }}{{ pf.file.split('/').pop() }}</button>
-          <button type="button" (click)="downloadChange()">Download file</button>
-          <button type="button" (click)="copyChange()">Copy</button>
+          <button type="button" (click)="verifyThis()" [disabled]="!!change.working()" title="Checks the right-hand text, with your edits, like a proposed change: the analysis again on the changed file, and the build or type check on a copy">{{ change.isWorking(f, 'verify') ? 'Verifying…' : 'Verify this version' }}</button>
+          <button type="button" (click)="llmFix(f)" [disabled]="!!change.working() || !llmSpec()" [title]="llmSpec() ? 'Ask ' + llmSpec() + ' for a new fix, from the suggested fix, verified the same way' : 'Set an LLM in Help → LLM settings'">{{ change.isWorking(f, 'fix') ? 'Asking the LLM…' : 'New LLM fix' }}</button>
+          <button type="button" (click)="exportChange('download')">Download file</button>
+          <button type="button" (click)="exportChange('copy')">Copy</button>
           @if (codeImport.writeMode().via && codeImport.applied().size > 0) { <button type="button" (click)="rerun()" title="Redoes only what the changed files can affect; the rest is kept from the last run">Run the analysis again (changed files)</button> }
           <span class="spacer"></span>
           @if (applyMessage(); as m) { <span class="small" [class.ok-text]="m.ok" [class.error-text]="!m.ok">{{ m.text }}</span> }
@@ -209,7 +211,7 @@
   } @else if (view() === 'modelChange' && modelChange(); as mc) {
     <div class="code-review">
       <div class="code-review-head">
-        <button type="button" (click)="backToModel()">← Back to the model</button>
+        <button type="button" (click)="view.set('model')">← Back to the model</button>
         <strong>{{ mc.change.subject }}</strong>
         <span class="muted small">after the change for {{ mc.finding.rule }}</span>
         <span class="badge" [class.ok]="mc.finding.suggestedPatch!.verified" [class.warn]="!mc.finding.suggestedPatch!.verified">{{ mc.finding.suggestedPatch!.verified ? '✓ verified' : '✗ not verified' }}</span>
@@ -283,6 +285,9 @@
                     @if (f.suggestedPatch?.files?.length) {
                       <button type="button" class="small" (click)="review(f)" [title]="f.suggestedPatch!.note">Review change <span class="badge" [class.ok]="f.suggestedPatch!.verified" [class.warn]="!f.suggestedPatch!.verified">{{ f.suggestedPatch!.verified ? '✓' : '✗' }}</span></button>
                     }
+                    @if (f.loc && f.severity !== 'info' && !f.suggestedPatch?.verified) {
+                      <button type="button" class="small" (click)="llmFix(f)" [disabled]="!!change.working() || !llmSpec()" [title]="llmSpec() ? llmSpec() + ' writes the change from the suggested fix; it is verified like the quick fixes, then shown before/after' : 'Set an LLM in Help → LLM settings'">{{ change.isWorking(f, 'fix') ? 'Asking the LLM…' : 'LLM fix' }}</button>
+                    }
                     @if (modelOf(f.model); as m) {
                       <button type="button" class="small" (click)="showModel(m)" title="The model this was found on, with all its properties">Model</button>
                     }
@@ -304,6 +309,8 @@
                     </ol>
                   }
                   <p class="code-fix"><strong>Fix:</strong> {{ f.fix }}</p>
+                  @if (change.isWorking(f, 'fix')) { <p class="small muted"><span class="spinner" aria-hidden="true"></span> {{ llmSpec() }} is writing the change, then it is verified (the analysis again on the changed files, and the build): this can take a minute.</p> }
+                  @if (outcome(); as o) { @if (o.key === changeKey(f)) { <p class="small" [class.error-text]="!o.ok">{{ o.text }}</p> } }
                 </li>
               }
             </ul>

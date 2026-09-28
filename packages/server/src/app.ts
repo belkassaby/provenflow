@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { extractProject, isApplied, providerFromSpec, webReport, type PreviousRun, type ProvenflowConfig } from '@provenflow/extract';
+import { changeContext, extractProject, fixWithLlm, isApplied, providerFromSpec, verifyVersion, webReport, type Finding, type PreviousRun, type ProvenflowConfig } from '@provenflow/extract';
 import { generateSmv, GenerationError, parseDiagram } from '@provenflow/language';
 import { ENGINES, nuxmvInfo, runNuxmv, type Engine, type RunnerConfig } from './nuxmv-runner.js';
 import { LlmSettingsStore, type LlmKind, type UpdateInput } from './llm-settings.js';
@@ -47,7 +47,7 @@ export function createApp(options: AppOptions): express.Express {
     app.disable('x-powered-by');
     // Code bases are uploaded to /api/extract, which takes larger bodies.
     const json = express.json({ limit: '2mb' });
-    app.use((req, res, next) => (['/api/extract', '/api/apply', '/api/apply-edits'].includes(req.path) ? next() : json(req, res, next)));
+    app.use((req, res, next) => (['/api/extract', '/api/apply', '/api/apply-edits', '/api/fix', '/api/verify-change'].includes(req.path) ? next() : json(req, res, next)));
 
     let running = 0;
     const runs = new ExtractRuns(options.heartbeatMs);
@@ -94,6 +94,47 @@ export function createApp(options: AppOptions): express.Express {
      * then { result } or { error }. The analysis goes on if the connection drops:
      * GET /api/extract/runs/<id> follows it again.
      */
+    /** The folder a request is about: a path of this machine, or uploaded files (written to a temporary folder). */
+    const folderOf = async (body: { path?: unknown; files?: unknown }): Promise<{ root: string; temp?: string }> => {
+        if (typeof body.path === 'string') {
+            if (!options.allowLocalPaths) throw new HttpError(403, 'This server does not read folders by path (it is not bound to localhost): upload the folder instead.');
+            if (!isAbsolute(body.path)) throw new HttpError(400, "'path' must be an absolute folder path.");
+            const info = await stat(body.path).catch(() => undefined);
+            if (!info?.isDirectory()) throw new HttpError(404, `No folder at ${body.path}.`);
+            return { root: resolve(body.path) };
+        }
+        if (body.files && typeof body.files === 'object' && !Array.isArray(body.files)) {
+            const entries = Object.entries(body.files as Record<string, unknown>);
+            if (entries.length === 0) throw new HttpError(400, 'No files uploaded.');
+            if (entries.length > MAX_UPLOAD_FILES) throw new HttpError(413, `At most ${MAX_UPLOAD_FILES} files.`);
+            const temp = await mkdtemp(join(tmpdir(), 'provenflow-extract-'));
+            // On success the caller owns the folder (and removes it); on any error it is removed here.
+            let written = false;
+            try {
+                for (const [path, text] of entries) {
+                    const safe = normalize(path).replace(/\\/g, '/');
+                    if (typeof text !== 'string' || isAbsolute(safe) || safe.startsWith('..') || safe.includes('\0')) throw new HttpError(400, `Invalid file ${path}.`);
+                    await mkdir(dirname(join(temp, safe)), { recursive: true });
+                    await writeFile(join(temp, safe), text, 'utf8');
+                }
+                written = true;
+                return { root: temp, temp };
+            } finally {
+                if (!written) await rm(temp, { recursive: true, force: true });
+            }
+        }
+        throw new HttpError(400, "Provide 'path' (a folder on the server) or 'files' (uploaded sources).");
+    };
+    const providerOf = (spec: unknown) => {
+        if (spec === undefined) return undefined;
+        if (typeof spec !== 'string' || !/^(anthropic|openai|ollama):[\w.:/-]*$/.test(spec)) throw new HttpError(400, "'llm' must be anthropic:<model>, openai:<model> or ollama:<model>.");
+        try {
+            return providerFromSpec(spec, settings.providerEnv());
+        } catch (error) {
+            throw new HttpError(400, (error as Error).message);
+        }
+    };
+
     app.post('/api/extract', express.json({ limit: '64mb' }), async (req: Request, res: Response, next: NextFunction) => {
         let temp: string | undefined;
         try {
@@ -101,35 +142,10 @@ export function createApp(options: AppOptions): express.Express {
             const quickFixes = body.quickFixes === undefined ? 20 : Number(body.quickFixes);
             const llmFixes = body.llmFixes === undefined ? 5 : Number(body.llmFixes);
             if (!Number.isFinite(quickFixes) || quickFixes < 0 || !Number.isFinite(llmFixes) || llmFixes < 0) throw new HttpError(400, "'quickFixes' and 'llmFixes' must be numbers >= 0.");
-            if (body.llm !== undefined && (typeof body.llm !== 'string' || !/^(anthropic|openai|ollama):[\w.:/-]*$/.test(body.llm))) throw new HttpError(400, "'llm' must be anthropic:<model>, openai:<model> or ollama:<model>.");
-            let llm;
-            try {
-                llm = typeof body.llm === 'string' ? providerFromSpec(body.llm, settings.providerEnv()) : undefined;
-            } catch (error) {
-                throw new HttpError(400, (error as Error).message);
-            }
-            let root: string;
-            if (typeof body.path === 'string') {
-                if (!options.allowLocalPaths) throw new HttpError(403, 'This server does not read folders by path (it is not bound to localhost): upload the folder instead.');
-                if (!isAbsolute(body.path)) throw new HttpError(400, "'path' must be an absolute folder path.");
-                const info = await stat(body.path).catch(() => undefined);
-                if (!info?.isDirectory()) throw new HttpError(404, `No folder at ${body.path}.`);
-                root = resolve(body.path);
-            } else if (body.files && typeof body.files === 'object' && !Array.isArray(body.files)) {
-                const entries = Object.entries(body.files as Record<string, unknown>);
-                if (entries.length === 0) throw new HttpError(400, 'No files uploaded.');
-                if (entries.length > MAX_UPLOAD_FILES) throw new HttpError(413, `At most ${MAX_UPLOAD_FILES} files.`);
-                temp = await mkdtemp(join(tmpdir(), 'provenflow-extract-'));
-                for (const [path, text] of entries) {
-                    const safe = normalize(path).replace(/\\/g, '/');
-                    if (typeof text !== 'string' || isAbsolute(safe) || safe.startsWith('..') || safe.includes('\0')) throw new HttpError(400, `Invalid file ${path}.`);
-                    await mkdir(dirname(join(temp, safe)), { recursive: true });
-                    await writeFile(join(temp, safe), text, 'utf8');
-                }
-                root = temp;
-            } else {
-                throw new HttpError(400, "Provide 'path' (a folder on the server) or 'files' (uploaded sources).");
-            }
+            const llm = providerOf(body.llm);
+            const source = await folderOf(body);
+            temp = source.temp;
+            const root = source.root;
             if (body.config !== undefined && (typeof body.config !== 'object' || body.config === null)) throw new HttpError(400, "'config' must be an object.");
             if (running >= maxRuns) throw new HttpError(429, 'Too many runs in progress, try again shortly.');
             running++;
@@ -168,6 +184,53 @@ export function createApp(options: AppOptions): express.Express {
             if (temp) await rm(temp, { recursive: true, force: true });
         }
     });
+
+    /**
+     * One change for one finding, checked like the automatic fixes (re-run of the analysis on the
+     * changed files, build or type check on a copy). The folder is given as for /api/extract
+     * (`path`, or `files` and `name`); its last run on this server is the reference.
+     *   POST /api/fix { finding, llm }: the LLM implements the finding's suggested fix;
+     *   POST /api/verify-change { finding, changed: [{ file, after }] }: verifies the reviewer's version.
+     * Both answer { finding } (with its suggestedPatch: the files before/after, the diff, verified and
+     * why), and `error` when there was nothing to check.
+     */
+    const singleChange = (kind: 'fix' | 'verify') => async (req: Request, res: Response, next: NextFunction) => {
+        let temp: string | undefined;
+        try {
+            const body = (req.body ?? {}) as { path?: unknown; files?: unknown; name?: unknown; config?: unknown; finding?: unknown; llm?: unknown; changed?: unknown; analyzers?: unknown };
+            const finding = body.finding as Finding | undefined;
+            if (!finding || typeof finding !== 'object' || typeof finding.rule !== 'string' || typeof finding.subject !== 'string') throw new HttpError(400, "Provide the 'finding' to change.");
+            const provider = kind === 'fix' ? providerOf(body.llm) : undefined;
+            if (kind === 'fix' && !provider) throw new HttpError(400, "Provide 'llm' (anthropic:<model>, openai:<model> or ollama:<model>).");
+            const changed = kind === 'verify' ? body.changed : undefined;
+            if (kind === 'verify' && (!Array.isArray(changed) || changed.length === 0 || changed.some(c => typeof c?.file !== 'string' || typeof c?.after !== 'string'))) throw new HttpError(400, "Provide 'changed': [{ file, after }].");
+            if (body.config !== undefined && (typeof body.config !== 'object' || body.config === null)) throw new HttpError(400, "'config' must be an object.");
+            const source = await folderOf(body);
+            temp = source.temp;
+            const folderKey = temp ? `upload:${typeof body.name === 'string' ? body.name : ''}` : source.root;
+            if (running >= maxRuns) throw new HttpError(429, 'Too many runs in progress, try again shortly.');
+            running++;
+            try {
+                const available = (await nuxmvInfo(options.runner)).available;
+                const ctx = await changeContext(source.root, {
+                    config: body.config as ProvenflowConfig | undefined,
+                    checker: available ? smv => runNuxmv(smv, { engine: 'bdd' }, options.runner) : undefined,
+                    analyzers: body.analyzers !== false,
+                    previous: previousRuns.get(folderKey)
+                });
+                const result = kind === 'fix' ? await fixWithLlm(ctx, finding, provider!) : await verifyVersion(ctx, finding, changed as Array<{ file: string; after: string }>);
+                res.json(result);
+            } finally {
+                running--;
+            }
+        } catch (error) {
+            next(error);
+        } finally {
+            if (temp) await rm(temp, { recursive: true, force: true });
+        }
+    };
+    app.post('/api/fix', express.json({ limit: '64mb' }), singleChange('fix'));
+    app.post('/api/verify-change', express.json({ limit: '64mb' }), singleChange('verify'));
 
     /** GET /api/extract/runs/<id>: follows a streamed analysis again (NDJSON), or collects its report. */
     app.get('/api/extract/runs/:id', (req: Request, res: Response) => {

@@ -168,6 +168,19 @@ describe('quick fixes, verified by re-running every check', () => {
         }
     });
 
+    it('tells a change already applied from one that only adds lines found elsewhere in the file', () => {
+        const once = 'class P {\n    start() {\n        clearInterval(this.t); // release\n        this.t = setInterval(f);\n    }\n    stop() {\n        clearInterval(this.t);\n    }\n\n    dispose(): void {\n        clearInterval(this.t);\n    }\n}';
+        // The same fix proposed again on the fixed class: both of its blocks would be duplicated.
+        const twice = once.replace('        clearInterval(this.t); // release\n', '        clearInterval(this.t); // release\n        clearInterval(this.t); // release\n').replace('\n\n    dispose(): void {\n        clearInterval(this.t);\n    }\n}', '\n\n    dispose(): void {\n        clearInterval(this.t);\n    }\n\n    dispose(): void {\n        clearInterval(this.t);\n    }\n}');
+        expect(isApplied(once, { file: 'p.ts', search: once, replace: twice })).toBe(true);
+        // A new release line whose text already exists in stop(): a real change.
+        const original = 'class P {\n    start() {\n        this.t = setInterval(f);\n    }\n    stop() {\n        clearInterval(this.t);\n    }\n}';
+        const fixed = original.replace('    start() {\n', '    start() {\n        clearInterval(this.t);\n');
+        expect(isApplied(original, { file: 'p.ts', search: original, replace: fixed })).toBe(false);
+        // A change that removes a line is never "already applied".
+        expect(isApplied(once, { file: 'p.ts', search: once, replace: once.replace('        this.t = setInterval(f);\n', '') })).toBe(false);
+    });
+
     it('does not propose again a change already in the code when the finding remains', async () => {
         const finding = { rule: 'resource-leak', category: 'lifecycle', severity: 'warning', subject: 'Poller', message: 'm', fix: 'Release it.', loc: { file: 'a.ts', line: 2, column: 1 }, source: 'nuxmv' } as const;
         const edit = { file: 'a.ts', search: '    this.timer = setInterval(f);', replace: '    clearInterval(this.timer);\n    this.timer = setInterval(f);' };

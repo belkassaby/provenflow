@@ -7,7 +7,8 @@
  */
 import { createHash } from 'node:crypto';
 import type { ProvenflowConfig } from './config.js';
-import type { CodeProof, Finding } from './models.js';
+import type { CodeProof, ExtractedModel, Finding } from './models.js';
+import type { SpecVerdict } from './verify.js';
 import type { ToolRun } from './analyzers/index.js';
 
 /** What a later run reuses from this one. */
@@ -19,6 +20,9 @@ export interface PreviousRun {
     findings: Finding[];
     proofs: CodeProof[];
     tools: ToolRun[];
+    /** The models and verdicts, to show a change's effect on them (before/after). */
+    models: ExtractedModel[];
+    verdicts: SpecVerdict[];
 }
 
 export interface IncrementalInfo {

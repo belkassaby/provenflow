@@ -70,31 +70,49 @@ const key = (f: Finding) => `${f.rule}|${f.subject}|${f.loc?.file ?? ''}`;
 /**
  * Whether an edit is already in a text, so that applying it would only add the same lines again:
  * - the text already holds the replacement of an edit that inserts next to its anchor; or
- * - the searched text is there, and every line the edit adds is already in it (a fix proposed
- *   again on code where it was applied, and the finding remains).
+ * - the searched text is there, and the edit only inserts blocks of lines, each right next to an
+ *   identical copy of itself (a fix proposed again on code where it was already applied).
  */
 export function isApplied(text: string | undefined, edit: Edit): boolean {
     if (text === undefined || edit.search === '' || edit.replace === edit.search) return false;
     if (edit.replace.includes(edit.search) && text.includes(edit.replace)) return true;
-    if (!text.includes(edit.search)) return false;
-    const added = addedLines(edit.search, edit.replace);
-    const present = new Set(lines(edit.search));
-    return added.length > 0 && added.every(l => present.has(l));
+    return text.includes(edit.search) && onlyDuplicates(edit.search.split('\n'), edit.replace.split('\n'));
 }
 
-const lines = (text: string) => text.split('\n').map(l => l.trim()).filter(l => l !== '');
-
-/** Lines (trimmed, not blank) the replacement has more of than the searched text. */
-function addedLines(search: string, replace: string): string[] {
-    const count = new Map<string, number>();
-    for (const l of lines(search)) count.set(l, (count.get(l) ?? 0) + 1);
-    const added: string[] = [];
-    for (const l of lines(replace)) {
-        const n = count.get(l) ?? 0;
-        if (n > 0) count.set(l, n - 1);
-        else added.push(l);
+/** Whether `after` is `before` with only inserted blocks of lines, each a copy of the lines just above or below it. */
+function onlyDuplicates(before: string[], after: string[]): boolean {
+    const a = before.map(l => l.trim());
+    const b = after.map(l => l.trim());
+    let head = 0;
+    while (head < a.length && head < b.length && a[head] === b[head]) head++;
+    let tail = 0;
+    while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+    const x = a.slice(head, a.length - tail);
+    const y = b.slice(head, b.length - tail);
+    if (y.length === 0 || x.length * y.length > 4_000_000) return false;
+    // Longest common subsequence of the middle parts: every line of `before` must be kept.
+    const lcs = Array.from({ length: x.length + 1 }, () => new Uint32Array(y.length + 1));
+    for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) lcs[i][j] = x[i] === y[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    if (lcs[0][0] !== x.filter(l => l !== '').length && lcs[0][0] !== x.length) return false;
+    const inserted: number[] = [];
+    for (let i = 0, j = 0; j < y.length; ) {
+        if (i < x.length && x[i] === y[j]) {
+            i++;
+            j++;
+        } else if (i < x.length && lcs[i + 1][j] >= lcs[i][j + 1]) {
+            if (x[i] !== '') return false; // a line of `before` removed
+            i++;
+        } else inserted.push(head + j++);
     }
-    return added;
+    // Group the inserted lines into blocks; each must repeat the lines right above or below it.
+    const blocks: Array<[number, number]> = [];
+    for (const k of inserted) {
+        const last = blocks[blocks.length - 1];
+        if (last && last[1] === k) last[1] = k + 1;
+        else blocks.push([k, k + 1]);
+    }
+    const same = (from: number, to: number, at: number) => at >= 0 && at + (to - from) <= b.length && b.slice(from, to).join('\n') === b.slice(at, at + (to - from)).join('\n');
+    return blocks.every(([from, to]) => b.slice(from, to).every(l => l === '') || same(from, to, from - (to - from)) || same(from, to, to));
 }
 
 export async function verifyProposals(

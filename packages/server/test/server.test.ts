@@ -330,6 +330,76 @@ describe('POST /api/extract (code base models)', () => {
     });
 });
 
+describe('one change for one finding: LLM fix, and Verify this version', () => {
+    const SHOP = fileURLToPath(new URL('../../extract/test/fixtures/shop', import.meta.url));
+    const runner: RunnerConfig = { executable: '/nonexistent/nuXmv', timeoutMs: 10_000, maxOutputBytes: 1_000_000 };
+    let server: Server;
+    let fake: Server;
+    let url: string;
+    let copy: string;
+    const prompts: string[] = [];
+    beforeAll(async () => {
+        copy = mkdtempSync(join(tmpdir(), 'provenflow-single-'));
+        cpSync(SHOP, copy, { recursive: true });
+        const { createServer } = await import('node:http');
+        // An OpenAI-compatible LLM that implements the suggested fix of the Poller leak.
+        fake = createServer((req, res) => {
+            let body = '';
+            req.on('data', c => (body += c));
+            req.on('end', () => {
+                prompts.push(JSON.parse(body).messages[1].content);
+                const edit = { file: 'src/ui/widgets.ts', search: "        this.timer = setInterval(() => console.log('tick'), 1000);", replace: "        clearInterval(this.timer);\n        this.timer = setInterval(() => console.log('tick'), 1000);" };
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ edits: [edit], explanation: 'Clears the previous timer before starting a new one.' }) } }] }));
+            });
+        });
+        await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', () => resolve()));
+        const { LlmSettingsStore } = await import('../src/llm-settings.js');
+        const llmSettings = new LlmSettingsStore({ OPENAI_BASE_URL: `http://127.0.0.1:${(fake.address() as AddressInfo).port}` }, join(copy, 'no-settings.json'));
+        await new Promise<void>(resolve => {
+            server = createApp({ runner, allowLocalPaths: true, llmSettings }).listen(0, '127.0.0.1', () => {
+                url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+                resolve();
+            });
+        });
+    });
+    afterAll(() => {
+        server.close();
+        fake.close();
+        rmSync(copy, { recursive: true, force: true });
+    });
+    const post = (path: string, body: unknown) => fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+    it('verifies the reviewed version: the fix, a version that does not fix it, and an unchanged one', async () => {
+        const report = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 20 })).json();
+        const stale = report.findings.find((f: { rule: string }) => f.rule === 'stale-write-after-await');
+        const [file] = stale.suggestedPatch.files as Array<{ file: string; before: string; after: string }>;
+        const good = await (await post('/api/verify-change', { path: copy, finding: stale, changed: [{ file: file.file, after: file.after }] })).json();
+        expect(good.finding.suggestedPatch).toMatchObject({ verified: true, by: 'your version' });
+        expect(good.finding.suggestedPatch.files[0]).toMatchObject({ before: file.before, after: file.after });
+        const commentOnly = await (await post('/api/verify-change', { path: copy, finding: stale, changed: [{ file: file.file, after: `// reviewed\n${file.before}` }] })).json();
+        expect(commentOnly.finding.suggestedPatch.verified).toBe(false);
+        expect(commentOnly.finding.suggestedPatch.note).toMatch(/still reported/);
+        const same = await (await post('/api/verify-change', { path: copy, finding: stale, changed: [{ file: file.file, after: file.before }] })).json();
+        expect(same.error).toMatch(/same as the files on disk/);
+        expect(readFileSync(join(copy, file.file), 'utf8')).toBe(file.before); // nothing written
+    });
+
+    it("writes an LLM fix from the finding's suggested fix, shown before/after and verified", async () => {
+        const report = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 0 })).json();
+        const leak = report.findings.find((f: { rule: string; subject: string }) => f.rule === 'resource-leak' && f.subject.startsWith('Poller'));
+        const res = await (await post('/api/fix', { path: copy, finding: leak, llm: 'openai:test-model' })).json();
+        expect(prompts.at(-1)).toContain(`Suggested fix: ${leak.fix}`);
+        expect(prompts.at(-1)).toContain('(whole file, with line numbers for reference)');
+        const patch = res.finding.suggestedPatch;
+        expect(patch.by).toBe('openai:test-model');
+        expect(patch.files[0].after).toContain('        clearInterval(this.timer);\n        this.timer = setInterval');
+        expect(patch.diff).toContain('+        clearInterval(this.timer);');
+        expect(typeof patch.verified).toBe('boolean');
+        expect((await post('/api/fix', { path: copy, finding: leak })).status).toBe(400);
+    });
+});
+
 describe('code changes: proposed, verified, applied', () => {
     const SHOP = fileURLToPath(new URL('../../extract/test/fixtures/shop', import.meta.url));
     const runner: RunnerConfig = { executable: '/nonexistent/nuXmv', timeoutMs: 10_000, maxOutputBytes: 1_000_000 };

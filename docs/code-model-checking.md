@@ -552,6 +552,11 @@ In the editor, **Review change** opens a side-by-side view:
     changed).
   - Otherwise the window says why Apply is not available: an uploaded copy, or a server restarted
     since the analysis.
+- **Verify this version** checks the right-hand text, with your edits, exactly like a proposed
+  change: the analysis runs again on the changed file (in memory, nothing is written), the finding
+  must be gone and nothing new appear, and the project must still build or type check on a copy.
+  The badge becomes ✓ verified or ✗ not verified, with the reason and the check output;
+- **New LLM fix** asks the LLM for another change (see *LLM fix* below);
 - **Download file** and **Copy** give you the text;
 - **Run the analysis again (changed files)** checks the project with the change, incrementally:
   - the models of the whole project are extracted and checked again (they span files, and this
@@ -592,6 +597,23 @@ verified change in one go, or all changes with the box ticked:
 - afterwards, **Run the analysis again** for up-to-date proposals. From the terminal, `--fix`
 writes each change to `fixes/NN-rule/` (the changed files and `change.patch`), and report.md shows
 the diff.
+
+## LLM fix, one finding at a time
+
+Each warning or error without a verified change has an **LLM fix** button. The LLM (the one
+chosen for the analysis, or the first configured in Help → LLM settings) gets:
+- the finding, its **suggested fix** (the *Fix:* line), and the counterexample as calls in the code;
+- the whole file, with line numbers, when it is up to 600 lines (otherwise the 120 lines around
+  the finding), and the related places in other files.
+
+It answers with exact search/replace edits. ProvenFlow turns them into the changed files and
+their diff, and verifies them like the quick fixes (the analysis again on the changed files, then
+the build or type check on a copy). The review then opens: the code before and after side by side,
+the LLM's explanation, and the verdict. Edit the right side and **Verify this version**, ask for
+a **New LLM fix**, or **Apply** it. Each click asks the LLM again (these answers are not cached).
+
+The same from the API: `POST /api/fix { path | files, finding, llm }`, and
+`POST /api/verify-change { path | files, finding, changed: [{ file, after }] }` for your version.
 
 ## LLM assistance, verified
 

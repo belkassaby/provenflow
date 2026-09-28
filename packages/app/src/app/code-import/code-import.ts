@@ -1,4 +1,5 @@
 import { computed, Injectable, signal } from '@angular/core';
+import { isApplied } from './already-applied';
 import { directoryPicker, ensureWritable, listFiles, loadFolder, readText, saveFolder, writeText } from './folder-access';
 
 /** A place in the analysed code base. */
@@ -169,6 +170,8 @@ export class CodeImport {
     readonly appliedChanges = signal<ReadonlySet<string>>(new Set());
     /** Folder opened with write access in the browser (Chrome/Edge). */
     private folder: FileSystemDirectoryHandle | undefined;
+    /** The files last uploaded (a read-only copy), to check a single change of that report. */
+    private uploaded?: { name: string; files: Record<string, string> };
     readonly canPickWritable = !!directoryPicker();
 
     /** How reviewed changes can be written for the current report, or why they cannot. */
@@ -393,7 +396,36 @@ export class CodeImport {
         }
         this.folder = dir;
         void saveFolder(dir);
+        this.uploaded = { name: dir.name, files: picked };
         await this.run(uploadMessage(picked, dir.name, skipped), { files: picked, name: dir.name, incremental, ...this.fixOptions() }, dir.name, true);
+    }
+
+    /**
+     * The report's folder, as the server takes it: its path, or its files (read again from a folder
+     * opened in the browser, so they include the changes applied since).
+     */
+    async folderSource(): Promise<{ path: string } | { files: Record<string, string>; name: string }> {
+        const r = this.report();
+        if (!r) throw new Error('No analysed folder.');
+        if (r.applicable) return { path: r.root };
+        if (r.browserFolder) {
+            const dir = await this.writableFolder();
+            const files: Record<string, string> = {};
+            for (const { path, file } of await listFiles(dir, SKIPPED_DIR)) if (WANTED.test(path) && !path.endsWith('.d.ts') && file.size <= MAX_FILE_BYTES) files[path] = await file.text();
+            return { files, name: dir.name };
+        }
+        if (this.uploaded?.name === r.root) return { files: this.uploaded.files, name: r.root };
+        throw new Error('The uploaded copy of this folder is not in memory any more (the page was reloaded): choose the folder again.');
+    }
+
+    /** Replaces a finding of the report (after a change was proposed or verified for it). */
+    replaceFinding(before: CodeFinding, after: CodeFinding): void {
+        const r = this.report();
+        if (!r) return;
+        const key = changeKey(before);
+        const next = { ...r, findings: r.findings.map(f => (f === before || changeKey(f) === key ? after : f)) };
+        this.report.set(next);
+        saveReport(next);
     }
 
     /** The folder the report came from, with write permission (asked again after a reload). */
@@ -423,6 +455,7 @@ export class CodeImport {
             return;
         }
         const folder = files[0].webkitRelativePath.split('/')[0] || 'folder';
+        this.uploaded = { name: folder, files: picked };
         return this.run(uploadMessage(picked, folder, skipped), { files: picked, name: folder, ...this.fixOptions() }, folder);
     }
 
@@ -510,23 +543,6 @@ export class CodeImport {
     restore(): void {
         if (!this.report()) this.report.set(loadReport());
     }
-}
-
-/** An edit whose lines are already in the text: applying it would duplicate them (isApplied in @provenflow/extract). */
-function isApplied(text: string, e: { search: string; replace: string }): boolean {
-    if (e.search === '' || e.replace === e.search) return false;
-    if (e.replace.includes(e.search) && text.includes(e.replace)) return true;
-    if (!text.includes(e.search)) return false;
-    const lines = (t: string) => t.split('\n').map(l => l.trim()).filter(l => l !== '');
-    const count = new Map<string, number>();
-    for (const l of lines(e.search)) count.set(l, (count.get(l) ?? 0) + 1);
-    const added = lines(e.replace).filter(l => {
-        const n = count.get(l) ?? 0;
-        if (n > 0) count.set(l, n - 1);
-        return n === 0;
-    });
-    const present = new Set(lines(e.search));
-    return added.length > 0 && added.every(l => present.has(l));
 }
 
 /** The stream broke before the analysis ended (the analysis itself may still be running). */

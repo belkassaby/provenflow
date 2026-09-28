@@ -3,6 +3,7 @@ import { CodeDiff } from './code-diff';
 import { downloadText } from '../file-io';
 import { HelpService } from '../help-dialog/help.service';
 import { LlmSettings } from '../llm-settings/llm-settings';
+import { CodeChange } from './code-change';
 import { changeKey, CodeImport, type CodeFinding, type CodeModel } from './code-import';
 
 type View = 'findings' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm' | 'tools';
@@ -55,6 +56,12 @@ export class CodeImportDialog {
     /** Asks the app to open Help → LLM settings. */
     readonly llmSettings = output<void>();
     readonly llm = inject(LlmSettings);
+    readonly change = inject(CodeChange);
+    /** What the last LLM fix or verification of a finding gave, shown next to it. */
+    readonly outcome = signal<{ key: string; ok: boolean; text: string } | null>(null);
+    /** The LLM used for "LLM fix": the one chosen for the analysis, else the first configured. */
+    readonly llmSpec = computed(() => this.codeImport.llm() || this.llm.choices()[0]?.spec || '');
+    readonly changeKey = changeKey;
 
     private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
     /** The folder path, the last one analysed to start with. */
@@ -159,10 +166,6 @@ export class CodeImportDialog {
         }
     }
 
-    backToModel(): void {
-        this.view.set('model');
-    }
-
     backFromModel(): void {
         this.view.set(this.back === 'model' || this.back === 'modelChange' ? 'models' : this.back);
     }
@@ -190,16 +193,50 @@ export class CodeImportDialog {
         this.applyMessage.set(error ? { ok: false, text: error } : { ok: true, text: `Applied to ${file.file}. Run the analysis again to check the whole project with the change (other proposals for this file are now out of date).` });
     }
 
-    downloadChange(): void {
-        const file = this.reviewing()?.suggestedPatch?.files?.[this.fileIndex()];
-        if (file) downloadText(file.file.split('/').pop()!, this.diff()?.current() ?? file.after);
-    }
-
-    async copyChange(): Promise<void> {
+    /** Download file / Copy: the right-hand text, with any edits. */
+    async exportChange(how: 'download' | 'copy'): Promise<void> {
         const file = this.reviewing()?.suggestedPatch?.files?.[this.fileIndex()];
         if (!file) return;
-        await navigator.clipboard.writeText(this.diff()?.current() ?? file.after);
-        this.applyMessage.set({ ok: true, text: 'Copied to the clipboard.' });
+        const text = this.diff()?.current() ?? file.after;
+        if (how === 'download') downloadText(file.file.split('/').pop()!, text);
+        else {
+            await navigator.clipboard.writeText(text);
+            this.applyMessage.set({ ok: true, text: 'Copied to the clipboard.' });
+        }
+    }
+
+    /**
+     * LLM fix: the LLM implements the finding's suggested fix; the change is verified on the server
+     * and opens in the review, before/after. `again` (from the review) replaces the current proposal.
+     */
+    async llmFix(f: CodeFinding): Promise<void> {
+        const spec = this.llmSpec();
+        if (!spec) {
+            this.outcome.set({ key: changeKey(f), ok: false, text: 'No LLM is configured: set one in Help → LLM settings.' });
+            return;
+        }
+        this.outcome.set(null);
+        const result = await this.change.llmFix(f, spec);
+        if (result.finding) this.review(result.finding);
+        else this.outcome.set({ key: changeKey(f), ok: false, text: result.error ?? 'No change.' });
+        if (result.finding && this.view() === 'change') this.applyMessage.set({ ok: result.finding.suggestedPatch!.verified, text: `${spec}: ${result.finding.suggestedPatch!.verified ? '✓ verified' : '✗ not verified'}: ${result.finding.suggestedPatch!.note}` });
+    }
+
+    /** Verify this version: checks the right-hand text (with your edits) like a proposed change. */
+    async verifyThis(): Promise<void> {
+        const f = this.reviewing();
+        const files = f?.suggestedPatch?.files;
+        if (!f || !files) return;
+        const index = this.fileIndex();
+        const changed = files.map((pf, i) => ({ file: pf.file, after: i === index ? (this.diff()?.current() ?? pf.after) : pf.after }));
+        this.applyMessage.set(null);
+        const result = await this.change.verify(f, changed);
+        if (result.finding) {
+            this.reviewing.set(result.finding);
+            this.fileIndex.set(Math.min(index, (result.finding.suggestedPatch?.files?.length ?? 1) - 1));
+            const p = result.finding.suggestedPatch!;
+            this.applyMessage.set({ ok: p.verified, text: `${p.verified ? '✓ Verified' : '✗ Not verified'}: ${p.note}` });
+        } else this.applyMessage.set({ ok: false, text: result.error ?? 'Nothing was checked.' });
     }
 
     /** Analyses the same folder again: after applying changes, only what they can affect (`incremental`). */
