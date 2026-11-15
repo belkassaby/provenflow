@@ -2,6 +2,7 @@ import { Component, computed, ElementRef, inject, signal, viewChild } from '@ang
 import { C4_TYPE_LABELS, C4_VIEW_LABELS, type C4ElementType } from '@provenflow/language';
 import { downloadText, pickFile } from '../file-io';
 import { CodeImport } from '../code-import/code-import';
+import { FolderBrowse } from '../desktop-bridge';
 import { C4Canvas } from './c4-canvas';
 import { C4Discovery } from './c4-discovery';
 import { C4Projects, C4Suggestions } from './c4-insights';
@@ -19,7 +20,7 @@ const EXTENSIONS: Record<C4ExportFormat, string> = { dsl: 'dsl', json: 'c4.json'
  */
 @Component({
     selector: 'app-c4-dialog',
-    imports: [C4Canvas, C4Properties, C4Suggestions, C4Projects],
+    imports: [C4Canvas, C4Properties, C4Suggestions, C4Projects, FolderBrowse],
     templateUrl: './c4-dialog.html'
 })
 export class C4Dialog {
@@ -51,6 +52,13 @@ export class C4Dialog {
         this.path.set(start);
         if (folder) void this.discover();
         else this.tab.set(this.store.workspace().elements.length ? 'properties' : 'map');
+    }
+
+    /** A workspace opened with the desktop application (File → Open…, the file manager). */
+    openText(text: string, name: string): void {
+        this.open();
+        this.flash(this.store.open(text, name) ? `Opened ${name}.` : `${name} could not be read: see the DSL tab.`);
+        this.tab.set(this.errors() ? 'dsl' : 'properties');
     }
 
     close(): void {

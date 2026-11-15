@@ -67,7 +67,9 @@
           @case ('map') {
             <p class="small">Maps the projects around a code base: the folders next to it with the same owner (git organisation, npm scope or author), how they depend on each other, and what each is made of; then suggests where code belongs.</p>
             @if (codeImport.pathsAllowed()) {
-              <label class="c4-field">Code base folder <input [value]="path()" (input)="path.set($any($event.target).value)" placeholder="/Users/me/git/org/app" (keydown.enter)="discover()" /></label>
+              <label class="c4-field">Code base folder
+                <span class="c4-path"><input [value]="path()" (input)="path.set($any($event.target).value)" placeholder="/Users/me/git/org/app" (keydown.enter)="discover()" /><app-folder-browse title="The code base to map" (picked)="path.set($event)" /></span>
+              </label>
               @if (discovery.recent().length) {
                 <p class="small code-recent">Recent: @for (r of discovery.recent(); track r) { <button type="button" class="link small" (click)="path.set(r)">{{ r }}</button> }</p>
               }

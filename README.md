@@ -3,7 +3,7 @@
 Design and verify state machines, and review code, with a model checker
 ([nuXmv](https://nuxmv.fbk.eu)).
 
-**Design and verify.** ProvenFlow is a browser-based diagram editor for nuXmv. Draw a directed
+**Design and verify.** ProvenFlow is a diagram editor for nuXmv, in the browser or as a desktop application for macOS, Windows and Linux. Draw a directed
 finite state transition system, or type it in a `.pflow` file, label its states with atoms, write
 LTL, CTL or invariant properties, and check them with nuXmv. When a property is false, the
 counterexample is replayed step by step on the diagram. From the same diagram it generates a Python
@@ -600,13 +600,18 @@ packages/
 │   ├── src/app.ts  routes/             REST API, live channel (SSE), serves the built UI
 │   ├── src/cli.ts  commands/           the `pflow` command-line tool
 │   └── src/mcp.ts                      MCP server for coding agents
-└── app/        @provenflow/app       Angular UI
+├── desktop/    @provenflow/desktop   Electron application (macOS, Windows, Linux)
+│   ├── src/main.ts  server.ts  window.ts  the server on a loopback port, a sandboxed window, files to open
+│   ├── src/preload.cts  menu.ts        the bridge to the editor; native menus
+│   └── scripts/stage.mjs  electron-builder.yml  packaging and installers
+└── app/        @provenflow/app       Angular UI (the same in the browser and in the desktop application)
     └── src/app/
         ├── diagram-store.ts            signals store keeping text and diagram in sync
         ├── text-editor/                CodeMirror + Langium diagnostics
         ├── diagram-canvas/             Cytoscape.js editor, trace highlighting
         ├── attribute-table/  inspector/  properties-panel/  trace-panel/  output-panel/
         ├── c4/                         C4 viewer and editor: canvas, properties, project map, exports
+        ├── desktop-bridge.ts           native menus, opened files and folder dialogs (desktop only)
         └── nuxmv-api.ts                calls the backend
 ```
 
@@ -659,6 +664,18 @@ Requires Node.js 20.19 or later.
 npm install
 npm run build
 NUXMV_PATH=/path/to/nuXmv npm start      # http://127.0.0.1:3000
+```
+
+### 3. Or as a desktop application
+
+The same editor and server as a desktop application for macOS, Windows and Linux (Electron), with
+native menus, folder dialogs and `.pflow` / `.dsl` file associations
+([docs/desktop.md](docs/desktop.md)):
+
+```sh
+node node_modules/electron/install.js    # Electron's binary, once
+npm run desktop                          # build and run it
+npm run dist:desktop                     # installers for this platform (DMG, NSIS, AppImage, deb...)
 ```
 
 For development with live reload (Angular on :4200, API proxied to :3000):

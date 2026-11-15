@@ -5,6 +5,13 @@
   "description": "Node.js backend that runs nuXmv on generated models, plus the pflow command-line tool.",
   "type": "module",
   "main": "./out/index.js",
+  "types": "./out/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./out/index.d.ts",
+      "default": "./out/index.js"
+    }
+  },
   "bin": {
     "pflow": "./out/cli.js",
     "provenflow": "./out/cli.js"

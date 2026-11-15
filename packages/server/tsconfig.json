@@ -9,6 +9,7 @@
     "noImplicitOverride": true,
     "noUnusedLocals": true,
     "sourceMap": true,
+    "declaration": true,
     "outDir": "out",
     "rootDir": "src",
     "skipLibCheck": true

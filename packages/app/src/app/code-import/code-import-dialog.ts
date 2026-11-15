@@ -8,6 +8,7 @@ import { CodeChange } from './code-change';
 import { changeKey, CodeImport, type CodeFinding, type CodeModel } from './code-import';
 import { editsByFile } from './code-edits';
 import { FileEdits } from './file-edits';
+import { FolderBrowse } from '../desktop-bridge';
 import { PracticeCatalogue } from './practice-catalogue';
 import { PracticePicker } from './practice-picker';
 import { PracticeResults } from './practice-results';
@@ -57,7 +58,7 @@ const SOURCE_LABELS: Partial<Record<CodeFinding['source'], string>> = {
  */
 @Component({
     selector: 'app-code-import-dialog',
-    imports: [CodeDiff, ChangeActivity, PracticePicker, PracticeResults, FileEdits],
+    imports: [CodeDiff, ChangeActivity, PracticePicker, PracticeResults, FileEdits, FolderBrowse],
     templateUrl: './code-import-dialog.html'
 })
 export class CodeImportDialog {

@@ -1,7 +1,9 @@
 {
   "exclude": [
     "**/test/fixtures/**",
-    "examples/**"
+    "examples/**",
+    "packages/desktop/stage/**",
+    "packages/desktop/release/**"
   ],
   "layers": [
     {
@@ -40,6 +42,17 @@
       ],
       "mayImport": [
         "language"
+      ],
+      "style": "object-oriented"
+    },
+    {
+      "name": "desktop",
+      "paths": [
+        "packages/desktop/src/**"
+      ],
+      "mayImport": [
+        "server",
+        "extract"
       ],
       "style": "object-oriented"
     }

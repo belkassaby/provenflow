@@ -1,0 +1,60 @@
+name: Desktop
+
+# The desktop application (packages/desktop) for macOS, Windows and Linux.
+# Pull requests that touch it are packaged (unpacked, to check the build); a version tag, or a
+# manual run, builds the installers (DMG and zip; NSIS and zip; AppImage, deb and tar.gz) and
+# keeps them as the run's artifacts. The web version is built and tested by ci.yml.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'packages/desktop/**'
+      - 'packages/server/src/index.ts'
+      - 'packages/app/src/app/desktop-bridge.ts'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Electron's binary is not downloaded by npm ci.
+      - run: node node_modules/electron/install.js
+      - run: npm run build:desktop
+      - run: npm test -w @provenflow/desktop
+      - name: Package (check)
+        if: github.event_name == 'pull_request'
+        run: npm run pack -w @provenflow/desktop
+      - name: Installers
+        if: github.event_name != 'pull_request'
+        # Unsigned: set CSC_LINK / CSC_KEY_PASSWORD (and the Apple notarisation variables) as
+        # secrets to sign them (docs/desktop.md).
+        run: npm run dist -w @provenflow/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.event_name != 'pull_request'
+        with:
+          name: provenflow-desktop-${{ runner.os }}
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.zip
+            packages/desktop/release/*.exe
+            packages/desktop/release/*.AppImage
+            packages/desktop/release/*.deb
+            packages/desktop/release/*.tar.gz
+          if-no-files-found: error

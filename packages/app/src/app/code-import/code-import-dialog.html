@@ -60,6 +60,7 @@
             <datalist id="code-recent-paths">
               @for (p of codeImport.recentPaths(); track p) { <option [value]="p"></option> }
             </datalist>
+            <app-folder-browse title="The code base to analyse" (picked)="path.set($event)" />
             <button type="button" class="primary" (click)="analysePath()" [disabled]="!path().trim()">Analyse</button>
           </div>
           @if (codeImport.recentPaths().length > 0) {

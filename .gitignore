@@ -27,3 +27,7 @@ packages/language/test/.generated/
 .idea/
 # Output and LLM cache of pflow extract
 .provenflow/
+
+# Desktop application: staged app and installers
+packages/desktop/stage/
+packages/desktop/release/

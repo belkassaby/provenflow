@@ -1,4 +1,4 @@
-import { Component, computed, effect, HostListener, inject, OnInit, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, effect, HostListener, inject, OnInit, signal, viewChild } from '@angular/core';
 import { EXAMPLES, importGraph, serializeDiagram } from '@provenflow/language';
 import { AttributeTable } from './attribute-table/attribute-table';
 import { CodeExport } from './code-export';
@@ -7,6 +7,7 @@ import { DiagramStore } from './diagram-store';
 import { downloadText, pickFile } from './file-io';
 import { CodeImport } from './code-import/code-import';
 import { C4Dialog } from './c4/c4-dialog';
+import { DesktopBridge } from './desktop-bridge';
 import { CodeImportDialog } from './code-import/code-import-dialog';
 import { DocumentTabs } from './document-tabs/document-tabs';
 import { LlmSettingsDialog } from './llm-settings/llm-settings-dialog';
@@ -86,6 +87,29 @@ export class App implements OnInit {
         effect(() => {
             if (active()) this.tab.set('trace');
         });
+        // In the desktop application: its native menus, and the files opened with it.
+        const desktop = inject(DesktopBridge);
+        afterNextRender(() =>
+            desktop.connect(
+                {
+                    'new-diagram': () => this.newDiagram(),
+                    save: () => this.save(),
+                    'import-code': () => this.importCodeBase(),
+                    c4: () => this.openC4(),
+                    'export-png': () => this.exportPng(),
+                    'export-svg': () => this.exportSvg(),
+                    'export-smv': () => this.exportSmv(),
+                    'export-python': () => this.codeExport.downloadPython(),
+                    'export-notebook': () => this.codeExport.downloadNotebook(),
+                    check: () => void this.check(),
+                    simulate: () => this.simulate(),
+                    'llm-settings': () => this.openLlmSettings(),
+                    'help-guide': () => this.openHelp('guide'),
+                    'help-walkthroughs': () => this.openHelp('walkthroughs')
+                },
+                file => (file.kind === 'c4' ? this.c4().openText(file.text, file.name) : this.documents.open(file.text, file.name, 'file'))
+            )
+        );
     }
 
     ngOnInit(): void {
