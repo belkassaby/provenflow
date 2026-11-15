@@ -1,0 +1,1 @@
+{ "name": "@acme/tool", "version": "0.1.0", "main": "src/tool.ts", "dependencies": { "@acme/viz": "^2.0.0" } }

@@ -5,6 +5,7 @@ import { GenerationError } from '@provenflow/language';
 import { createContext, HttpError, type AppOptions } from './context.js';
 import { registerAnalysisRoutes } from './routes/analysis.js';
 import { registerApplyRoutes } from './routes/apply.js';
+import { registerC4Routes } from './routes/c4.js';
 import { registerLiveRoutes } from './routes/live.js';
 import { registerModelRoutes } from './routes/models.js';
 
@@ -23,6 +24,7 @@ export function createApp(options: AppOptions): express.Express {
     registerModelRoutes(app, ctx);
     registerAnalysisRoutes(app, ctx);
     registerApplyRoutes(app, ctx);
+    registerC4Routes(app, ctx);
     registerLiveRoutes(app);
     app.use('/api', (_req, res) => {
         res.status(404).json({ error: 'Not found' });

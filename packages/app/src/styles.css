@@ -362,3 +362,49 @@ dialog.llm-settings { width: min(720px, calc(100vw - 32px)); }
   .file-edits { grid-template-columns: minmax(0, 1fr); }
   .file-list { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 8px; }
 }
+
+/* File → C4 architecture… */
+dialog.c4-dialog { width: calc(100vw - 32px); height: calc(100vh - 32px); max-height: none; display: none; flex-direction: column; overflow: hidden; }
+dialog.c4-dialog[open] { display: flex; }
+.c4-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: relative; z-index: 5; }
+.c4-toolbar h2 { margin-right: 4px; }
+.c4-file { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c4-view-select { max-width: 320px; }
+.c4-toolbar .flash { font-size: 12px; background: var(--accent-bg); color: var(--accent); padding: 3px 8px; border-radius: 6px; }
+.c4-toolbar > button:last-child { margin-left: auto; }
+.c4-dialog .menu { position: relative; }
+.c4-dialog .menu-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; }
+.c4-dialog .menu-list.end { left: auto; right: 0; }
+.c4-dialog .menu-list button { text-align: left; border: 0; background: none; padding: 7px 10px; }
+.c4-dialog .menu-list button:hover { background: var(--hover); }
+.c4-dialog .menu-list hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; width: 100%; }
+.c4-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+.c4-main { position: relative; min-width: 0; min-height: 0; background: #ffffff; border-right: 1px solid var(--border); }
+.c4-main app-c4-canvas, .c4-canvas { display: block; position: absolute; inset: 0; }
+.c4-canvas:focus { outline: none; }
+.c4-empty { padding: 32px; max-width: 520px; }
+.c4-side { display: flex; flex-direction: column; min-height: 0; }
+.c4-side .help-tabs { flex: 0 0 auto; padding: 4px 8px 0; border-bottom: 1px solid var(--border); }
+.c4-panel { flex: 1; overflow: auto; padding: 8px 12px 16px; }
+.c4-panel h3 { margin: 8px 0; font-size: 14px; }
+.c4-panel h4 { margin: 14px 0 6px; font-size: 13px; }
+.c4-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); margin: 8px 0; }
+.c4-field input, .c4-field textarea, .c4-field select { color: var(--text); font: 13px var(--sans); }
+.c4-field textarea { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; resize: vertical; }
+.c4-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.c4-filter { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
+.c4-suggestions { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.c4-suggestions > li { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 4px 8px; }
+.c4-suggestions > li.warning { border-left-color: var(--warning); }
+.c4-suggestions > li.error { border-left-color: var(--error); }
+.c4-suggestion-head { display: flex; gap: 6px; align-items: baseline; width: 100%; text-align: left; border: 0; background: none; padding: 2px 0; font-size: 13px; }
+.c4-files, .c4-links, .c4-problems { padding-left: 18px; margin: 4px 0; }
+.c4-files code, .c4-links code { word-break: break-all; }
+.c4-problems li.error { color: var(--error); }
+tr.c4-focus td { font-weight: 600; }
+.c4-dsl { width: 100%; min-height: 50vh; font: 12px/1.45 var(--mono); background: var(--canvas-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; white-space: pre; }
+@media (max-width: 760px) {
+  dialog.c4-dialog { width: 100vw; height: 100vh; border-radius: 0; }
+  .c4-body { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 1fr) minmax(200px, 45%); }
+  .c4-main { border-right: 0; border-bottom: 1px solid var(--border); }
+}

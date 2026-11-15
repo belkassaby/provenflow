@@ -19,3 +19,4 @@ export { createStateDiagramServices, type StateDiagramServices } from './state-d
 export * as ast from './generated/ast.js';
 export { isApplied, type TextEdit } from './text-edits.js';
 export { PRACTICE_KIND_TITLES, type Practice, type PracticeKind } from './practice.js';
+export * from './c4/index.js';

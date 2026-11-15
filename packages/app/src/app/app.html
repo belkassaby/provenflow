@@ -15,6 +15,7 @@
             <button type="button" role="menuitem" (click)="showCodeReport()" [title]="'Findings and models of ' + r.root">Code base report ({{ r.root }})…</button>
           }
           <button type="button" role="menuitem" (click)="importCodeBase()" title="Extract and verify the state machines, resource lifecycles, design patterns and layers of a TypeScript/Angular/Python project">Import code base…</button>
+          <button type="button" role="menuitem" (click)="openC4()" title="View, edit and export a C4 model (Structurizr DSL); map the projects around a code base and where code belongs">C4 architecture…</button>
           <button type="button" role="menuitem" (click)="save()">Save .pflow <kbd>⌘S</kbd></button>
           <hr />
           <button type="button" role="menuitem" (click)="exportSmv()">Export nuXmv model (.smv)</button>
@@ -153,5 +154,6 @@
 </main>
 
 <app-help-dialog />
-<app-code-import-dialog (openModel)="openCodeModel($event)" (llmSettings)="openLlmSettings()" />
+<app-code-import-dialog (openModel)="openCodeModel($event)" (llmSettings)="openLlmSettings()" (openC4)="openC4($event)" />
+<app-c4-dialog />
 <app-llm-settings-dialog />

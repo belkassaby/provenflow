@@ -43,7 +43,13 @@ export const OPTIONS = {
     instructions: { type: 'boolean', default: false },
     json: { type: 'boolean', default: false },
     checks: { type: 'string' },
-    skip: { type: 'string' }
+    skip: { type: 'string' },
+    scan: { type: 'string' },
+    owner: { type: 'string' },
+    depth: { type: 'string' },
+    format: { type: 'string' },
+    view: { type: 'string' },
+    merge: { type: 'boolean', default: false }
 } as const;
 
 export function parse(argv: string[]) {

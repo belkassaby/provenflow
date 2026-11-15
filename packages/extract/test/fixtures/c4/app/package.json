@@ -1,0 +1,2 @@
+{ "name": "@acme/app", "version": "1.0.0", "private": true, "description": "The application", "repository": "git+https://github.com/acme/app.git",
+  "dependencies": { "@acme/viz": "^1.0.0", "lodash": "^4.17.0" } }

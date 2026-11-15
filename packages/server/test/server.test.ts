@@ -602,3 +602,41 @@ describe('LLM settings (Help → LLM settings)', () => {
         expect(cleared.anthropic.key).toBeUndefined();
     });
 });
+
+describe('C4: the projects around a code base (POST /api/c4/discover, /api/c4/save)', () => {
+    const FIXTURE = fileURLToPath(new URL('../../extract/test/fixtures/c4', import.meta.url));
+    const runner: RunnerConfig = { executable: '/nonexistent/nuXmv', timeoutMs: 10_000, maxOutputBytes: 1_000_000 };
+    const servers: Server[] = [];
+    afterAll(() => servers.forEach(s => s.close()));
+    const start = (allowLocalPaths: boolean) =>
+        new Promise<string>(resolve => {
+            const server = createApp({ runner, allowLocalPaths }).listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`));
+            servers.push(server);
+        });
+    const post = (url: string, path: string, body: unknown) => fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+    it('maps the projects of a folder read by path, and writes a model into it', async () => {
+        const url = await start(true);
+        const res = await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app') });
+        expect(res.status).toBe(200);
+        const map = await res.json();
+        expect(map.projects.map((p: { name: string }) => p.name)).toContain('@acme/viz');
+        expect(map.workspace.views[0].key).toBe('projects');
+        expect(map.suggestions.some((s: { kind: string }) => s.kind === 'duplicate-across-projects')).toBe(true);
+        expect((await post(url, '/api/c4/save', { path: map.root, file: '../escape.dsl', text: 'x' })).status).toBe(400);
+        expect((await post(url, '/api/c4/save', { path: map.root, file: 'notes.sh', text: 'x' })).status).toBe(400);
+        const dir = mkdtempSync(join(tmpdir(), 'pflow-c4-'));
+        try {
+            // A folder this server has not mapped or analysed cannot be written to.
+            expect((await post(url, '/api/c4/save', { path: dir, file: 'workspace.dsl', text: 'x' })).status).toBe(403);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+        expect((await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app'), scan: ['relative/dir'] })).status).toBe(400);
+    });
+
+    it('does not read folders by path when the server is not bound to localhost', async () => {
+        const url = await start(false);
+        expect((await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app') })).status).toBe(403);
+    });
+});

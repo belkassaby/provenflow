@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { hookCommand } from './commands/agents.js';
+import { c4Command } from './commands/c4.js';
 import { catalogueCommand } from './commands/catalogue.js';
 import { baselineCommand, compareCommand, extractCommand, initCommand, mutateCommand, postReviewCommand, reviewCommand } from './commands/code.js';
 import { diagramCommand, isDiagramCommand } from './commands/diagram.js';
@@ -39,6 +40,12 @@ Code bases (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rus
                                                  code, complexity, naming, dependencies, coverage), the
                                                  installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani);
                                                  exit 5 on findings at --fail-on beyond the baseline
+  pflow c4 [dir] [--scan dir,dir...] [--owner org,@scope,...] [--depth N] [-o file]
+           [--format dsl|json|plantuml|mermaid|markdown] [--view key] [--merge]
+                                                 the projects around the code base with the same owner
+                                                 as a C4 model (Structurizr DSL), how they depend on each
+                                                 other, and where code belongs; --merge adds them to the
+                                                 code base's own workspace.dsl
   pflow review <dir> [--base <git-ref>] [--files] [--new-only] [--mutate N] [--coverage report]...
                [--fix] [--github] [--check-run] [--github-out file] [--state dir] [--fail-on ...]
                                                  the findings on the lines changed since --base; --new-only
@@ -87,6 +94,7 @@ async function main(): Promise<number> {
     }
     if (command === 'hook' && rest[0]) return hookCommand(rest[0]);
     if (command === 'catalogue') return catalogueCommand(values, rest[0]);
+    if (command === 'c4') return c4Command(values, rest[0]);
     // pflow export <framework> <diagram>: the diagram is the second argument.
     const framework = command === 'export' ? rest.shift() : undefined;
     const [file, second] = rest;

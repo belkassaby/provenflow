@@ -6,7 +6,7 @@ import type { Core, EdgeSingular, NodeSingular, Position } from 'cytoscape';
  * points, label positions) and the resolved style of every element, so the
  * file matches what is on screen, including trace highlighting.
  */
-export function cytoscapeToSvg(cy: Core, background: string): string {
+export function cytoscapeToSvg(cy: Core, background: string, nodeRenderer: (node: NodeSingular) => string = renderNode): string {
     const elements = cy.elements();
     if (elements.length === 0) return svgDocument({ x1: 0, y1: 0, w: 200, h: 100 }, background, '');
     const bb = elements.boundingBox({ includeLabels: true, includeOverlays: false });
@@ -18,7 +18,7 @@ export function cytoscapeToSvg(cy: Core, background: string): string {
         parts.push(renderEdge(edge));
     });
     cy.nodes().forEach(node => {
-        parts.push(renderNode(node));
+        parts.push(nodeRenderer(node));
     });
     // Edge labels on top, so that nodes never hide them.
     cy.edges().forEach(edge => {
@@ -115,12 +115,16 @@ function renderEdgeLabel(edge: EdgeSingular): string {
     const color = edge.style('color') as string;
     const bg = edge.style('text-background-color') as string;
     const bgOpacity = Number(edge.style('text-background-opacity') ?? 0);
-    const w = label.length * size * 0.56 + 4;
-    const h = size * 1.3;
+    const lines = label.split('\n');
+    const lineHeight = size * 1.25;
+    const w = Math.max(...lines.map(l => l.length)) * size * 0.56 + 4;
+    const h = lines.length * lineHeight + size * 0.05;
+    const top = m.y - ((lines.length - 1) * lineHeight) / 2;
+    const tspans = lines.map((line, i) => `<tspan x="${num(m.x)}" y="${num(top + i * lineHeight)}">${text(line)}</tspan>`).join('');
     return (
         `<g opacity="${num(edge.effectiveOpacity())}">` +
         (bgOpacity > 0 ? `<rect x="${num(m.x - w / 2)}" y="${num(m.y - h / 2)}" width="${num(w)}" height="${num(h)}" rx="2" fill="${attr(bg)}" fill-opacity="${num(bgOpacity)}"/>` : '') +
-        `<text x="${num(m.x)}" y="${num(m.y)}" text-anchor="middle" dominant-baseline="central" font-size="${num(size)}" fill="${attr(color)}">${text(label)}</text>` +
+        `<text text-anchor="middle" dominant-baseline="central" font-size="${num(size)}" fill="${attr(color)}">${tspans}</text>` +
         '</g>'
     );
 }
@@ -160,14 +164,14 @@ function pt(p: Position): string {
     return `${num(p.x)} ${num(p.y)}`;
 }
 
-function num(n: number): string {
+export function num(n: number): string {
     return String(Math.round(n * 100) / 100);
 }
 
-function text(s: string): string {
+export function text(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function attr(s: string): string {
+export function attr(s: string): string {
     return text(String(s)).replace(/"/g, '&quot;');
 }

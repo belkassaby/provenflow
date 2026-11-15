@@ -1,0 +1,2 @@
+{ "name": "@acme/viz", "version": "2.0.0", "main": "src/index.ts", "description": "Drawing library", "repository": { "type": "git", "url": "https://github.com/acme/viz" },
+  "dependencies": { "@acme/render": "^0.3.0", "lodash": "^3.10.0" } }

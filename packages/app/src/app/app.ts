@@ -6,6 +6,7 @@ import { DiagramCanvas } from './diagram-canvas/diagram-canvas';
 import { DiagramStore } from './diagram-store';
 import { downloadText, pickFile } from './file-io';
 import { CodeImport } from './code-import/code-import';
+import { C4Dialog } from './c4/c4-dialog';
 import { CodeImportDialog } from './code-import/code-import-dialog';
 import { DocumentTabs } from './document-tabs/document-tabs';
 import { LlmSettingsDialog } from './llm-settings/llm-settings-dialog';
@@ -37,7 +38,7 @@ function loadSizes(): typeof DEFAULT_SIZES {
 
 @Component({
     selector: 'app-root',
-    imports: [AttributeTable, CodeImportDialog, DiagramCanvas, DocumentTabsBar, LlmSettingsDialog, HelpDialog, Inspector, OutputPanel, ProblemsList, PropertiesPanel, Splitter, TextEditor, TracePanel],
+    imports: [AttributeTable, C4Dialog, CodeImportDialog, DiagramCanvas, DocumentTabsBar, LlmSettingsDialog, HelpDialog, Inspector, OutputPanel, ProblemsList, PropertiesPanel, Splitter, TextEditor, TracePanel],
     templateUrl: './app.html',
     styleUrl: './app.css'
 })
@@ -62,6 +63,7 @@ export class App implements OnInit {
     private readonly canvas = viewChild(DiagramCanvas);
     private readonly help = viewChild.required(HelpDialog);
     private readonly codeImport = viewChild.required(CodeImportDialog);
+    private readonly c4 = viewChild.required(C4Dialog);
     private readonly llmSettings = viewChild.required(LlmSettingsDialog);
 
     readonly tabs = computed(() => {
@@ -173,6 +175,12 @@ export class App implements OnInit {
     }
 
     /** Help → LLM settings: API keys and models for the LLM fixes of Import code base. */
+    /** File → C4 architecture…, or the code base report's System map (with the analysed folder). */
+    openC4(folder?: string): void {
+        this.openMenu.set(null);
+        this.c4().open(folder);
+    }
+
     openLlmSettings(): void {
         void this.llmSettings().open();
     }

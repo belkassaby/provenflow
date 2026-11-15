@@ -3,6 +3,9 @@
     <h2>{{ report() && !codeImport.running() ? 'Code base review' : 'Import code base' }}</h2>
     @if (report(); as r) {
       <span class="muted small code-root" title="Analysed folder">{{ r.root }}</span>
+      @if (r.applicable) {
+        <button type="button" class="small" (click)="openC4.emit(r.root); close()" title="The projects around this code base with the same owner, as a C4 model, and where code belongs">System map (C4)</button>
+      }
     }
     <button type="button" class="link small" (click)="walkthrough()">how does it work?</button>
     <button type="button" class="icon" (click)="close()" aria-label="Close">×</button>

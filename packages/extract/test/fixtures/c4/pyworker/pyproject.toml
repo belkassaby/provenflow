@@ -1,0 +1,7 @@
+[project]
+name = "acme-worker"
+version = "1.0.0"
+dependencies = ["acme-core>=1.0", "numpy>=1.24"]
+
+[project.urls]
+Repository = "https://github.com/acme/pyworker"

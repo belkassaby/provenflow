@@ -67,6 +67,8 @@ export class CodeImportDialog {
     readonly openModel = output<{ text: string; name: string; check: boolean }>();
     /** Asks the app to open Help → LLM settings. */
     readonly llmSettings = output<void>();
+    /** Asks the app to open the C4 map of the projects around a folder. */
+    readonly openC4 = output<string>();
     readonly llm = inject(LlmSettings);
     readonly change = inject(CodeChange);
     readonly catalogue = inject(PracticeCatalogue);

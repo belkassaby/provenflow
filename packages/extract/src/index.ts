@@ -31,3 +31,4 @@ export { LANGUAGES } from './treesitter/frontend.js';
 export type { Checker, SpecVerdict } from './verify.js';
 export type { PatternInstance } from './patterns.js';
 export type { ParadigmProfile } from './paradigm.js';
+export { mapProjects, projectMapMarkdown, type DiscoverOptions, type PlacementSuggestion, type ProjectInfo, type ProjectLink, type ProjectMap, type ProjectMapOptions, type SharedLibrary } from './c4/index.js';

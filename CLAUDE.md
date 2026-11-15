@@ -8,8 +8,8 @@ npm workspaces, ESM, TypeScript, Node >= 20.19.
 
 | Package | Role | May import |
 | --- | --- | --- |
-| `packages/language` | Langium grammar (`state-diagram.langium`), model, nuXmv/Python generators, `text-edits.ts` | nothing |
-| `packages/extract` | Code facts IR (TypeScript, tree-sitter, `python_facts.py`), models, findings, quality checks (`src/quality/`), gating, report formats | `language` |
+| `packages/language` | Langium grammar (`state-diagram.langium`), model, nuXmv/Python generators, `text-edits.ts`, C4 model and Structurizr DSL (`src/c4/`) | nothing |
+| `packages/extract` | Code facts IR (TypeScript, tree-sitter, `python_facts.py`), models, findings, quality checks (`src/quality/`), the project map and placement suggestions (`src/c4/`), gating, report formats | `language` |
 | `packages/server` | Express app (`routes/`, `context.ts`), `pflow` CLI (`cli.ts`, `commands/`), MCP server (`mcp.ts`) | `language`, `extract` |
 | `packages/app` | Angular editor (object-oriented style) | `language` |
 
@@ -48,6 +48,7 @@ User-facing behaviour is documented in `README.md` (command table) and `docs/`:
 - `ai-code-guardrails.md` holds the research and roadmap.
 - `coding-standards.md` gives the per-language limits.
 - `quality-before-after.md` has the before/after report.
+- `c4-architecture.md` covers the C4 editor, the project map and the placement suggestions.
 
 Update them in the same change as the code. The anchors in `docs/code-model-checking.md` must match `CATEGORY_DOCS` in `packages/extract/src/report-formats.ts`.
 

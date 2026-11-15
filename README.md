@@ -34,6 +34,12 @@ AI-generated code base, or a pull request:
   ([docs/patterns-and-practices.md](docs/patterns-and-practices.md)). In the editor, you choose the
   entries before the analysis, and the result shows each file's proposed edits combined into one
   before/after diff, each with its explanation;
+- it maps the projects around a code base that have the same owner (git organisation, npm scope,
+  author) as a C4 model: how they depend on each other, what each is made of, and where code
+  belongs between them (a file that only uses a dependency, code copied across projects, a library
+  file only one consumer uses, outdated or clashing versions, cycles). The editor views, edits and
+  exports C4 models (Structurizr DSL in and out; SVG, PNG, C4-PlantUML, Mermaid)
+  ([docs/c4-architecture.md](docs/c4-architecture.md));
 - on a pull request it counts only what the change adds (against the base, and against a baseline
   of accepted findings), and holds lines written by coding agents to a stricter rule;
 - coding agents run the same checks before they push, through an MCP server or Claude Code hooks.
@@ -511,6 +517,7 @@ npx pflow baseline .                               # accept today's findings: on
 npx pflow review . --base origin/main --new-only   # what a change adds
 npx pflow compare . --base origin/main             # quality before and after
 npx pflow catalogue                                # the patterns and practices checked, explained
+npx pflow c4 . -o docs/c4/projects.dsl             # the projects around it as a C4 model, and where code belongs
 npx pflow mcp                                      # MCP server for coding agents
 ```
 
@@ -564,7 +571,8 @@ packages/
 │   ├── src/probabilistic.ts            Markov chain analysis, PRISM export
 │   ├── src/nurv.ts                     NuRV monitor synthesis plan
 │   ├── src/notebook-generator.ts       DiagramModel -> Jupyter notebook
-│   └── src/legacy-attributes.ts        import of JungToNusmv attributeData.txt
+│   ├── src/legacy-attributes.ts        import of JungToNusmv attributeData.txt
+│   └── src/c4/                         C4 model: Structurizr DSL reader and writer, views, PlantUML/Mermaid
 ├── extract/    @provenflow/extract   code base -> verified models (pflow extract)
 │   ├── src/typescript-*.ts             TypeScript checker front end (+ Angular templates)
 │   ├── src/python_facts.py             Python front end (ast), same facts as JSON
@@ -579,6 +587,8 @@ packages/
 │   ├── src/quality/                    duplication, complexity, naming, dependencies, coverage,
 │   │                                   practices (empty handlers, train wrecks...), standards, measures
 │   ├── src/catalogue/                  the patterns and practices catalogue: entries, selection
+│   ├── src/c4/                         the projects around a code base (manifests, owners, imports),
+│   │                                   as a C4 model, and where code belongs between them
 │   ├── src/gate.ts  review-run.ts      baseline, new-code gating, agent-written lines, test findings
 │   ├── src/mutation.ts  compare.ts     mutation testing of changed lines; two versions compared
 │   ├── src/init.ts  instructions.ts    config proposed from the code; rules from AGENTS.md & co.
@@ -596,6 +606,7 @@ packages/
         ├── text-editor/                CodeMirror + Langium diagnostics
         ├── diagram-canvas/             Cytoscape.js editor, trace highlighting
         ├── attribute-table/  inspector/  properties-panel/  trace-panel/  output-panel/
+        ├── c4/                         C4 viewer and editor: canvas, properties, project map, exports
         └── nuxmv-api.ts                calls the backend
 ```
 
@@ -770,6 +781,7 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow mutate <dir> [--base ref] [--max N]` | mutation testing of the changed lines with the project's tests |
 | `pflow init <dir> [--instructions --llm p:model]` | `provenflow.config.json` proposed from the code and the languages' coding standards (and the checkable rules of AGENTS.md, CLAUDE.md…) |
 | `pflow catalogue [<dir>] [--json] [-o file] [--checks ids \| --skip ids]` | the patterns, principles and anti-patterns the checks verify, explained with examples, and which are selected (`checks` in provenflow.config.json) |
+| `pflow c4 [<dir>] [--scan dirs] [--owner names] [-o file] [--format dsl\|json\|plantuml\|mermaid\|markdown] [--view key] [--merge]` | the projects around the code base with the same owner as a C4 model (Structurizr DSL), how they depend on each other, and where code belongs |
 | `pflow mcp` | MCP server for coding agents: `project_conventions`, `find_existing_code`, `review_changes`, `propose_fix` |
 | `pflow hook <post-edit\|stop>` | Claude Code hooks: the findings of the uncommitted changes go back to the agent |
 
@@ -790,6 +802,8 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | POST   | `/api/verify-change` | `{ path \| files, name, finding, changed: [{ file, after }] }`: verifies a reviewed version of the files like a proposed change (nothing is written) |
 | GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
 | GET    | `/api/catalogue` | the patterns and practices catalogue: `{ entries }`, each explained (problem, solution, when to use it and not, example) with the rules that check it |
+| POST   | `/api/c4/discover` | `{ path, scan?, owners?, depth? }` (by path: localhost only): the projects around the folder as a C4 model, their dependencies, and where code belongs ([docs/c4-architecture.md](docs/c4-architecture.md)) |
+| POST   | `/api/c4/save` | `{ path, file, text }`: writes a model (`.dsl`, `.json`, `.puml`, `.mmd`, `.md`) into a folder mapped or analysed since the server started |
 | POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `checks` (`{ select?, skip? }`: catalogue entries), `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay). With `Accept: application/x-ndjson` it streams `{ progress: { phase, message, percent } }` lines while it runs, then `{ result }`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
 
 The response contains the raw `stdout`/`stderr` and the parsed `results` (property, verdict, trace),
@@ -820,6 +834,11 @@ counterexamples.
 - `packages/extract/test/fixtures/practices`: an empty handler (and one with a comment, which is
   not reported), commented-out code, a train wreck, flag arguments and magic numbers, in TypeScript
   and Python. The tests check the catalogue itself, the selection and the automatic fixes.
+- `packages/extract/test/fixtures/c4`: a small organisation of projects (an application, a library
+  it uses at an old range, the library's own dependency, a second consumer, a Python worker and the
+  package it needs, and a project of another owner). The tests check discovery, ownership, version
+  ranges and every kind of suggestion; the language tests read, write and draw a Structurizr
+  workspace with every kind of view.
 
 Optional tools turn on more tests, and CI installs the Python packages:
 - `NUXMV_PATH`: every example is run on real nuXmv with all engines.
