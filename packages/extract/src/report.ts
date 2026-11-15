@@ -107,11 +107,12 @@ export const CATEGORY_TITLES: Array<[Finding['category'], string]> = [
     ['complexity', 'Complexity'],
     ['tests', 'Tests and coverage'],
     ['paradigm', 'Paradigm and size'],
+    ['practice', 'Practices and anti-patterns'],
     ['naming', 'Naming']
 ];
 
 const TOOL_CATEGORIES = new Set<Finding['category']>(['security', 'memory', 'heap', 'build']);
-const QUIET_CATEGORIES = new Set<Finding['category']>(['dependencies', 'duplication', 'complexity', 'tests', 'naming']);
+const QUIET_CATEGORIES = new Set<Finding['category']>(['dependencies', 'duplication', 'complexity', 'tests', 'naming', 'practice']);
 
 function findingSections(result: ExtractionResult): string[] {
     const sections: string[] = [];

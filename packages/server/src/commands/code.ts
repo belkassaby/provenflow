@@ -42,13 +42,14 @@ import {
     type ReviewPayload,
     type ReviewRun
 } from '@provenflow/extract';
-import { clearProgress, failOnLevel, githubBase, nuxmvChecker, terminalProgress, type Values } from './shared.js';
+import { checksOf, clearProgress, failOnLevel, githubBase, nuxmvChecker, terminalProgress, type Values } from './shared.js';
 
 /** Options of the analysis shared by the code commands. */
 async function analysisOptions(values: Values, defaults: { analyzers: boolean } = { analyzers: true }): Promise<ExtractOptions & { nuxmv: boolean }> {
     const { checker, available } = await nuxmvChecker(values);
     return {
         configFile: values.config,
+        checks: checksOf(values),
         checker,
         nuxmv: available,
         llm: values.llm ? logged(providerFromSpec(values.llm), line => console.error(line)) : undefined,

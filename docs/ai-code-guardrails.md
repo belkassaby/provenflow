@@ -321,6 +321,7 @@ November 2026.
 | 17 | Best practice | Hallucinated dependencies: imports neither declared nor installed | import facts | done for TypeScript/JavaScript, Python and Go; no registry lookup |
 | 18 | Agents | Stricter policy for agent-written lines (trailers, Git AI notes) | item 2 | done; Agent Trace records are not read yet |
 | 19 | Feedback | Per-rule acceptance in the review summary | review markers | done |
+| 20 | Conventions | A catalogue of the patterns, principles (*The Pragmatic Programmer*) and anti-patterns checked, each explained in Fowler's pattern form with an example, selectable per project (`checks`) and in the editor; edits shown file by file, before/after | pattern recognition, quality rules, quick fixes | done (`catalogue/`, `quality/practices.ts`, [patterns-and-practices.md](patterns-and-practices.md)) |
 
 The per-language standards behind items 6 and 14 are in [coding-standards.md](coding-standards.md).
 

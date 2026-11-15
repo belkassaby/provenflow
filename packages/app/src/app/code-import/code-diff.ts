@@ -32,7 +32,7 @@ export function languageFor(file: string): Promise<LanguageSupport | undefined> 
     selector: 'app-code-diff',
     template: `
         <div class="code-diff-heads"><span>{{ leftTitle() }}</span><span>{{ rightTitle() }}</span></div>
-        <div #host class="code-diff"></div>
+        <div #host class="code-diff" [class.compact]="compact()"></div>
     `
 })
 export class CodeDiff implements OnDestroy {
@@ -44,6 +44,8 @@ export class CodeDiff implements OnDestroy {
     readonly rightTitle = input('Proposed (editable)');
     /** Whether the right side can be edited. */
     readonly editable = input(true);
+    /** As tall as the texts (up to a limit), for short examples. */
+    readonly compact = input(false);
     private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
     private view?: MergeView;
 

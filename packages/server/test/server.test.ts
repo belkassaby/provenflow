@@ -282,6 +282,20 @@ describe('POST /api/extract (code base models)', () => {
         expect(body.findings.map((f: { rule: string }) => f.rule)).toContain('resource-leak');
     });
 
+    it('lists the patterns and practices catalogue, and checks only the entries selected', async () => {
+        const url = await start(false);
+        const { entries } = (await (await fetch(`${url}/api/catalogue`)).json()) as { entries: Array<{ id: string; kind: string; rules: string[]; example: { before: string } }> };
+        expect(entries.map(e => e.id)).toEqual(expect.arrayContaining(['singleton', 'dry', 'law-of-demeter', 'magic-number']));
+        expect(entries.find(e => e.id === 'dead-programs-tell-no-lies')).toMatchObject({ kind: 'principle', rules: ['empty-catch'] });
+        const files = { 'src/load.ts': 'export function load(text: string): unknown {\n    try {\n        return JSON.parse(text);\n    } catch {}\n    return undefined;\n}\n\nexport function late(started: number): boolean {\n    return Date.now() - started > 86400;\n}\n' };
+        const rules = async (checks: unknown) => ((await (await extract(url, { analyzers: false, files, quickFixes: 0, checks })).json()).findings as Array<{ rule: string; practice?: string }>).map(f => `${f.rule}:${f.practice}`);
+        expect(await rules(undefined)).toContain('empty-catch:dead-programs-tell-no-lies');
+        expect(await rules(undefined)).not.toContain('magic-number:magic-number');
+        expect(await rules({ select: ['magic-number'] })).toEqual(['magic-number:magic-number']);
+        expect(await rules({ skip: ['dead-programs-tell-no-lies'] })).not.toContain('empty-catch:dead-programs-tell-no-lies');
+        expect((await extract(url, { files, checks: { select: 'dry' } })).status).toBe(400);
+    });
+
     it('streams the progress, then the report, when asked for NDJSON', async () => {
         const url = await start(true);
         const res = await fetch(`${url}/api/extract`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify({ analyzers: false, path: SHOP, quickFixes: 3 }) });

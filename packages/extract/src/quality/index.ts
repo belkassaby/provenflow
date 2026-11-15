@@ -1,6 +1,6 @@
 /**
- * Code quality beyond behaviour: duplicated code, complexity, naming conventions, dependencies that
- * exist, and test coverage, with the measures that `pflow compare` puts side by side for two
+ * Code quality beyond behaviour: duplicated code, complexity, naming conventions, practices and code
+ * smells (practices.ts), dependencies that exist, and test coverage, with the measures that `pflow compare` puts side by side for two
  * versions of a code base. Test files and generated files are left out of these checks.
  */
 import { DEFAULT_COMPLEXITY, limitsFor, type ProvenflowConfig } from '../config.js';
@@ -12,6 +12,7 @@ import { coveredShare, readCoverage, untestedComplexFunctions, type Coverage } f
 import { dependencyFindings } from './dependencies.js';
 import { analyseDuplication, functionLabel, type Clone } from './duplication.js';
 import { namingFindings, type Convention } from './naming.js';
+import { practiceFindings } from './practices.js';
 import { STANDARDS } from './standards.js';
 import { codeLines, isGenerated, tokenize, type Token } from './tokens.js';
 
@@ -20,6 +21,7 @@ export { findClones, functionLabel, similarFunctions, similarToSnippet, type Clo
 export { STANDARDS, standardOf, type LanguageStandard } from './standards.js';
 export { shapeOf, restyle, dominant } from './naming.js';
 export { tokenize } from './tokens.js';
+export { deleteLinesEdit, rethrowEdit, uniqueEdit } from './practices.js';
 
 export interface QualityMetrics {
     files: number;
@@ -97,21 +99,27 @@ export function analyseQuality(facts: Facts, config: ProvenflowConfig, read: (fi
     const naming = namingFindings({ ...facts, classes: facts.classes.filter(c => !skip(c.loc.file)), functions }, config, isTest);
     findings.push(...naming.findings);
 
+    // Practices and code smells (empty handlers, commented-out code, train wrecks, flag arguments, magic numbers)
+    findings.push(...practiceFindings(sourceFiles.map(file => ({ file, text: texts.get(file)!, tokens: tokens.get(file)! })), functions));
+
     // Dependencies
     if (config.dependencies !== false) findings.push(...dependencyFindings(facts, skip));
 
     // Coverage
-    const reports = [...(config.coverage?.reports ?? []), ...(options.coverageReports ?? [])];
-    let coverage: Coverage | undefined;
-    if (reports.length) {
-        const read = readCoverage(facts.root, reports, facts.files);
-        coverage = read.coverage;
-        notes.push(...read.notes);
-        findings.push(...untestedComplexFunctions(coverage, functions, f => limitsOf(languageOf.get(f.loc.file)).cognitive));
-    }
+    const { coverage, notes: coverageNotes, findings: untested } = coverageFindings(facts, config, options, functions, f => limitsOf(languageOf.get(f.loc.file)).cognitive);
+    notes.push(...coverageNotes);
+    findings.push(...untested);
 
     const metrics = measure({ functions, sourceFiles, tokens, isTest, duplication, findings, limitsOf, languageOf, conventions: naming.conventions, coverage, config });
     return { findings, metrics, clones: duplication?.clones ?? [], conventions: naming.conventions, coverage, notes };
+}
+
+/** The coverage reports of the config and the options, and the complex functions they leave untested. */
+function coverageFindings(facts: Facts, config: ProvenflowConfig, options: QualityOptions, functions: FunctionFact[], cognitiveLimit: (f: FunctionFact) => number): { coverage?: Coverage; notes: string[]; findings: Finding[] } {
+    const reports = [...(config.coverage?.reports ?? []), ...(options.coverageReports ?? [])];
+    if (!reports.length) return { notes: [], findings: [] };
+    const read = readCoverage(facts.root, reports, facts.files);
+    return { coverage: read.coverage, notes: read.notes, findings: untestedComplexFunctions(read.coverage, functions, cognitiveLimit) };
 }
 
 interface Measured {

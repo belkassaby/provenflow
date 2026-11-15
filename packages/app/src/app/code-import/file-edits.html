@@ -1,0 +1,90 @@
+<div class="file-edits-top">
+  <p class="small muted">
+    The changes proposed for each file, combined into one before/after view: the original on the left, the file with the changes you keep on the right (editable).
+    Each change says why, and which pattern or practice it follows. Leave a change out with its checkbox; a change that no longer fits after the ones before it is marked as a conflict.
+  </p>
+  <label class="small"><input type="checkbox" [checked]="scope() === 'all'" (change)="scope.set($any($event.target).checked ? 'all' : 'practices')" /> every finding (not only patterns and practices)</label>
+</div>
+@if (files().length === 0) {
+  <p class="muted">No finding of the selected patterns and practices has a place in the code. Select more entries before the analysis, or tick "every finding".</p>
+} @else {
+  <div class="file-edits">
+    <nav class="file-list" aria-label="Files">
+      @for (f of files(); track f.file) {
+        <button type="button" [class.active]="f.file === current()?.file" (click)="select(f.file)" [title]="f.file">
+          <span class="mono small">{{ f.file.split('/').pop() }}</span>
+          <span class="muted small file-dir">{{ f.file.split('/').slice(0, -1).join('/') }}</span>
+          <span class="file-counts">
+            @if (f.changes.length) { <span class="badge ok" title="Proposed changes">{{ f.changes.length }}</span> }
+            @if (f.pending.length) { <span class="badge" title="Findings without a proposed change">{{ f.pending.length }}</span> }
+          </span>
+        </button>
+      }
+    </nav>
+    @if (current(); as f) {
+      <section class="file-edit">
+        <p class="mono small code-review-file">{{ f.file }}</p>
+        @if (combined(); as c) {
+          <app-code-diff [before]="f.before" [after]="c.after" [file]="f.file" leftTitle="Before (as analysed)" [rightTitle]="'After: ' + c.applied.length + ' of ' + f.changes.length + ' change(s) (editable)'" />
+          <div class="code-review-actions">
+            <button type="button" class="primary" (click)="apply()" [disabled]="!codeImport.writeMode().via || c.applied.length === 0" [title]="codeImport.writeMode().via ? 'Write the right-hand text to ' + f.file : codeImport.writeMode().reason">Apply to {{ f.file.split('/').pop() }}</button>
+            <button type="button" (click)="export('download')">Download file</button>
+            <button type="button" (click)="export('copy')">Copy</button>
+            @if (message(); as m) { <span class="small" [class.ok-text]="m.ok" [class.error-text]="!m.ok">{{ m.text }}</span> }
+          </div>
+          @if (!codeImport.writeMode().via) { <p class="small warn-text">{{ codeImport.writeMode().reason }}</p> }
+          <h4>Changes ({{ f.changes.length }})</h4>
+          <ul class="code-findings">
+            @for (ch of f.changes; track changeKey(ch.finding)) {
+              <li class="code-finding" [class]="ch.finding.severity">
+                <div class="code-finding-head">
+                  <input type="checkbox" [checked]="isIncluded(ch)" (change)="toggle(ch)" [disabled]="codeImport.appliedChanges().has(changeKey(ch.finding))" [attr.aria-label]="'Keep the change for ' + ch.finding.rule" />
+                  @if (practiceName(ch.finding); as name) { <span class="badge practice-badge">{{ name }}</span> }
+                  <strong>{{ ch.finding.rule }}</strong>
+                  <span class="muted">{{ ch.finding.subject }}</span>
+                  @if (ch.finding.loc) { <code class="small">line {{ ch.finding.loc.line }}</code> }
+                  <span class="badge" [class.ok]="ch.finding.suggestedPatch!.verified" [class.warn]="!ch.finding.suggestedPatch!.verified" [title]="ch.finding.suggestedPatch!.by ?? ''">{{ ch.finding.suggestedPatch!.verified ? '✓ verified' : ch.finding.suggestedPatch!.by === 'draft' ? 'draft' : '✗ not verified' }}</span>
+                  @if (codeImport.appliedChanges().has(changeKey(ch.finding))) { <span class="badge ok">applied</span> }
+                  @if (isConflict(ch)) { <span class="badge warn" title="An earlier change already changed this text: apply the others, then run the analysis again">conflict</span> }
+                  @if (ch.whole) { <span class="badge" title="This change replaces the whole file">whole file</span> }
+                </div>
+                <p><strong>Why:</strong> {{ ch.finding.message }}</p>
+                <p class="code-fix"><strong>Change:</strong> {{ ch.finding.suggestedPatch!.note || ch.finding.fix }}</p>
+                @if (catalogue.entry(ch.finding.practice); as p) {
+                  <p class="small"><button type="button" class="link small" (click)="explain(ch.finding)">{{ openPractice() === changeKey(ch.finding) ? 'hide' : 'about ' + p.name }}</button> <span class="muted">{{ p.summary }}</span></p>
+                  @if (openPractice() === changeKey(ch.finding)) { <app-practice-detail [practice]="p" /> }
+                }
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="muted small">No change is proposed for this file yet.</p>
+        }
+        @if (f.pending.length) {
+          <h4>
+            Without a proposed change ({{ f.pending.length }})
+            <button type="button" class="small" (click)="proposeAll()" [disabled]="!!change.working() || proposing()" title="The analysis's own change for each: a verified automatic fix when one applies, otherwise a draft with the suggested change at its place">{{ proposing() ? 'Proposing…' : 'Propose changes (no LLM)' }}</button>
+          </h4>
+          <ul class="code-findings">
+            @for (p of f.pending; track changeKey(p)) {
+              <li class="code-finding" [class]="p.severity">
+                <div class="code-finding-head">
+                  @if (practiceName(p); as name) { <span class="badge practice-badge">{{ name }}</span> }
+                  <strong>{{ p.rule }}</strong>
+                  <span class="muted">{{ p.subject }}</span>
+                  @if (p.loc) { <code class="small">line {{ p.loc.line }}</code> }
+                  <span class="spacer"></span>
+                  <button type="button" class="small" (click)="propose(p, 'analysis')" [disabled]="!!change.working()">{{ change.isWorking(p, 'quick') ? 'Preparing…' : 'Propose (no LLM)' }}</button>
+                  <button type="button" class="small" (click)="propose(p, 'llm')" [disabled]="!!change.working() || !llmSpec()" [title]="llmSpec() ? llmSpec() + ' writes the change from the suggested fix; it is verified like the automatic fixes' : 'Set an LLM in Help → LLM settings'">{{ change.isWorking(p, 'fix') ? 'Asking the LLM…' : 'LLM edit' }}</button>
+                </div>
+                <p>{{ p.message }}</p>
+                <p class="code-fix"><strong>Fix:</strong> {{ p.fix }}</p>
+                @if (change.isWorking(p)) { <app-change-activity [key]="changeKey(p)" /> }
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  </div>
+}

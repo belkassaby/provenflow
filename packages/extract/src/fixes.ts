@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { CONFIG_FILE, type ProvenflowConfig } from './config.js';
 import type { Facts, ResourceKind } from './ir.js';
 import { modelToPflow, type ExtractedModel, type Finding, type ModelChange, type PatchFile } from './models.js';
+import { deleteLinesEdit, rethrowEdit } from './quality/practices.js';
 import type { SpecVerdict } from './verify.js';
 
 export interface Edit {
@@ -161,25 +162,52 @@ function modelChanges(before: Baseline, after: RerunResult): ModelChange[] {
 
 // ------------------------------------------------------------------ quick fixes
 
+/** What a quick fix can look at: the facts, the models, the project's files and config. */
+interface FixContext {
+    facts: Facts;
+    models: ExtractedModel[];
+    read: (file: string) => string | undefined;
+    config: ProvenflowConfig;
+}
+
+/** A quick fix of the code: given the text of the finding's file. */
+const inFile =
+    (fix: (f: Finding, text: string, ctx: FixContext) => Proposal | undefined) =>
+    (f: Finding, ctx: FixContext): Proposal | undefined => {
+        const text = ctx.read(f.loc!.file);
+        return text === undefined ? undefined : fix(f, text, ctx);
+    };
+
+/** The quick fix of each rule (`category:rule` when the rule name is shared between categories). */
+const QUICK_FIXES: Record<string, (f: Finding, ctx: FixContext) => Proposal | undefined> = {
+    'state-machine:stuck-state': (f, ctx) => declareTerminal(f, ctx.models, ctx.read, ctx.config),
+    'state-machine:cannot-settle': (f, ctx) => declareTerminal(f, ctx.models, ctx.read, ctx.config),
+    'state-machine:unreachable-state': (f, ctx) => removeUnusedValue(f, ctx.facts, ctx.models, ctx.read),
+    'unhandled-state': inFile((f, text, ctx) => missingCases(f, ctx.facts, text)),
+    'non-exhaustive-dispatch': inFile((f, text, ctx) => missingCases(f, ctx.facts, text)),
+    'stale-write-after-await': inFile((f, text, ctx) => recheckAfterAwait(f, ctx.facts, text)),
+    'resource-leak': inFile((f, text, ctx) => releaseResource(f, ctx.facts, ctx.models, text)),
+    'empty-catch': inFile(practiceFix),
+    'commented-out-code': inFile(practiceFix)
+};
+
 export function quickFixes(findings: Finding[], facts: Facts, models: ExtractedModel[], read: (file: string) => string | undefined, config: ProvenflowConfig = {}): Proposal[] {
-    const proposals: Proposal[] = [];
-    for (const f of findings) {
-        if (f.suggestedPatch || !f.loc) continue;
-        let p: Proposal | undefined;
-        if (f.category === 'state-machine' && (f.rule === 'stuck-state' || f.rule === 'cannot-settle')) {
-            p = declareTerminal(f, models, read, config);
-        } else if (f.category === 'state-machine' && f.rule === 'unreachable-state') {
-            p = removeUnusedValue(f, facts, models, read);
-        } else {
-            const text = read(f.loc.file);
-            if (text === undefined) continue;
-            if (f.rule === 'unhandled-state' || f.rule === 'non-exhaustive-dispatch') p = missingCases(f, facts, text);
-            else if (f.rule === 'stale-write-after-await') p = recheckAfterAwait(f, facts, text);
-            else if (f.rule === 'resource-leak') p = releaseResource(f, facts, models, text);
-        }
-        if (p) proposals.push(p);
-    }
-    return proposals;
+    const ctx: FixContext = { facts, models, read, config };
+    return findings
+        .filter(f => !f.suggestedPatch && f.loc)
+        .map(f => (QUICK_FIXES[`${f.category}:${f.rule}`] ?? QUICK_FIXES[f.rule])?.(f, ctx))
+        .filter((p): p is Proposal => !!p);
+}
+
+/** Commented-out code is deleted; an empty handler rethrows, so the program stops where the problem is. */
+function practiceFix(f: Finding, text: string): Proposal | undefined {
+    const removing = f.rule === 'commented-out-code';
+    const edit = removing ? deleteLinesEdit(f, text) : rethrowEdit(f, text);
+    if (!edit || !f.loc) return undefined;
+    const explanation = removing
+        ? 'Deletes the commented-out lines: version control keeps the old code (The Pragmatic Programmer, Topic 3: Software Entropy).'
+        : 'Rethrows the caught error instead of dropping it: crash early, where the problem is (The Pragmatic Programmer, Topic 24: Dead Programs Tell No Lies). If the error is expected here, handle it instead, or keep the block and say why in a comment.';
+    return { finding: f, edits: [{ file: f.loc.file, ...edit }], explanation, by: 'quick fix' };
 }
 
 /** Declares the state(s) the machine cannot leave as final in provenflow.config.json (keeping the other final states). */

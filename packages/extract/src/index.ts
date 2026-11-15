@@ -26,6 +26,7 @@ export type { QualityMetrics, QualityResult } from './quality/index.js';
 export { fixWithLlm, verifyVersion, type ChangeContext, type ChangeEvent, type SingleChange } from './single-change.js';
 export * from './report.js';
 export { listSourceFiles } from './scan.js';
+export { CATALOGUE, catalogueMarkdown, practiceOf, selectedPractices, type Practice, type PracticeKind } from './catalogue/index.js';
 export { LANGUAGES } from './treesitter/frontend.js';
 export type { Checker, SpecVerdict } from './verify.js';
 export type { PatternInstance } from './patterns.js';

@@ -1,0 +1,47 @@
+<details class="practice-picker">
+  <summary>
+    <strong>Patterns and practices to check</strong>
+    <span class="muted small">{{ catalogue.selectedCount() }} of {{ catalogue.entries().length }} selected</span>
+  </summary>
+  <p class="small muted">
+    The design patterns ProvenFlow recognises and verifies, the principles of <em>The Pragmatic Programmer</em> it checks, and the anti-patterns it reports.
+    Each entry follows Martin Fowler's pattern form: the solution, the problem, when to use it and when not to, and an example. Findings of entries left out are not reported;
+    checks of other kinds (security, state machines, dependencies) always run. In a project, <code>"checks"</code> in provenflow.config.json does the same.
+  </p>
+  @if (catalogue.error(); as e) { <p class="small warn-text">{{ e }}</p> }
+  <div class="practice-tools">
+    <input type="search" placeholder="Filter: name, rule…" [value]="filter()" (input)="filter.set($any($event.target).value)" aria-label="Filter the catalogue" />
+    <button type="button" class="link small" (click)="catalogue.preset('defaults')">defaults</button>
+    <button type="button" class="link small" (click)="catalogue.preset('all')">all</button>
+    <button type="button" class="link small" (click)="catalogue.preset('none')">none</button>
+  </div>
+  @for (g of groups(); track g.kind) {
+    <section class="practice-group">
+      <h4>
+        {{ g.title }} <span class="muted small">{{ selectedIn(g.kind) }} / {{ g.entries.length }}</span>
+        <button type="button" class="link small" (click)="catalogue.setKind(g.kind, true)">select all</button>
+        <button type="button" class="link small" (click)="catalogue.setKind(g.kind, false)">clear</button>
+      </h4>
+      <ul class="practice-list">
+        @for (e of g.entries; track e.id) {
+          <li class="practice-item" [class.open]="open() === e.id">
+            <label class="practice-row">
+              <input type="checkbox" [checked]="catalogue.isSelected(e.id)" (change)="catalogue.toggle(e.id)" />
+              <strong>{{ e.name }}</strong>
+              <span class="small muted practice-line">{{ e.summary }}</span>
+            </label>
+            <span class="practice-badges">
+              @if (e.detects) { <span class="badge" title="Instances are recognised in the code and listed">recognised</span> }
+              @if (e.autoFix) { <span class="badge ok" [title]="e.autoFix">automatic fix</span> }
+              @if (!e.selected) { <span class="badge" title="Not in the default selection">opt-in</span> }
+              <button type="button" class="link small" (click)="explain(e.id)" [attr.aria-expanded]="open() === e.id">{{ open() === e.id ? 'hide' : 'explain' }}</button>
+            </span>
+            @if (open() === e.id) { <app-practice-detail [practice]="e" /> }
+          </li>
+        }
+      </ul>
+    </section>
+  } @empty {
+    @if (!catalogue.error()) { <p class="small muted">{{ catalogue.entries().length ? 'No entry matches the filter.' : 'Loading the catalogue…' }}</p> }
+  }
+</details>

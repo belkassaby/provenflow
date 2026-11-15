@@ -1,0 +1,60 @@
+<p class="small muted">
+  For each pattern and practice the analysis checked: the design patterns recognised in the code and whether they hold, the principles not followed, and the anti-patterns found.
+  Open an entry for its explanation, its occurrences, and the code. The proposed changes are under
+  <button type="button" class="link small" (click)="showEdits.emit()">Edits by file</button>.
+</p>
+@for (g of groups(); track g.kind) {
+  @if (g.results.length) {
+    <h3>{{ g.title }}</h3>
+    <table class="code-table practice-table">
+      <thead><tr><th>{{ g.kind === 'anti-pattern' ? 'anti-pattern' : g.kind }}</th><th>result</th><th></th></tr></thead>
+      <tbody>
+        @for (x of g.results; track x.practice.id) {
+          @let s = status(x);
+          <tr>
+            <td><strong>{{ x.practice.name }}</strong><br /><span class="small muted">{{ x.practice.summary }}</span></td>
+            <td class="nowrap"><span class="badge" [class.ok]="s.tone === 'ok'" [class.warn]="s.tone === 'warn'" [class.fail]="s.tone === 'fail'">{{ s.text }}</span></td>
+            <td class="nowrap"><button type="button" class="small" (click)="toggle(x.practice.id)" [attr.aria-expanded]="open() === x.practice.id">{{ open() === x.practice.id ? 'Hide' : 'Details' }}</button></td>
+          </tr>
+          @if (open() === x.practice.id) {
+            <tr class="practice-open">
+              <td colspan="3">
+                @if (x.instances.length) {
+                  <h4>In the code ({{ x.instances.length }})</h4>
+                  <ul class="small">
+                    @for (i of x.instances; track $index) {
+                      <li>
+                        <strong>{{ i.subject }}</strong>&ngsp;<code class="muted">{{ where(i.loc) }}</code>: {{ i.evidence }}
+                        @if (i.confidence) { <span class="badge" [class.warn]="i.confidence === 'heuristic'">{{ i.confidence }}</span> }
+                        @if (i.model) { <button type="button" class="link small" (click)="showModel.emit(i.model)">contract model</button> }
+                      </li>
+                    }
+                  </ul>
+                }
+                @if (x.findings.length) {
+                  <h4>{{ x.practice.kind === 'pattern' ? 'Where it is broken' : x.practice.kind === 'principle' ? 'Where it is not followed' : 'Where it occurs' }} ({{ x.findings.length }})</h4>
+                  <ul class="small">
+                    @for (f of x.findings; track $index) {
+                      <li>
+                        <span class="badge" [class.fail]="f.severity === 'error'" [class.warn]="f.severity === 'warning'">{{ f.severity }}</span>
+                        <strong>{{ f.subject }}</strong>&ngsp;@if (f.loc) { <code class="muted">{{ where(f.loc) }}</code> }: {{ f.message }}
+                        @if (f.suggestedPatch) { <span class="badge ok">change proposed</span> }
+                      </li>
+                    }
+                  </ul>
+                }
+                <h4>About {{ x.practice.name }}</h4>
+                <app-practice-detail [practice]="x.practice" />
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  }
+} @empty {
+  <p class="muted small">Loading the catalogue…</p>
+}
+@if (unchecked().length) {
+  <p class="small muted">Not checked in this analysis: {{ unchecked().map(e => e.name).join(', ') }}. Select them under Patterns and practices before the next analysis.</p>
+}

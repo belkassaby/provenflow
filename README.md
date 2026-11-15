@@ -27,6 +27,13 @@ AI-generated code base, or a pull request:
   do not exist, and changed lines no test runs or checks (coverage reports, mutation testing). The
   limits and naming rules of each language come from its style guide and main linter
   ([docs/coding-standards.md](docs/coding-standards.md));
+- the checks are a catalogue of 32 patterns and practices, each explained, with a before/after example,
+  and selectable: design patterns (Singleton, Observer, Strategy...), principles from *The Pragmatic
+  Programmer* (DRY, Orthogonality, the Law of Demeter, Dead Programs Tell No Lies...) and
+  anti-patterns (God Class, Flag Argument, Commented-Out Code...)
+  ([docs/patterns-and-practices.md](docs/patterns-and-practices.md)). In the editor, you choose the
+  entries before the analysis, and the result shows each file's proposed edits combined into one
+  before/after diff, each with its explanation;
 - on a pull request it counts only what the change adds (against the base, and against a baseline
   of accepted findings), and holds lines written by coding agents to a stricter rule;
 - coding agents run the same checks before they push, through an MCP server or Claude Code hooks.
@@ -503,6 +510,7 @@ npx pflow init .                                   # provenflow.config.json from
 npx pflow baseline .                               # accept today's findings: only new ones fail
 npx pflow review . --base origin/main --new-only   # what a change adds
 npx pflow compare . --base origin/main             # quality before and after
+npx pflow catalogue                                # the patterns and practices checked, explained
 npx pflow mcp                                      # MCP server for coding agents
 ```
 
@@ -569,7 +577,8 @@ packages/
 │   ├── src/architecture.ts  paradigm.ts  layer graph model, cycles, facades; style rules
 │   ├── src/verify.ts                   nuXmv / explicit-state checks, counterexamples -> code
 │   ├── src/quality/                    duplication, complexity, naming, dependencies, coverage,
-│   │                                   per-language standards, and the measures
+│   │                                   practices (empty handlers, train wrecks...), standards, measures
+│   ├── src/catalogue/                  the patterns and practices catalogue: entries, selection
 │   ├── src/gate.ts  review-run.ts      baseline, new-code gating, agent-written lines, test findings
 │   ├── src/mutation.ts  compare.ts     mutation testing of changed lines; two versions compared
 │   ├── src/init.ts  instructions.ts    config proposed from the code; rules from AGENTS.md & co.
@@ -754,12 +763,13 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow prob <d.pflow> --reach EXPR [--within K] [--steps EXPR] [--visits EXPR --until EXPR]` | probabilistic analysis |
 | `pflow prism <d.pflow> [-o m.pm]` | PRISM / Storm model and properties |
 | `pflow nurv <d.pflow> [-o dir]` | NuRV full-LTL monitors (`NURV_PATH`) |
-| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--llm p:model] [--llm-fixes N] [--no-analyzers] [--no-confirm]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes (exit 5 on findings) |
+| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--checks ids \| --skip ids] [--llm p:model] [--llm-fixes N] [--no-analyzers] [--no-confirm]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes (exit 5 on findings) |
 | `pflow review <dir> [--base ref] [--files] [--new-only] [--mutate N] [--coverage report] [--fix] [--github] [--check-run] [--fail-on …]` | the findings on the lines changed since `ref` (only those the change adds with `--new-only`); `--github` posts them as a pull-request review with verified suggestions |
 | `pflow baseline <dir> [--update]` | accept today's findings (`provenflow-baseline.json`): only new ones fail; `--update` only removes |
 | `pflow compare <dir> (--base ref \| --before dir) [-o report.md]` | code quality of two versions side by side: duplication, complexity, findings fixed and introduced |
 | `pflow mutate <dir> [--base ref] [--max N]` | mutation testing of the changed lines with the project's tests |
 | `pflow init <dir> [--instructions --llm p:model]` | `provenflow.config.json` proposed from the code and the languages' coding standards (and the checkable rules of AGENTS.md, CLAUDE.md…) |
+| `pflow catalogue [<dir>] [--json] [-o file] [--checks ids \| --skip ids]` | the patterns, principles and anti-patterns the checks verify, explained with examples, and which are selected (`checks` in provenflow.config.json) |
 | `pflow mcp` | MCP server for coding agents: `project_conventions`, `find_existing_code`, `review_changes`, `propose_fix` |
 | `pflow hook <post-edit\|stop>` | Claude Code hooks: the findings of the uncommitted changes go back to the agent |
 
@@ -779,7 +789,8 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | POST   | `/api/fix` | `{ path \| files, name, finding, llm }`: the LLM implements the finding's suggested fix; the change comes back verified or not, with the files before/after and the diff |
 | POST   | `/api/verify-change` | `{ path \| files, name, finding, changed: [{ file, after }] }`: verifies a reviewed version of the files like a proposed change (nothing is written) |
 | GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
-| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay). With `Accept: application/x-ndjson` it streams `{ progress: { phase, message, percent } }` lines while it runs, then `{ result }`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
+| GET    | `/api/catalogue` | the patterns and practices catalogue: `{ entries }`, each explained (problem, solution, when to use it and not, example) with the rules that check it |
+| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `checks` (`{ select?, skip? }`: catalogue entries), `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay). With `Accept: application/x-ndjson` it streams `{ progress: { phase, message, percent } }` lines while it runs, then `{ result }`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
 
 The response contains the raw `stdout`/`stderr` and the parsed `results` (property, verdict, trace),
 `errors` and `warnings`.
@@ -806,6 +817,9 @@ counterexamples.
   imports of packages that do not exist, an LCOV report). The tests also review a change in a
   temporary git repository (agent commit, new-only gating), and the server tests drive the MCP
   server, the hooks and the `baseline`, `compare` and `init` commands.
+- `packages/extract/test/fixtures/practices`: an empty handler (and one with a comment, which is
+  not reported), commented-out code, a train wreck, flag arguments and magic numbers, in TypeScript
+  and Python. The tests check the catalogue itself, the selection and the automatic fixes.
 
 Optional tools turn on more tests, and CI installs the Python packages:
 - `NUXMV_PATH`: every example is run on real nuXmv with all engines.

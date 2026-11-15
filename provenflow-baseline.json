@@ -34,6 +34,13 @@
       "message": "read has a Cognitive Complexity of 17 (limit 15; cyclomatic 13, nesting 3): it is hard to read and to test."
     },
     {
+      "rule": "train-wreck",
+      "subject": "current",
+      "file": "packages/app/src/app/code-import/code-diff.ts",
+      "count": 1,
+      "message": "current reaches through 3 objects in `this.view.b.state.doc.toString()` (b → state → doc): it depends on the structure of objects it does not own, so a change in any of them breaks it."
+    },
+    {
       "rule": "stuck-state",
       "subject": "CodeImportDialog.back",
       "file": "packages/app/src/app/code-import/code-import-dialog.ts",
@@ -41,11 +48,18 @@
       "message": "Once CodeImportDialog.back is 'findings' no code changes it again, and 'findings' does not look like a final state. (Unless a computed write, e.g. packages/app/src/app/code-import/code-import-dialog.t"
     },
     {
+      "rule": "train-wreck",
+      "subject": "verifyThis",
+      "file": "packages/app/src/app/code-import/code-import-dialog.ts",
+      "count": 1,
+      "message": "verifyThis reaches through 3 objects in `result.finding.suggestedPatch.files.length` (finding → suggestedPatch → files): it depends on the structure of objects it does not own, so a change in any of t"
+    },
+    {
       "rule": "unreachable-state",
       "subject": "CodeImportDialog.back",
       "file": "packages/app/src/app/code-import/code-import-dialog.ts",
       "count": 2,
-      "message": "'changes' is a declared value of CodeImportDialog.back but no code path sets it."
+      "message": "'edits' is a declared value of CodeImportDialog.back but no code path sets it."
     },
     {
       "rule": "cognitive-complexity",
@@ -71,6 +85,20 @@
       "message": "applyAll is 75 lines long (limit 50)."
     },
     {
+      "rule": "train-wreck",
+      "subject": "applyAll",
+      "file": "packages/app/src/app/code-import/code-import.ts",
+      "count": 1,
+      "message": "applyAll reaches through 3 objects in `b.suggestedPatch.touches.removes.length` (suggestedPatch → touches → removes), and 1 more chain(s) like it: it depends on the structure of objects it does not ow"
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "fileHandle",
+      "file": "packages/app/src/app/code-import/folder-access.ts",
+      "count": 1,
+      "message": "fileHandle takes the boolean flag `create`: a call like fileHandle(…, true) does not say what true means, and the function does two things."
+    },
+    {
       "rule": "cognitive-complexity",
       "subject": "applyHighlight",
       "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
@@ -93,6 +121,13 @@
       "count": 1,
       "measure": 56,
       "message": "sync has a Cognitive Complexity of 56 (limit 15; cyclomatic 30, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "autoLayout",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "message": "autoLayout takes the boolean flag `save`: a call like autoLayout(…, true) does not say what true means, and the function does two things."
     },
     {
       "rule": "long-function",
@@ -145,6 +180,13 @@
       "count": 1,
       "measure": 17,
       "message": "showRecorded has a Cognitive Complexity of 17 (limit 15; cyclomatic 8, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "parse",
+      "file": "packages/app/src/app/diagram-store.ts",
+      "count": 1,
+      "message": "parse takes the boolean flag `updateModel`: a call like parse(…, true) does not say what true means, and the function does two things."
     },
     {
       "rule": "stuck-state",
@@ -224,12 +266,26 @@
       "message": "semgrep is 60 lines long (limit 50)."
     },
     {
+      "rule": "flag-argument",
+      "subject": "option",
+      "file": "packages/extract/src/analyzers/types.ts",
+      "count": 1,
+      "message": "option takes the boolean flags `value`, `defaultOn`: a call like option(…, true) does not say what true means, and the function does two things."
+    },
+    {
       "rule": "cognitive-complexity",
       "subject": "packageRoots",
       "file": "packages/extract/src/architecture.ts",
       "count": 1,
       "measure": 18,
       "message": "packageRoots has a Cognitive Complexity of 18 (limit 15; cyclomatic 12, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "change",
+      "file": "packages/extract/src/compare.ts",
+      "count": 1,
+      "message": "change takes the boolean flag `lowerIsBetter`: a call like change(…, true) does not say what true means, and the function does two things."
     },
     {
       "rule": "cognitive-complexity",
@@ -254,14 +310,6 @@
       "count": 1,
       "measure": 39,
       "message": "missingCases has a Cognitive Complexity of 39 (limit 15; cyclomatic 28, nesting 3): it is hard to read and to test."
-    },
-    {
-      "rule": "cognitive-complexity",
-      "subject": "quickFixes",
-      "file": "packages/extract/src/fixes.ts",
-      "count": 1,
-      "measure": 22,
-      "message": "quickFixes has a Cognitive Complexity of 22 (limit 15; cyclomatic 15, nesting 3): it is hard to read and to test."
     },
     {
       "rule": "cognitive-complexity",
@@ -447,6 +495,13 @@
       "count": 1,
       "measure": 42,
       "message": "machineOf has a Cognitive Complexity of 42 (limit 15; cyclomatic 35, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "addStandardSpecs",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "message": "addStandardSpecs takes the boolean flag `hasDynamicWrites`: a call like addStandardSpecs(…, true) does not say what true means, and the function does two things."
     },
     {
       "rule": "long-function",
@@ -667,6 +722,13 @@
       "message": "run is 55 lines long (limit 50)."
     },
     {
+      "rule": "train-wreck",
+      "subject": "module_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "message": "module_fact reaches through 3 objects in `s.func.value.value.id` (func → value → value): it depends on the structure of objects it does not own, so a change in any of them breaks it."
+    },
+    {
       "rule": "cognitive-complexity",
       "subject": "planFor",
       "file": "packages/extract/src/replay.ts",
@@ -721,6 +783,20 @@
       "count": 1,
       "measure": 19,
       "message": "ownerOf has a Cognitive Complexity of 19 (limit 15; cyclomatic 20, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "collectRFunctions",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "message": "collectRFunctions reaches through 3 objects in `f.node.parent.childForFieldName().text` (node → parent → childForFieldName): it depends on the structure of objects it does not own, so a change in any "
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "methodOf",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "message": "methodOf reaches through 3 objects in `fn.childForFieldName().namedChildren.find().childForFieldName().text` (childForFieldName → namedChildren → childForFieldName): it depends on the structure of obj"
     },
     {
       "rule": "cognitive-complexity",
@@ -787,6 +863,27 @@
       "message": "visitBodies has a Cognitive Complexity of 47 (limit 15; cyclomatic 34, nesting 4): it is hard to read and to test."
     },
     {
+      "rule": "flag-argument",
+      "subject": "comparison",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "comparison takes the boolean flag `record`: a call like comparison(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "constraint",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "constraint takes the boolean flag `positive`: a call like constraint(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "read",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "read takes the boolean flags `negated`, `record`: a call like read(…, true) does not say what true means, and the function does two things."
+    },
+    {
       "rule": "long-function",
       "subject": "assignment",
       "file": "packages/extract/src/treesitter/frontend.ts",
@@ -799,6 +896,20 @@
       "file": "packages/extract/src/treesitter/frontend.ts",
       "count": 1,
       "message": "sourcesOf is 57 lines long (limit 50)."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "definiteWrite",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "definiteWrite reaches through 3 objects in `ctx.rec.profile.assignments.includes()` (rec → profile → assignments), and 1 more chain(s) like it: it depends on the structure of objects it does not own, "
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "writesIn",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "writesIn reaches through 3 objects in `ctx.rec.profile.assignments.includes()` (rec → profile → assignments): it depends on the structure of objects it does not own, so a change in any of them breaks "
     },
     {
       "rule": "cognitive-complexity",
@@ -903,6 +1014,13 @@
       "message": "writeTarget has a Cognitive Complexity of 26 (limit 15; cyclomatic 18, nesting 2): it is hard to read and to test."
     },
     {
+      "rule": "flag-argument",
+      "subject": "constraint",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "message": "constraint takes the boolean flag `positive`: a call like constraint(…, true) does not say what true means, and the function does two things."
+    },
+    {
       "rule": "long-function",
       "subject": "sourcesOf",
       "file": "packages/extract/src/typescript-frontend.ts",
@@ -965,6 +1083,20 @@
       "message": "classFact nests control structures 6 deep (limit 4)."
     },
     {
+      "rule": "flag-argument",
+      "subject": "addImport",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "addImport takes the boolean flag `typeOnly`: a call like addImport(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "methodFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "methodFact takes the boolean flags `isStatic`, `abstract`: a call like methodFact(…, true) does not say what true means, and the function does two things."
+    },
+    {
       "rule": "long-function",
       "subject": "functionFact",
       "file": "packages/extract/src/typescript-shapes.ts",
@@ -977,6 +1109,13 @@
       "file": "packages/extract/src/typescript-shapes.ts",
       "count": 1,
       "message": "methodFact is 82 lines long (limit 50)."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "visit",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "visit reaches through 3 objects in `n.initializer.declarations.name.getText()` (initializer → declarations → name), and 1 more chain(s) like it: it depends on the structure of objects it does not own,"
     },
     {
       "rule": "cognitive-complexity",
@@ -1226,6 +1365,27 @@
       "message": "reachability has a Cognitive Complexity of 22 (limit 15; cyclomatic 13, nesting 3): it is hard to read and to test."
     },
     {
+      "rule": "flag-argument",
+      "subject": "bounded",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "message": "bounded takes the boolean flag `target`: a call like bounded(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "expected",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "message": "expected takes the boolean flag `target`: a call like expected(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "reachability",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "message": "reachability takes the boolean flag `target`: a call like reachability(…, true) does not say what true means, and the function does two things."
+    },
+    {
       "rule": "long-function",
       "subject": "generatePythonTests",
       "file": "packages/language/src/pytest-generator.ts",
@@ -1247,6 +1407,13 @@
       "count": 1,
       "measure": 48,
       "message": "generatePython has a Cognitive Complexity of 48 (limit 15; cyclomatic 41, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "slot",
+      "file": "packages/language/src/python-generator.ts",
+      "count": 1,
+      "message": "slot takes the boolean flag `init`: a call like slot(…, true) does not say what true means, and the function does two things."
     },
     {
       "rule": "long-function",

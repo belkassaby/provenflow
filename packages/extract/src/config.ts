@@ -142,6 +142,13 @@ export interface LanguageConfig {
     naming?: Partial<Record<NameKind, NamingStyle>>;
 }
 
+export interface ChecksConfig {
+    /** Catalogue entries to check, instead of the default selection. */
+    select?: string[];
+    /** Catalogue entries not to check. */
+    skip?: string[];
+}
+
 export interface ProvenflowConfig {
     include?: string[];
     exclude?: string[];
@@ -167,6 +174,12 @@ export interface ProvenflowConfig {
     /** File of accepted findings (default provenflow-baseline.json when it exists): only findings not in it fail. */
     baseline?: string;
     agents?: AgentPolicyConfig;
+    /**
+     * Which entries of the patterns and practices catalogue to check (`pflow catalogue` lists them):
+     * `select` replaces the default selection, `skip` removes entries from it. Findings of rules no
+     * entry owns (security, state machines, dependencies...) are not affected.
+     */
+    checks?: ChecksConfig;
     /** Standards per language (typescript, python, java, kotlin, groovy, scala, c, cpp, c_sharp, go, rust, swift, ruby, php, r). */
     languages?: Partial<Record<Language, LanguageConfig>>;
 }

@@ -41,7 +41,9 @@ export const OPTIONS = {
     update: { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
     instructions: { type: 'boolean', default: false },
-    json: { type: 'boolean', default: false }
+    json: { type: 'boolean', default: false },
+    checks: { type: 'string' },
+    skip: { type: 'string' }
 } as const;
 
 export function parse(argv: string[]) {
@@ -49,6 +51,14 @@ export function parse(argv: string[]) {
 }
 
 export type Values = ReturnType<typeof parse>['values'];
+
+/** --checks a,b (the catalogue entries to check, instead of the default selection) and --skip c,d. */
+export function checksOf(values: Values): { select?: string[]; skip?: string[] } | undefined {
+    const list = (text: string | undefined) => text?.split(',').map(s => s.trim()).filter(Boolean);
+    const select = list(values.checks);
+    const skip = list(values.skip);
+    return select || skip ? { select, skip } : undefined;
+}
 
 /** nuXmv when NUXMV_PATH (or PATH) has it; otherwise the explicit-state checker is used. */
 export async function nuxmvChecker(values: Values): Promise<{ checker?: Checker; available: boolean }> {

@@ -539,6 +539,75 @@ runs the project's tests on a temporary copy, and the tests must pass on the unc
 pflow mutate . --base origin/main --max 20          # or: pflow review . --base origin/main --mutate 20
 ```
 
+## Patterns and practices: the catalogue
+
+The checks above are grouped into a catalogue of 32 entries that can be read and selected
+([patterns-and-practices.md](patterns-and-practices.md) has every entry in full; `pflow catalogue`
+prints it):
+
+- **design patterns** (10, from the Gang of Four): Singleton, Observer, Factory, Strategy, Builder,
+  Adapter, Decorator, State, Command and Facade. Each is recognised in the code and its breakings are
+  reported.
+- **principles** (13, most from *The Pragmatic Programmer*, 20th anniversary edition): DRY,
+  Orthogonality, the Law of Demeter, Tell Don't Ask, No Global Data, Transforming Programming,
+  Inheritance Tax, Dead Programs Tell No Lies, Assertive Programming, Finish What You Start, Shared
+  State Is Incorrect State, Naming Things and Test to Code.
+- **anti-patterns** (9, code smells): God Class, Long Function, Long Parameter List, Complex
+  Function, Arrow Code, Cyclic Dependency, Commented-Out Code, Flag Argument and Magic Number.
+
+Each entry follows the narrative form of Martin Fowler's
+[Writing Software Patterns](https://martinfowler.com/articles/writingPatterns.html):
+- a short noun-phrase name, and the solution first, in one sentence;
+- the problem that triggers it;
+- how it works;
+- when to use it and when not to (for an anti-pattern: when it is reported and when it is
+  acceptable);
+- a small example, before and after;
+- what ProvenFlow checks, and the sources.
+
+Every finding of a rule an entry owns names that entry (`practice` in the JSON report). The entries
+added with the catalogue are found in the text of the code, in every supported language:
+
+| rule | entry | severity | when | automatic fix |
+| --- | --- | --- | --- | --- |
+| `empty-catch` | Dead Programs Tell No Lies | warning | `catch {}`, `except: pass`, `rescue` with no body, `if err != nil {}`; a block holding a comment is taken as deliberate | rethrows (`raise` in Python), for review |
+| `commented-out-code` | Commented-Out Code | info | runs of `//` or `#` comments that read as code (not prose, not doc comments, not text in strings) | deletes the lines |
+| `train-wreck` | Law of Demeter | info | a chain reaching through 3 objects or more (`order.customer.address.country.zone()`), apart from fluent calls and namespaces | |
+| `flag-argument` | Flag Argument | info | a boolean parameter, apart from setters, toggles, predicates and constructors | |
+| `magic-number` | Magic Number | info | numbers not named where they appear (off by default) | |
+
+**Selecting entries.** All entries but Magic Number are checked by default. `checks` in
+provenflow.config.json changes that:
+- `"select"` replaces the default selection;
+- `"skip"` removes entries from it.
+
+`--checks` and `--skip` do the same on the command line. Leaving an entry out drops its findings, and
+for a design pattern its recognised instances and contract models. Rules no entry owns (security,
+state machines, dependencies, the analysers) always run.
+
+```json
+"checks": { "skip": ["flag-argument"] }
+```
+
+```sh
+pflow extract . --checks dry,law-of-demeter,dead-programs-tell-no-lies
+pflow catalogue --json                   # the entries, with "selected" for this project
+```
+
+**In the editor.** File → Import code base… has a **Patterns and practices to check** section. It
+lists the catalogue by kind, each entry with its one-line solution, a checkbox, and **explain**
+(the whole entry, with its example as a before/after diff). The selection is kept in the browser and
+sent with the analysis. The review then has two more tabs:
+- **Patterns & practices**: for each entry checked, the patterns recognised in the code and whether
+  they hold, the principles not followed, the anti-patterns found, and the entry's explanation.
+- **Edits by file**: every file with proposed changes, combined into one before/after diff.
+  - Each change comes with its finding, the change made and the entry it follows, and a checkbox to
+    leave it out. A change that an earlier one already changed is marked as a conflict.
+  - The file's findings with no change yet can get one: **Propose (no LLM)** gives the automatic fix
+    or a draft at the right place, and **LLM edit** asks the configured LLM. Both are verified like
+    every proposed change.
+  - **Apply** writes the combined file.
+
 ## How it works
 
 ```
@@ -629,7 +698,8 @@ cycles and paradigm profiles.
   "coverage": { "reports": ["coverage/lcov.info"] },
   "mutation": { "test": "npm test", "max": 20 },
   "baseline": "provenflow-baseline.json",
-  "agents": { "failOn": "warning", "requireTests": true }
+  "agents": { "failOn": "warning", "requireTests": true },
+  "checks": { "skip": ["flag-argument"] }
 }
 ```
 
@@ -651,6 +721,8 @@ cycles and paradigm profiles.
 - `baseline` is the file of accepted findings (default `provenflow-baseline.json` when it exists).
 - `agents` sets how lines written by coding agents are held: `failOn`, `requireTests`, and `authors`
   (extra patterns that recognise an agent).
+- `checks` selects the entries of the [patterns and practices catalogue](#patterns-and-practices-the-catalogue)
+  to check: `select` replaces the default selection, `skip` removes entries from it.
 
 ## Code changes: quick fixes, review, apply
 

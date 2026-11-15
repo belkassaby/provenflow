@@ -8,7 +8,7 @@ import { nuxmvIdentifier, serializeDiagram, type DiagramModel, type SpecKind } f
 import { formatLocation, type Location } from './ir.js';
 
 export type Severity = 'error' | 'warning' | 'info';
-export type Category = 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build' | 'duplication' | 'complexity' | 'naming' | 'tests' | 'dependencies';
+export type Category = 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build' | 'duplication' | 'complexity' | 'naming' | 'tests' | 'dependencies' | 'practice';
 
 export interface CounterexampleStep {
     state: string;
@@ -48,6 +48,8 @@ export interface Finding {
     measure?: { name: string; value: number; limit: number };
     /** The lines a finding spans, when more than one (a duplicated block, a function). */
     endLine?: number;
+    /** The entry of the patterns and practices catalogue the finding is about (see catalogue.ts). */
+    practice?: string;
 }
 
 /** A finding checked against the code itself, not only the model. */

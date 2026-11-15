@@ -8,7 +8,7 @@
  *     -> optional LLM: computed writes, properties, fixes (each verified)
  */
 import { join, resolve } from 'node:path';
-import { CONFIG_FILE, loadConfig, type ProvenflowConfig } from './config.js';
+import { CONFIG_FILE, loadConfig, type ChecksConfig, type ProvenflowConfig } from './config.js';
 import { mergeFacts, type Facts } from './ir.js';
 import { analyseArchitecture, type ArchitectureResult } from './architecture.js';
 import { buildLifecycles } from './lifecycles.js';
@@ -28,6 +28,7 @@ import { analyseParadigm, type ParadigmProfile } from './paradigm.js';
 import { analysePatterns, checkExpectations, declaredInCode, gradePatternFindings, type PatternInstance } from './patterns.js';
 import { extractPython } from './python-frontend.js';
 import { analyseQuality, type QualityMetrics, type QualityResult } from './quality/index.js';
+import { selectFindings, selectionNotes, selectPatterns } from './catalogue/index.js';
 import { listSourceFiles, matchesAny, sourceFilter } from './scan.js';
 import { extractTreeSitter, TREE_SITTER_EXTENSIONS } from './treesitter/frontend.js';
 import { extractTypeScript } from './typescript-frontend.js';
@@ -39,6 +40,8 @@ export interface ExtractOptions {
     config?: ProvenflowConfig;
     /** Path of the config file (default: <root>/provenflow.config.json). */
     configFile?: string;
+    /** Catalogue entries to check, over the config's `checks` (its `select` and `skip`, each when given). */
+    checks?: ChecksConfig;
     /** Runs nuXmv; without it the standard properties are checked explicitly. */
     checker?: Checker;
     llm?: LlmProvider;
@@ -138,7 +141,7 @@ export async function extractProject(folder: string, options: ExtractOptions = {
         ...verification.findings,
         ...tools.findings
     ]);
-    findings = applyIgnores(gradePatternFindings(findings, instances), config).sort(bySeverity);
+    findings = selectFindings(applyIgnores(gradePatternFindings(findings, instances), config), config).sort(bySeverity);
     const fixes = await fixesPhase(run, findings, { facts, models, verification, tools, llm, record });
     findings = await confirmPhase(run, fixes.findings, models, facts);
 
@@ -175,7 +178,7 @@ function resultOf(run: Run, o: Outcome): ExtractionResult {
         architecture: { edges: o.architecture.edges },
         llm: o.llm,
         quickFixes: (options.quickFixes ?? 0) > 0 ? o.fixes.log : undefined,
-        notes: [...o.facts.notes, ...o.verification.errors, ...uncheckedNote(o.verification.verdicts), ...o.tools.notes, ...o.quality.notes],
+        notes: [...o.facts.notes, ...o.verification.errors, ...uncheckedNote(o.verification.verdicts), ...o.tools.notes, ...o.quality.notes, ...selectionNotes(run.config)],
         checkedWith: options.checker && o.verification.errors.length < o.models.length ? 'nuxmv' : 'explicit',
         tools: o.tools.ran,
         proofs: o.tools.proofs,
@@ -198,8 +201,8 @@ function analyses(run: Run, facts: Facts) {
     return {
         machines: buildStateMachines(facts, config),
         lifecycles: buildLifecycles(facts),
-        patterns: analysePatterns(facts, config),
-        architecture: analyseArchitecture(facts, config),
+        patterns: selectPatterns(analysePatterns(facts, config), config),
+        architecture: selectPatterns(analyseArchitecture(facts, config), config),
         paradigm: analyseParadigm(facts, config),
         quality: analyseQuality(facts, config, run.readFile, { coverageReports: run.options.coverage })
     };
@@ -224,7 +227,7 @@ interface Run {
 
 function startRun(folder: string, options: ExtractOptions): Run {
     const root = resolve(folder);
-    const config = options.config ?? loadConfig(root, options.configFile);
+    const config = withChecks(options.config ?? loadConfig(root, options.configFile), options.checks);
     const listed = listSourceFiles(root, config.include, config.exclude);
     // Files given only as overrides (a version where they existed: pflow compare --base) are analysed too.
     const isSource = sourceFilter(config.include, config.exclude);
@@ -485,6 +488,12 @@ function dedupe(findings: Finding[]): Finding[] {
         else if (f.source === 'nuxmv' || (f.counterexample && !result[same].counterexample)) result[same] = f;
     }
     return result;
+}
+
+/** The config with `checks` overridden by the options' select and skip lists (each one only when given). */
+function withChecks(config: ProvenflowConfig, checks: ChecksConfig | undefined): ProvenflowConfig {
+    if (!checks?.select && !checks?.skip) return config;
+    return { ...config, checks: { ...config.checks, ...(checks.select ? { select: checks.select } : {}), ...(checks.skip ? { skip: checks.skip } : {}) } };
 }
 
 function applyIgnores(findings: Finding[], config: ProvenflowConfig): Finding[] {

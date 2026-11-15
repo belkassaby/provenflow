@@ -26,7 +26,8 @@ const CATEGORY_DOCS: Record<Category, string> = {
     complexity: '#complexity',
     naming: '#naming-conventions',
     tests: '#tests-and-coverage',
-    dependencies: '#dependencies'
+    dependencies: '#dependencies',
+    practice: '#patterns-and-practices-the-catalogue'
 };
 
 /** A finding's identity across runs (rule, subject, file: no line), hashed. */
@@ -126,7 +127,8 @@ const CODE_CLIMATE: Record<Category, string> = {
     complexity: 'Complexity',
     naming: 'Style',
     tests: 'Bug Risk',
-    dependencies: 'Security'
+    dependencies: 'Security',
+    practice: 'Clarity'
 };
 
 /** reviewdog Diagnostic Format (rdjson): https://github.com/reviewdog/reviewdog/tree/master/proto/rdf */

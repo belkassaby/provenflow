@@ -38,6 +38,7 @@ The repo checks itself with its own rules, so new code must pass `npm run check:
 - **Naming:** camelCase functions and fields, PascalCase classes, SCREAMING_SNAKE_CASE constants. snake_case for functions in Python.
 - **Baseline:** `provenflow-baseline.json` lists accepted older findings and must only shrink. Never add entries to make a change pass. Run `pflow baseline --update` only to remove entries that are gone, and only on a full local run: CI has fewer analysers, so it sees fewer findings.
 - **Suppressions:** a finding that is a false positive goes in `ignore` in `provenflow.config.json`, with a `reason`.
+- **New rules:** a rule that checks a pattern or practice belongs to an entry of the catalogue (`packages/extract/src/catalogue/entries.ts`, in Fowler's pattern form, with an example). After changing the entries, regenerate `docs/patterns-and-practices.md` with `node packages/server/out/cli.js catalogue -o docs/patterns-and-practices.md`. A new rule's findings in existing code go into the baseline (`pflow baseline .`), and only those.
 
 ## Docs
 

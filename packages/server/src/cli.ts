@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { hookCommand } from './commands/agents.js';
+import { catalogueCommand } from './commands/catalogue.js';
 import { baselineCommand, compareCommand, extractCommand, initCommand, mutateCommand, postReviewCommand, reviewCommand } from './commands/code.js';
 import { diagramCommand, isDiagramCommand } from './commands/diagram.js';
 import { parse, type Values } from './commands/shared.js';
@@ -30,6 +31,7 @@ const USAGE = `Usage:
 
 Code bases (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rust, Swift, Ruby, PHP, R):
   pflow extract <dir> [-o dir] [--config file] [--fail-on error|warning|info|none] [--fix]
+                [--checks id,id... | --skip id,id...]
                 [--llm anthropic:<model>|openai:<model>|ollama:<model>] [--llm-fixes N]
                 [--coverage report]... [--baseline file | --no-baseline] [--no-analyzers] [--no-confirm]
                                                  verified models (state machines, resource lifecycles,
@@ -84,6 +86,7 @@ async function main(): Promise<number> {
         return 0;
     }
     if (command === 'hook' && rest[0]) return hookCommand(rest[0]);
+    if (command === 'catalogue') return catalogueCommand(values, rest[0]);
     // pflow export <framework> <diagram>: the diagram is the second argument.
     const framework = command === 'export' ? rest.shift() : undefined;
     const [file, second] = rest;

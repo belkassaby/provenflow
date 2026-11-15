@@ -284,6 +284,7 @@ dialog.code-import header h2 { flex: 1; }
 .code-review-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .code-diff-heads { display: grid; grid-template-columns: 1fr 1fr; font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 4px; }
 .code-diff { border: 1px solid var(--border); border-radius: 6px; height: min(56vh, 560px); overflow: auto; font-family: var(--mono, ui-monospace, monospace); font-size: 12.5px; background: var(--bg); }
+.code-diff.compact { height: auto; max-height: 320px; }
 .code-diff .cm-mergeView { height: 100%; }
 .code-diff .cm-mergeViewEditors { min-height: 100%; }
 .code-diff .cm-editor { height: auto; }
@@ -330,3 +331,34 @@ dialog.llm-settings { width: min(720px, calc(100vw - 32px)); }
 .llm-provider label { display: grid; grid-template-columns: 150px 1fr; gap: 8px; align-items: center; font-size: 13px; }
 .llm-provider label.llm-remember { display: flex; }
 .llm-test { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* Patterns and practices: the catalogue before an analysis, its results, and the edits by file */
+.practice-picker > summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; padding: 8px 0 4px; }
+.practice-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.practice-tools input { flex: 1; min-width: 160px; max-width: 300px; }
+.practice-group h4 { margin: 12px 0 4px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.practice-list { list-style: none; padding: 0; margin: 0; }
+.practice-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.practice-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; cursor: pointer; }
+.practice-line { flex-basis: 100%; padding-left: 22px; }
+.practice-badges { display: flex; gap: 6px; align-items: center; align-self: start; }
+.practice-item app-practice-detail { grid-column: 1 / -1; }
+.practice-detail { font-size: 13px; padding: 4px 0 4px 22px; display: flex; flex-direction: column; gap: 4px; }
+.practice-detail p { margin: 2px 0; }
+.practice-badge { background: var(--accent-bg); color: var(--accent); }
+.practice-table .practice-open > td { background: var(--hover); }
+.practice-table .practice-open .practice-detail { padding-left: 0; }
+.file-edits-top { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; }
+.file-edits { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 12px; margin-top: 8px; }
+.file-list { display: flex; flex-direction: column; gap: 2px; max-height: 72vh; overflow: auto; border-right: 1px solid var(--border); padding-right: 8px; }
+.file-list button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 6px; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; cursor: pointer; color: inherit; }
+.file-list button:hover { background: var(--hover); }
+.file-list button.active { background: var(--accent-bg); border-color: var(--accent); }
+.file-list .file-dir { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-counts { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 4px; align-items: center; }
+.file-edit { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.file-edit h4 { margin: 10px 0 2px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .file-edits { grid-template-columns: minmax(0, 1fr); }
+  .file-list { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 8px; }
+}

@@ -6,8 +6,13 @@ import { LlmSettings } from '../llm-settings/llm-settings';
 import { ChangeActivity } from './change-activity';
 import { CodeChange } from './code-change';
 import { changeKey, CodeImport, type CodeFinding, type CodeModel } from './code-import';
+import { editsByFile } from './code-edits';
+import { FileEdits } from './file-edits';
+import { PracticeCatalogue } from './practice-catalogue';
+import { PracticePicker } from './practice-picker';
+import { PracticeResults } from './practice-results';
 
-type View = 'findings' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm' | 'tools';
+type View = 'findings' | 'edits' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm' | 'tools';
 type Severity = CodeFinding['severity'];
 
 const CATEGORY_LABELS: Record<CodeFinding['category'], string> = {
@@ -24,6 +29,7 @@ const CATEGORY_LABELS: Record<CodeFinding['category'], string> = {
     complexity: 'Complexity',
     tests: 'Tests and coverage',
     paradigm: 'Paradigm and size',
+    practice: 'Practices and anti-patterns',
     naming: 'Naming'
 };
 
@@ -51,7 +57,7 @@ const SOURCE_LABELS: Partial<Record<CodeFinding['source'], string>> = {
  */
 @Component({
     selector: 'app-code-import-dialog',
-    imports: [CodeDiff, ChangeActivity],
+    imports: [CodeDiff, ChangeActivity, PracticePicker, PracticeResults, FileEdits],
     templateUrl: './code-import-dialog.html'
 })
 export class CodeImportDialog {
@@ -63,6 +69,7 @@ export class CodeImportDialog {
     readonly llmSettings = output<void>();
     readonly llm = inject(LlmSettings);
     readonly change = inject(CodeChange);
+    readonly catalogue = inject(PracticeCatalogue);
     /** What the last LLM fix or verification of a finding gave, shown next to it. */
     readonly outcome = signal<{ key: string; ok: boolean; text: string } | null>(null);
     /** The LLM used for "LLM fix": the one chosen for the analysis, else the first configured. */
@@ -111,6 +118,12 @@ export class CodeImportDialog {
     sourceLabel(f: CodeFinding): string {
         return SOURCE_LABELS[f.source] ?? f.source;
     }
+
+    /** Files with a proposed change to a pattern or practice finding (the Edits by file tab). */
+    readonly editedFiles = computed(() => editsByFile((this.report()?.findings ?? []).filter(f => f.practice)).filter(f => f.changes.length > 0).length);
+
+    /** Catalogue entries with findings: patterns broken, principles not followed, anti-patterns found. */
+    readonly practicesToFix = computed(() => new Set((this.report()?.findings ?? []).map(f => f.practice).filter(Boolean)).size);
 
     /** Findings with a proposed code change. */
     readonly changes = computed(() => (this.report()?.findings ?? []).filter(f => f.suggestedPatch?.files?.length));

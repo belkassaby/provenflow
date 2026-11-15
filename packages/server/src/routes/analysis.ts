@@ -10,6 +10,7 @@
  *   incremental?: true to redo only what the files changed since the last run of this folder can
  *     affect (after applying changes); name?: the uploaded folder's name, to find its last run
  *   analyzers?: false to skip the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and the replay on the code
+ *   checks?: { select?: [ids], skip?: [ids] }: the catalogue entries to check, over the config's "checks"
  * With `Accept: application/x-ndjson` the response streams one JSON object per line while it runs:
  * { run: id }, { progress: { phase, message, percent } }... (the current one again every 15 s),
  * then { result } or { error }. The analysis goes on if the connection drops:
@@ -26,10 +27,13 @@
  * why), and `error` when there was nothing to check. With `Accept: application/x-ndjson` they
  * stream { event } lines first: { type: 'stage' | 'thinking' | 'text' | 'usage' | 'note', ... }.
  * Every LLM call is also logged by the server, with its token usage.
+ *
+ * GET /api/catalogue: the patterns and practices catalogue ({ entries }), each entry explained in
+ * the form of Fowler's "Writing Software Patterns", with the rules that check it.
  */
 import { rm } from 'node:fs/promises';
 import express, { type Express, type Request, type Response } from 'express';
-import { changeContext, extractProject, fixWithLlm, fixWithoutLlm, logged, verifyVersion, webReport, type ChangeEvent, type ChangeContext, type Finding, type LlmProvider, type ProvenflowConfig } from '@provenflow/extract';
+import { CATALOGUE, changeContext, extractProject, fixWithLlm, fixWithoutLlm, logged, verifyVersion, webReport, type ChangeEvent, type ChangeContext, type Finding, type ChecksConfig, type LlmProvider, type ProvenflowConfig } from '@provenflow/extract';
 import { nuxmvInfo, runNuxmv } from '../nuxmv-runner.js';
 import { bodyOf, folderKey, folderOf, HttpError, inSlot, providerOf, route, type ServerContext } from '../context.js';
 
@@ -37,6 +41,9 @@ const BUSY = 'Too many runs in progress, try again shortly.';
 const streamed = (req: Request) => /application\/x-ndjson/.test(req.headers.accept ?? '');
 
 export function registerAnalysisRoutes(app: Express, ctx: ServerContext): void {
+    app.get('/api/catalogue', (_req: Request, res: Response) => {
+        res.json({ entries: CATALOGUE });
+    });
     app.post('/api/extract', express.json({ limit: '64mb' }), route((req, res) => extract(ctx, req, res)));
     app.post('/api/fix', express.json({ limit: '64mb' }), route((req, res) => singleChange(ctx, 'fix', req, res)));
     app.post('/api/verify-change', express.json({ limit: '64mb' }), route((req, res) => singleChange(ctx, 'verify', req, res)));
@@ -64,6 +71,7 @@ interface ExtractBody {
     analyzers: boolean;
     incremental: boolean;
     name: string;
+    checks: ChecksConfig;
 }
 
 function counts(body: Partial<Record<keyof ExtractBody, unknown>>): { quickFixes: number; llmFixes: number } {
@@ -71,6 +79,14 @@ function counts(body: Partial<Record<keyof ExtractBody, unknown>>): { quickFixes
     const llmFixes = body.llmFixes === undefined ? 5 : Number(body.llmFixes);
     if (!Number.isFinite(quickFixes) || quickFixes < 0 || !Number.isFinite(llmFixes) || llmFixes < 0) throw new HttpError(400, "'quickFixes' and 'llmFixes' must be numbers >= 0.");
     return { quickFixes, llmFixes };
+}
+
+function checkChecks(checks: unknown): ChecksConfig | undefined {
+    if (checks === undefined) return undefined;
+    const list = (x: unknown) => x === undefined || (Array.isArray(x) && x.every(id => typeof id === 'string'));
+    const c = checks as Record<string, unknown>;
+    if (typeof checks !== 'object' || checks === null || !list(c['select']) || !list(c['skip'])) throw new HttpError(400, "'checks' must be { select?: string[], skip?: string[] }.");
+    return checks as ChecksConfig;
 }
 
 function checkConfig(config: unknown): ProvenflowConfig | undefined {
@@ -85,7 +101,8 @@ async function extract(ctx: ServerContext, req: Request, res: Response): Promise
     const source = await folderOf(ctx, body);
     try {
         const config = checkConfig(body.config);
-        await inSlot(ctx, BUSY, () => analyse(ctx, req, res, { source, key: folderKey(source, body.name), config, quickFixes, llmFixes, llm, analyzers: body.analyzers !== false, incremental: body.incremental === true }));
+        const checks = checkChecks(body.checks);
+        await inSlot(ctx, BUSY, () => analyse(ctx, req, res, { source, key: folderKey(source, body.name), config, checks, quickFixes, llmFixes, llm, analyzers: body.analyzers !== false, incremental: body.incremental === true }));
     } finally {
         if (source.temp) await rm(source.temp, { recursive: true, force: true });
     }
@@ -95,6 +112,7 @@ interface Analysis {
     source: { root: string; temp?: string };
     key: string;
     config?: ProvenflowConfig;
+    checks?: ChecksConfig;
     quickFixes: number;
     llmFixes: number;
     llm?: LlmProvider;
@@ -111,6 +129,7 @@ async function analyse(ctx: ServerContext, req: Request, res: Response, a: Analy
         const result = await extractProject(root, {
             previous: a.incremental ? ctx.previousRuns.get(a.key) : undefined,
             config: a.config,
+            checks: a.checks,
             checker: await checkerOf(ctx),
             quickFixes: Math.min(100, a.quickFixes),
             llm: a.llm ? logged(a.llm, line => console.log(line), `analysis of ${root}`) : undefined,
