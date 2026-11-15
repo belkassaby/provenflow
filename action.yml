@@ -113,9 +113,18 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        # CBMC publishes a .deb for some Ubuntu releases only: take the runner's own, else the
+        # newest one for the same architecture (it installs on later releases). CBMC is optional,
+        # so a failed install warns and the review goes on without it.
         release=$(. /etc/os-release && echo "ubuntu-${VERSION_ID}")
-        url=$(curl -fsSL -H "authorization: Bearer $GH_TOKEN" https://api.github.com/repos/diffblue/cbmc/releases/latest | grep -o "https://[^\"]*${release}-cbmc-[^\"]*-Linux.deb" | head -1)
-        curl -fsSL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb
+        arch=$([ "$(uname -m)" = aarch64 ] && echo "-arm64" || true)
+        debs=$(curl -fsSL -H "authorization: Bearer $GH_TOKEN" https://api.github.com/repos/diffblue/cbmc/releases/latest \
+          | grep -o "https://[^\"]*/ubuntu-[0-9.]*${arch}-cbmc-[^\"]*-Linux\.deb" | sort -uV || true)
+        url=$(printf '%s\n' "$debs" | grep -F "/${release}${arch}-cbmc-" | head -1 || true)
+        [ -n "$url" ] || url=$(printf '%s\n' "$debs" | tail -1)
+        if [ -z "$url" ] || ! { curl -fsSL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb; }; then
+          echo "::warning title=ProvenFlow::CBMC could not be installed on ${release}${arch}; the review runs without it."
+        fi
     - if: inputs.post-review-file == '' && inputs.infer == 'true' && runner.os == 'Linux'
       shell: bash
       run: |
