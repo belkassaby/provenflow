@@ -1,14 +1,18 @@
 /**
  * Outputs of `pflow extract`: the models (.pflow, open them in the editor),
  * a Markdown report for people, JSON for tools, SARIF for code scanning
- * (GitHub shows the findings on the pull request), and a test scenario for
- * each counterexample, to confirm the bug on the real code.
+ * (GitHub shows the findings on the pull request), GitLab Code Quality and
+ * reviewdog's rdjson for other CI systems, and a test scenario for each
+ * counterexample, to confirm the bug on the real code.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { ExtractionResult } from './index.js';
+import type { ExtractionResult } from './project.js';
 import { formatLocation } from './ir.js';
 import { modelToPflow, slug, type Finding } from './models.js';
+import { codeQuality, rdjson, sarif } from './report-formats.js';
+
+export { codeQuality, fingerprint, rdjson, sarif } from './report-formats.js';
 
 export interface WrittenFiles {
     dir: string;
@@ -49,6 +53,8 @@ export function writeOutputs(result: ExtractionResult, dir: string): WrittenFile
     writeFileSync(join(dir, 'report.md'), markdownReport(result, models, scenarios));
     writeFileSync(join(dir, 'report.json'), JSON.stringify(jsonReport(result), null, 2));
     writeFileSync(join(dir, 'report.sarif'), JSON.stringify(sarif(result), null, 2));
+    writeFileSync(join(dir, 'report.codequality.json'), JSON.stringify(codeQuality(result), null, 2));
+    writeFileSync(join(dir, 'report.rdjson'), JSON.stringify(rdjson(result), null, 2));
     return { dir, models, scenarios, fixes, report: join(dir, 'report.md') };
 }
 
@@ -71,98 +77,179 @@ export function formatFindings(result: ExtractionResult, minimum: Finding['sever
 }
 
 function markdownReport(result: ExtractionResult, models: string[], scenarios: string[]): string {
+    return [header(result), ...findingSections(result), patternsSection(result), qualitySection(result), proofsSection(result), paradigmSection(result), dependenciesSection(result), modelsSection(result, models), scenariosSection(scenarios), llmSection(result), notesSection(result)]
+        .filter(Boolean)
+        .join('\n');
+}
+
+function header(result: ExtractionResult): string {
     const s = summary(result);
-    const out: string[] = [];
-    out.push(`# ProvenFlow code model report`, '');
+    const out: string[] = [`# ProvenFlow code model report`, ''];
     out.push(`${result.files} files, ${result.models.length} models (${count(result, 'state-machine')} state machines, ${count(result, 'lifecycle')} resource lifecycles, ${count(result, 'pattern')} pattern contracts${count(result, 'architecture') ? ', 1 architecture' : ''}), ${result.verdicts.length} properties checked with ${result.checkedWith === 'nuxmv' ? 'nuXmv' : 'the explicit-state checker (set NUXMV_PATH to use nuXmv)'}.`, '');
     out.push(`**${s.error} errors, ${s.warning} warnings, ${s.info} notes.**`, '');
     if (result.llm) out.push(`LLM (${result.llm.provider}): ${result.llm.accepted.length} proposals accepted after verification, ${result.llm.rejected.length} rejected; ${result.llm.usage.calls} call(s), ${result.llm.usage.input} input + ${result.llm.usage.output} output tokens${result.llm.usage.cached ? ` (${result.llm.usage.cached} answered from the cache)` : ''}.`, '');
     if (result.tools.length > 0) out.push(`Analysers: ${result.tools.map(t => `${t.tool}${t.version ? ` ${t.version}` : ''} (${t.scope})`).join('; ')}.`, '');
     if (result.changeChecks.length > 0) out.push(`Proposed changes were also checked with: ${result.changeChecks.map(c => `\`${c}\``).join(', ')}.`, '');
+    return out.join('\n');
+}
 
-    const categories: Array<[Finding['category'], string]> = [
-        ['security', 'Security and dataflow'],
-        ['memory', 'Memory safety and arithmetic'],
-        ['heap', 'Heap (interprocedural)'],
-        ['build', 'Build and tests'],
-        ['state-machine', 'State machines'],
-        ['lifecycle', 'Resource lifecycles'],
-        ['pattern', 'Design patterns'],
-        ['architecture', 'Architecture'],
-        ['paradigm', 'Paradigm and size']
-    ];
-    for (const [category, title] of categories) {
+export const CATEGORY_TITLES: Array<[Finding['category'], string]> = [
+    ['security', 'Security and dataflow'],
+    ['memory', 'Memory safety and arithmetic'],
+    ['heap', 'Heap (interprocedural)'],
+    ['build', 'Build and tests'],
+    ['dependencies', 'Dependencies'],
+    ['state-machine', 'State machines'],
+    ['lifecycle', 'Resource lifecycles'],
+    ['pattern', 'Design patterns'],
+    ['architecture', 'Architecture'],
+    ['duplication', 'Duplicated code'],
+    ['complexity', 'Complexity'],
+    ['tests', 'Tests and coverage'],
+    ['paradigm', 'Paradigm and size'],
+    ['naming', 'Naming']
+];
+
+const TOOL_CATEGORIES = new Set<Finding['category']>(['security', 'memory', 'heap', 'build']);
+const QUIET_CATEGORIES = new Set<Finding['category']>(['dependencies', 'duplication', 'complexity', 'tests', 'naming']);
+
+function findingSections(result: ExtractionResult): string[] {
+    const sections: string[] = [];
+    for (const [category, title] of CATEGORY_TITLES) {
         const list = result.findings.filter(f => f.category === category);
-        if (list.length === 0 && ['security', 'memory', 'heap', 'build'].includes(category) && result.tools.length === 0) continue;
-        out.push(`## ${title} (${list.length})`, '');
+        if (list.length === 0 && ((TOOL_CATEGORIES.has(category) && result.tools.length === 0) || QUIET_CATEGORIES.has(category))) continue;
+        const out = [`## ${title} (${list.length})`, ''];
         if (list.length === 0) out.push('No findings.', '');
-        for (const f of list) {
-            out.push(`### ${icon(f.severity)} ${f.rule}: ${f.subject}`, '');
-            out.push(`${f.loc ? `\`${formatLocation(f.loc)}\` · ` : ''}${f.severity} · ${sourceLabel(f.source)}${f.model ? ` · model \`models/${f.model}.pflow\`` : ''}`, '');
-            out.push(f.message, '');
-            out.push(`**Fix:** ${f.fix}`, '');
-            if (f.spec) out.push(`Property: \`${f.spec}\``, '');
-            if (f.confirmation) out.push(`**On the code** (${f.confirmation.by}, ${f.confirmation.status}): ${f.confirmation.detail}`, '');
-            if (f.counterexample && f.counterexample.length > 1) {
-                out.push('| step | state | code |', '| --- | --- | --- |');
-                f.counterexample.forEach((c, i) => out.push(`| ${i} | ${c.state} | ${c.event ? `${c.event}${c.loc ? ` (\`${formatLocation(c.loc)}\`)` : ''}` : 'start'} |`));
-                out.push('');
-            }
-            if (f.suggestedPatch) {
-                out.push(`**Suggested change** (${f.suggestedPatch.by ?? 'LLM'}, ${f.suggestedPatch.verified ? '✓ verified' : '✗ not verified'}): ${f.suggestedPatch.note}`, '', '```diff', f.suggestedPatch.diff.trim(), '```', '');
-                if (f.suggestedPatch.checks?.length) out.push(`Checks on the changed copy: ${f.suggestedPatch.checks.map(c => `${c.ok ? '✓' : '✗'} ${c.name}`).join(', ')}`, '');
-            }
-        }
+        for (const f of list) out.push(...findingBlock(f));
+        sections.push(out.join('\n'));
     }
+    return sections;
+}
 
-    out.push('## Patterns found', '');
+function findingBlock(f: Finding): string[] {
+    const out: string[] = [`### ${icon(f.severity)} ${f.rule}: ${f.subject}`, ''];
+    out.push(`${f.loc ? `\`${formatLocation(f.loc)}\` · ` : ''}${f.severity} · ${sourceLabel(f.source)}${f.model ? ` · model \`models/${f.model}.pflow\`` : ''}`, '');
+    out.push(f.message, '', `**Fix:** ${f.fix}`, '');
+    if (f.spec) out.push(`Property: \`${f.spec}\``, '');
+    if (f.confirmation) out.push(`**On the code** (${f.confirmation.by}, ${f.confirmation.status}): ${f.confirmation.detail}`, '');
+    return [...out, ...counterexampleTable(f), ...patchBlock(f)];
+}
+
+function counterexampleTable(f: Finding): string[] {
+    if (!f.counterexample || f.counterexample.length <= 1) return [];
+    const step = (c: NonNullable<Finding['counterexample']>[number]) => (c.event ? `${c.event}${c.loc ? ` (\`${formatLocation(c.loc)}\`)` : ''}` : 'start');
+    return ['| step | state | code |', '| --- | --- | --- |', ...f.counterexample.map((c, i) => `| ${i} | ${c.state} | ${step(c)} |`), ''];
+}
+
+function patchBlock(f: Finding): string[] {
+    const p = f.suggestedPatch;
+    if (!p) return [];
+    const out = [`**Suggested change** (${p.by ?? 'LLM'}, ${p.verified ? '✓ verified' : '✗ not verified'}): ${p.note}`, '', '```diff', p.diff.trim(), '```', ''];
+    if (p.checks?.length) out.push(`Checks on the changed copy: ${p.checks.map(c => `${c.ok ? '✓' : '✗'} ${c.name}`).join(', ')}`, '');
+    return out;
+}
+
+function patternsSection(result: ExtractionResult): string {
+    const out = ['## Patterns found', ''];
     if (result.patterns.length === 0) out.push('None.', '');
     else {
         out.push('| pattern | subject | evidence | recognised | contract model |', '| --- | --- | --- | --- | --- |');
         for (const p of result.patterns) out.push(`| ${p.pattern} | ${p.subject} (\`${formatLocation(p.loc)}\`) | ${p.evidence} | ${p.confidence ?? '-'} | ${p.model ? `\`models/${p.model}.pflow\`` : '-'} |`);
         out.push('');
     }
+    return out.join('\n');
+}
 
-    if (result.proofs.length > 0) {
-        out.push('## Proofs about the code', '', 'Each function model checked for every input, loops unwound up to the bound.', '', '| function | property | tool | bound | result |', '| --- | --- | --- | --- | --- |');
-        for (const p of result.proofs) out.push(`| ${p.subject}${p.loc ? ` (\`${formatLocation(p.loc)}\`)` : ''} | ${p.property} | ${p.tool} | ${p.bound ?? '-'} | ${p.status}${p.detail ? `: ${p.detail.replace(/\|/g, '\\|')}` : ''} |`);
+/** Duplication, complexity, size, naming, dependency and coverage measures. */
+export function qualitySection(result: Pick<ExtractionResult, 'quality'>): string {
+    const m = result.quality?.metrics;
+    if (!m) return '';
+    const out = ['## Code quality', ''];
+    out.push('| measure | value |', '| --- | --- |');
+    out.push(`| source files / lines of code | ${m.files} / ${m.codeLines} |`);
+    out.push(`| test files / lines of test code | ${m.testFiles} / ${m.testCodeLines} |`);
+    out.push(`| functions | ${m.functions} (mean ${m.size.meanFunctionLines} lines) |`);
+    out.push(`| duplicated lines | ${m.duplication.duplicatedLines} (${m.duplication.percent}%), in ${m.duplication.clones} clone(s) |`);
+    out.push(`| similar functions (probable re-implementations) | ${m.duplication.similarFunctions} |`);
+    out.push(`| Cognitive Complexity per function | mean ${m.complexity.mean}, 90th percentile ${m.complexity.p90}, max ${m.complexity.max} |`);
+    out.push(`| functions over the complexity limit | ${m.complexity.overLimit} |`);
+    out.push(`| functions nested too deeply | ${m.complexity.deepNesting} (deepest ${m.complexity.maxNesting}) |`);
+    out.push(`| long functions / many parameters | ${m.size.longFunctions} / ${m.size.manyParameters} |`);
+    out.push(`| names off convention | ${m.naming.inconsistent} of ${m.naming.checked} |`);
+    out.push(`| unknown / undeclared dependencies | ${m.dependencies.unknown} / ${m.dependencies.undeclared} |`);
+    if (m.coverage) out.push(`| line coverage | ${m.coverage.percent}% (${m.coverage.covered} of ${m.coverage.total} lines) |`);
+    out.push('');
+    if (m.hotspots.length) {
+        out.push('Most complex functions:', '', '| function | file | Cognitive Complexity | nesting |', '| --- | --- | --- | --- |');
+        for (const h of m.hotspots) out.push(`| ${h.name} | \`${h.file}:${h.line}\` | ${h.cognitive} | ${h.nesting} |`);
         out.push('');
     }
+    const conventions = result.quality.conventions.filter(c => c.names > 0);
+    if (conventions.length) {
+        out.push('Naming conventions applied (from the config, the project itself, or the language\'s style guide):', '', '| language | kind | style | from | names fitting |', '| --- | --- | --- | --- | --- |');
+        for (const c of conventions) out.push(`| ${c.language} | ${c.kind} | ${c.style} | ${c.from} | ${c.fitting} of ${c.names} |`);
+        out.push('');
+    }
+    return out.join('\n');
+}
 
-    out.push('## Paradigm', '');
+function proofsSection(result: ExtractionResult): string {
+    if (result.proofs.length === 0) return '';
+    const out = ['## Proofs about the code', '', 'Each function model checked for every input, loops unwound up to the bound.', '', '| function | property | tool | bound | result |', '| --- | --- | --- | --- | --- |'];
+    for (const p of result.proofs) out.push(`| ${p.subject}${p.loc ? ` (\`${formatLocation(p.loc)}\`)` : ''} | ${p.property} | ${p.tool} | ${p.bound ?? '-'} | ${p.status}${p.detail ? `: ${p.detail.replace(/\|/g, '\\|')}` : ''} |`);
+    out.push('');
+    return out.join('\n');
+}
+
+function paradigmSection(result: ExtractionResult): string {
+    const out = ['## Paradigm', ''];
     out.push('| part | declared | detected | files | classes | methods | free functions | pure | higher-order | mutations/100 lines | mutable globals |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
     for (const p of result.paradigm) out.push(`| ${p.part} | ${p.declared ?? '-'} | ${p.detected} | ${p.files} | ${p.classes} | ${p.methods} | ${p.freeFunctions} | ${p.pureFunctions} | ${p.higherOrderFunctions} | ${p.mutationDensity} | ${p.mutableGlobals} |`);
     out.push('');
+    return out.join('\n');
+}
 
-    if (result.architecture.edges.length > 0) {
-        out.push('## Dependencies between parts', '', '| from | to | imports | example |', '| --- | --- | --- | --- |');
-        for (const e of result.architecture.edges) out.push(`| ${e.from} | ${e.to} | ${e.count}${e.typeOnly ? ' (types)' : ''} | \`${formatLocation(e.example)}\` |`);
-        out.push('');
-    }
+function dependenciesSection(result: ExtractionResult): string {
+    if (result.architecture.edges.length === 0) return '';
+    const out = ['## Dependencies between parts', '', '| from | to | imports | example |', '| --- | --- | --- | --- |'];
+    for (const e of result.architecture.edges) out.push(`| ${e.from} | ${e.to} | ${e.count}${e.typeOnly ? ' (types)' : ''} | \`${formatLocation(e.example)}\` |`);
+    out.push('');
+    return out.join('\n');
+}
 
-    out.push('## Models', '', 'Open any of them in the ProvenFlow editor (Open .pflow) to see the diagram and replay counterexamples.', '');
+function modelsSection(result: ExtractionResult, models: string[]): string {
+    const out = ['## Models', '', 'Open any of them in the ProvenFlow editor (Open .pflow) to see the diagram and replay counterexamples.', ''];
     out.push('| model | properties | false |', '| --- | --- | --- |');
     for (const m of result.models) {
         const verdicts = result.verdicts.filter(v => v.model === m.id);
         out.push(`| \`${models.find(x => x.includes(`${m.id}.pflow`)) ?? m.id}\` ${m.subject} | ${verdicts.length} | ${verdicts.filter(v => v.verdict === 'false').map(v => v.spec).join(', ') || '-'} |`);
     }
     out.push('');
-    if (scenarios.length > 0) {
-        out.push('## Scenarios', '', 'A test skeleton per counterexample: replay it on the real code. If the expectation fails, the bug is real; if it passes, the model is coarser than the code (declare the missing guard or terminal state in provenflow.config.json).', '');
-        scenarios.forEach(s => out.push(`- \`${s}\``));
-        out.push('');
-    }
-    if (result.llm && (result.llm.accepted.length || result.llm.rejected.length)) {
-        out.push('## LLM proposals', '');
-        result.llm.accepted.forEach(a => out.push(`- ✓ ${a}`));
-        result.llm.rejected.forEach(r => out.push(`- ✗ ${r}`));
-        out.push('');
-    }
-    if (result.notes.length > 0) {
-        out.push('## Notes', '');
-        result.notes.forEach(n => out.push(`- ${n}`));
-        out.push('');
-    }
+    return out.join('\n');
+}
+
+function scenariosSection(scenarios: string[]): string {
+    if (scenarios.length === 0) return '';
+    const out = ['## Scenarios', '', 'A test per counterexample: replay it on the real code. If the expectation fails, the bug is real; if it passes, the model is coarser than the code (declare the missing guard or terminal state in provenflow.config.json).', ''];
+    scenarios.forEach(s => out.push(`- \`${s}\``));
+    out.push('');
+    return out.join('\n');
+}
+
+function llmSection(result: ExtractionResult): string {
+    if (!result.llm || (!result.llm.accepted.length && !result.llm.rejected.length)) return '';
+    const out = ['## LLM proposals', ''];
+    result.llm.accepted.forEach(a => out.push(`- ✓ ${a}`));
+    result.llm.rejected.forEach(r => out.push(`- ✗ ${r}`));
+    out.push('');
+    return out.join('\n');
+}
+
+function notesSection(result: ExtractionResult): string {
+    if (result.notes.length === 0) return '';
+    const out = ['## Notes', ''];
+    result.notes.forEach(n => out.push(`- ${n}`));
+    out.push('');
     return out.join('\n');
 }
 
@@ -207,26 +294,6 @@ function jsonReport(result: ExtractionResult): unknown {
         summary: summary(result),
         facts: { stateVariables: facts.stateVariables.length, writes: facts.writes.length, resources: facts.resources.length, classes: facts.classes.length, functions: facts.functions.length, modules: facts.modules.length },
         models: models.map(m => ({ id: m.id, kind: m.kind, subject: m.subject, loc: m.loc, states: m.model.states.length, transitions: m.model.transitions.length, specs: m.model.specs.map(s => `${s.name} := ${s.expression}`), notes: m.notes }))
-    };
-}
-
-function sarif(result: ExtractionResult): unknown {
-    const rules = [...new Set(result.findings.map(f => f.rule))];
-    return {
-        $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
-        version: '2.1.0',
-        runs: [
-            {
-                tool: { driver: { name: 'ProvenFlow', informationUri: 'https://github.com/belkassaby/provenflow', rules: rules.map(id => ({ id, shortDescription: { text: id.replace(/-/g, ' ') } })) } },
-                results: result.findings.map(f => ({
-                    ruleId: f.rule,
-                    level: f.severity === 'info' ? 'note' : f.severity,
-                    message: { text: `${f.message}\nFix: ${f.fix}` },
-                    locations: f.loc ? [{ physicalLocation: { artifactLocation: { uri: f.loc.file }, region: { startLine: f.loc.line } } }] : [],
-                    relatedLocations: (f.related ?? []).slice(0, 10).map((l, i) => ({ id: i, physicalLocation: { artifactLocation: { uri: l.file }, region: { startLine: l.line } } }))
-                }))
-            }
-        ]
     };
 }
 

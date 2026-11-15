@@ -1,5 +1,5 @@
 import { computed, Injectable, signal } from '@angular/core';
-import { isApplied } from './already-applied';
+import { isApplied } from '@provenflow/language';
 import { directoryPicker, ensureWritable, listFiles, loadFolder, readText, saveFolder, writeText } from './folder-access';
 
 /** A place in the analysed code base. */
@@ -10,7 +10,7 @@ export interface CodeLocation {
 
 export interface CodeFinding {
     rule: string;
-    category: 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build';
+    category: 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build' | 'duplication' | 'complexity' | 'naming' | 'tests' | 'dependencies';
     severity: 'error' | 'warning' | 'info';
     subject: string;
     message: string;

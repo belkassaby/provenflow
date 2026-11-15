@@ -39,6 +39,87 @@ def is_function(node):
     return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
 
 
+LOOPS = (ast.For, ast.AsyncFor, ast.While)
+MATCH = getattr(ast, "Match", ())
+MATCH_CASE = getattr(ast, "match_case", ())
+
+
+class Complexity:
+    """Cognitive Complexity (SonarSource whitepaper v1.7), cyclomatic complexity and nesting depth of a function."""
+
+    def __init__(self, fn):
+        self.fn = fn
+        self.cognitive, self.cyclomatic, self.nesting = 0, 1, 0
+
+    def measure(self):
+        for s in self.fn.body:
+            self.visit(s, 0, 0)
+        return {"cognitive": self.cognitive, "cyclomatic": self.cyclomatic, "nesting": self.nesting}
+
+    def structural(self, nesting, depth):
+        self.cognitive += 1 + nesting
+        self.nesting = max(self.nesting, depth + 1)
+
+    def children(self, node, nesting, depth):
+        for c in ast.iter_child_nodes(node):
+            self.visit(c, nesting, depth)
+
+    def visit(self, node, nesting, depth):
+        if isinstance(node, ast.If):
+            return self.visit_if(node, nesting, depth, False)
+        if isinstance(node, (ast.IfExp, ast.ExceptHandler) + LOOPS) or (MATCH and isinstance(node, MATCH)):
+            return self.visit_structure(node, nesting, depth)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return  # measured on its own
+        if isinstance(node, ast.Lambda):
+            return self.children(node, nesting + 1, depth)
+        self.increments(node)
+        self.children(node, nesting, depth)
+
+    def visit_if(self, node, nesting, depth, elif_):
+        self.cyclomatic += 1
+        if elif_:
+            self.cognitive += 1
+            self.nesting = max(self.nesting, depth + 1)
+        else:
+            self.structural(nesting, depth)
+        self.visit(node.test, nesting + 1, depth + 1)
+        for s in node.body:
+            self.visit(s, nesting + 1, depth + 1)
+        if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
+            return self.visit_if(node.orelse[0], nesting, depth, True)
+        if node.orelse:
+            self.cognitive += 1
+            for s in node.orelse:
+                self.visit(s, nesting + 1, depth + 1)
+
+    def visit_structure(self, node, nesting, depth):
+        """Loops, conditional expressions, except clauses and match statements: +1 plus the nesting level."""
+        if not (MATCH and isinstance(node, MATCH)):
+            self.cyclomatic += 1
+        self.structural(nesting, depth)
+        self.children(node, nesting + 1, depth + 1)
+        if isinstance(node, LOOPS) and node.orelse:
+            self.cognitive += 1
+
+    def increments(self, node):
+        """Increments that do not nest: case clauses, boolean operator sequences, comprehension conditions, recursion."""
+        if MATCH_CASE and isinstance(node, MATCH_CASE):
+            self.cyclomatic += 1
+        if isinstance(node, ast.BoolOp):
+            # ast groups a sequence of like operators (a and b and c) into one BoolOp.
+            self.cognitive += 1
+            self.cyclomatic += len(node.values) - 1
+        if isinstance(node, ast.comprehension):
+            self.cyclomatic += len(node.ifs)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == self.fn.name:
+            self.cognitive += 1
+
+
+def complexity_of(fn):
+    return Complexity(fn).measure()
+
+
 class Parents(ast.NodeVisitor):
     def __init__(self, tree):
         self.parent = {}
@@ -154,58 +235,63 @@ class Project:
         for f, (tree, _) in self.trees.items():
             if is_test(f):
                 continue
-            for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
-                if cls.name in self.enums:
-                    continue
-                annotated = {}
-                for stmt in cls.body:
-                    if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-                        values = self.literal_annotation(stmt.annotation)
-                        if values:
-                            annotated[stmt.target.id] = (values, stmt)
-                written = {}
-                for node in ast.walk(cls):
-                    if isinstance(node, (ast.Assign, ast.AnnAssign)):
-                        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                        for t in targets:
-                            if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self":
-                                if isinstance(node, ast.AnnAssign):
-                                    values = self.literal_annotation(node.annotation)
-                                    if values:
-                                        annotated.setdefault(t.attr, (values, node))
-                                v = self.value_of(node.value) if node.value is not None else None
-                                if v is not None:
-                                    written.setdefault(t.attr, []).append((v, node))
+            for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name not in self.enums]:
+                annotated, written = self.class_attributes(cls)
                 for attr in set(annotated) | set(written):
-                    if attr in annotated:
-                        values, decl = annotated[attr]
-                        inferred = False
-                    else:
-                        writes = written[attr]
-                        enum_domain = None
-                        for v, n in writes:
-                            if isinstance(n.value, ast.Attribute):
-                                enum = (dotted(n.value.value) or "").split(".")[-1]
-                                enum_domain = self.enums.get(enum)
-                        if enum_domain:
-                            values, inferred = enum_domain, False
-                        elif STATEISH.search(attr):
-                            values, inferred = sorted({x for v, _ in writes for x in v}), True
-                        else:
-                            continue
-                        decl = writes[0][1]
-                    var = {
-                        "id": f"{f}#{cls.name}.{attr}",
-                        "name": f"{cls.name}.{attr}",
-                        "language": "python",
-                        "values": list(values),
-                        "inferred": inferred,
-                        "initial": [],
-                        "loc": loc(f, decl),
-                        "owner": cls.name,
-                    }
-                    self.state_vars[(f, cls.name, attr)] = var
-                    self.attr_owner.setdefault(attr, set()).add((f, cls.name, attr))
+                    domain = annotated[attr] + (False,) if attr in annotated else self.written_domain(attr, written[attr])
+                    if domain:
+                        self.add_state_var(f, cls, attr, *domain)
+
+    def class_attributes(self, cls):
+        """Attributes of a class annotated with a finite type, and the values written to self.<attr>."""
+        annotated = {}
+        for stmt in cls.body:
+            values = self.literal_annotation(stmt.annotation) if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name) else None
+            if values:
+                annotated[stmt.target.id] = (values, stmt)
+        written = {}
+        for node, attr in self.self_assignments(cls):
+            values = self.literal_annotation(node.annotation) if isinstance(node, ast.AnnAssign) else None
+            if values:
+                annotated.setdefault(attr, (values, node))
+            v = self.value_of(node.value) if node.value is not None else None
+            if v is not None:
+                written.setdefault(attr, []).append((v, node))
+        return annotated, written
+
+    @staticmethod
+    def self_assignments(cls):
+        """Each assignment to self.<attr> in a class, with the attribute."""
+        for node in ast.walk(cls):
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                for t in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+                    if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self":
+                        yield node, t.attr
+
+    def written_domain(self, attr, writes):
+        """The values of an attribute known only from its writes: its enum, or the literals written to a state-like name."""
+        enum_domain = None
+        for _, n in writes:
+            if isinstance(n.value, ast.Attribute):
+                enum_domain = self.enums.get((dotted(n.value.value) or "").split(".")[-1])
+        if enum_domain:
+            return enum_domain, writes[0][1], False
+        if STATEISH.search(attr):
+            return sorted({x for v, _ in writes for x in v}), writes[0][1], True
+        return None
+
+    def add_state_var(self, f, cls, attr, values, decl, inferred):
+        self.state_vars[(f, cls.name, attr)] = {
+            "id": f"{f}#{cls.name}.{attr}",
+            "name": f"{cls.name}.{attr}",
+            "language": "python",
+            "values": list(values),
+            "inferred": inferred,
+            "initial": [],
+            "loc": loc(f, decl),
+            "owner": cls.name,
+        }
+        self.attr_owner.setdefault(attr, set()).add((f, cls.name, attr))
 
     # ------------------------------------------------------------ pass 2
     def run(self):
@@ -691,6 +777,7 @@ class FileVisitor:
             "id": f"{self.file}#{fn.name}", "name": fn.name, "loc": loc(self.file, fn), "lines": (fn.end_lineno or fn.lineno) - fn.lineno + 1,
             "exported": not fn.name.startswith("_"), "free": cls is None and outer is None, "params": len(own), "higherOrder": higher,
             "mutatesParams": sorted(mutates), "writesOuter": sorted(outer_writes), "effects": sorted(effects), "usesThis": uses_self,
+            "complexity": complexity_of(fn),
         })
 
     # ----------------------------------------------------------------- modules

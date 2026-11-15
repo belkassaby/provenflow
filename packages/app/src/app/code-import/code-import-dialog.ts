@@ -15,11 +15,16 @@ const CATEGORY_LABELS: Record<CodeFinding['category'], string> = {
     memory: 'Memory safety and arithmetic',
     heap: 'Heap (interprocedural)',
     build: 'Build and tests',
+    dependencies: 'Dependencies',
     'state-machine': 'State machines',
     lifecycle: 'Resource lifecycles',
     pattern: 'Design patterns',
     architecture: 'Architecture',
-    paradigm: 'Paradigm and size'
+    duplication: 'Duplicated code',
+    complexity: 'Complexity',
+    tests: 'Tests and coverage',
+    paradigm: 'Paradigm and size',
+    naming: 'Naming'
 };
 
 function formatDuration(ms: number): string {

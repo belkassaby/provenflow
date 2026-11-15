@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A required check must also report on the merge queue's commits, or the merge fails.
+  merge_group:
 
 jobs:
   build-and-test:
@@ -12,12 +14,12 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       # Optional Python packages exercised by the generated-code tests (tracing, property-based tests,
@@ -39,17 +41,18 @@ jobs:
       - run: npm run build
       # The server tests use a stand-in for nuXmv; set NUXMV_PATH to run them against the real tool.
       - run: npm test
-      # ProvenFlow model-checks its own code base (provenflow.config.json): state machines, resource
-      # lifecycles, design patterns, layers. New findings fail the build; they also show on pull
-      # requests through code scanning.
+      # ProvenFlow checks its own code base (provenflow.config.json): state machines, resource
+      # lifecycles, design patterns, layers, duplicated code, complexity, naming, dependencies.
+      # Findings beyond provenflow-baseline.json fail the build; they also show on pull requests
+      # through code scanning.
       - run: node packages/server/out/cli.js extract . --fail-on warning -o provenflow-report
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@9418214df1f2c4b8128c770156c409013b07d6b9 # v3.39.3
         if: always()
         continue-on-error: true
         with:
           sarif_file: provenflow-report/report.sarif
           category: provenflow
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: provenflow-report

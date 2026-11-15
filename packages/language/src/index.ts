@@ -17,3 +17,4 @@ export * from './conformance.js';
 export { astToModel } from './ast-to-model.js';
 export { createStateDiagramServices, type StateDiagramServices } from './state-diagram-module.js';
 export * as ast from './generated/ast.js';
+export { isApplied, type TextEdit } from './text-edits.js';

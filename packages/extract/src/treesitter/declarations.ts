@@ -61,66 +61,79 @@ export class Declarations {
 
 
     collectDeclarations(r: FileRec): void {
-        const p = r.profile;
-        const root = r.tree.rootNode;
-        const classNodes = new Set(p.classes);
-        // Classes, structs, objects.
-        for (const n of descendants(root, ...p.classes)) {
-            if (p.id === 'go' && n.childForFieldName('type')?.type !== 'struct_type') continue;
-            if ((p.id === 'kotlin' || p.id === 'swift') && /^\s*(\w+\s+)*(enum|interface|protocol)\s+(class\s+)?\w/.test(n.text) && /^\s*(\w+\s+)*(interface|protocol)\b/.test(n.text)) continue;
-            const name = nameOf(n);
-            if (!name) continue;
-            const cls: ClassRec = { id: `${r.file}#${name}`, name, node: n, file: r.file, fields: new Map(), methods: [], implements: [], decorators: [], singleton: false, abstract: /^\s*(\w+\s+)*(abstract|sealed)\b/.test(header(n)) };
-            this.bases(r, n, cls);
-            const caseObject = /\bcase\s*$/.test(r.text.slice(Math.max(0, n.startIndex - 6), n.startIndex)) || /^\s*case\b/.test(n.text);
-            if (n.type === 'object_definition' && caseObject) continue; // an enumeration value, not a class
-            cls.singleton = n.type === 'object_declaration' || n.type === 'object_definition' || (!!p.singleton && p.id !== 'rust' && p.singleton.test(p.id === 'swift' || p.id === 'ruby' ? n.text : header(n)));
-            cls.decorators = [...header(n).matchAll(/@(\w+)/g)].map(m => m[1]);
-            r.classes.push(cls);
-        }
-        if (p.id === 'r') this.collectRClasses(r);
-        // Fields.
-        for (const cls of r.classes) {
-            const body = cls.node.childForFieldName('body') ?? cls.node;
-            let access: FieldFact['visibility'] = p.id === 'cpp' && cls.node.type === 'class_specifier' ? 'private' : 'public';
-            for (const n of walk(body)) {
-                if (n.type === 'access_specifier') access = /private/.test(n.text) ? 'private' : /protected/.test(n.text) ? 'protected' : 'public';
-                if (!p.fields.includes(n.type) || nearestOf(n.parent, classNodes)?.id !== cls.node.id) continue;
-                if (ancestorOf(n, p.functions)) continue;
-                for (const f of this.fieldsOf(r, n, p.id === 'cpp' ? access : undefined)) cls.fields.set(f.name, f);
-            }
-            // Kotlin/Scala primary constructor properties: class Job(private var state: State = State.IDLE)
-            for (const n of walk(cls.node)) {
-                if ((n.type === 'class_parameter') && /\b(var|val)\b/.test(n.text)) {
-                    const name = nameOf(n);
-                    if (name) cls.fields.set(name, { name, type: typeText(n.childForFieldName('type') ?? n.namedChildren.find(c => c?.type === 'user_type') ?? undefined), init: lastNamed(n), loc: locOf(r, n), visibility: /private/.test(n.text) ? 'private' : 'public', static: false, readonly: /\bval\b/.test(n.text) });
-                }
-            }
-        }
+        this.collectClasses(r);
+        if (r.profile.id === 'r') this.collectRClasses(r);
+        for (const cls of r.classes) this.collectFields(r, cls);
         // Methods and free functions.
-        for (const fn of descendants(root, ...p.functions)) {
+        for (const fn of descendants(r.tree.rootNode, ...r.profile.functions)) {
             const method = this.methodOf(r, fn);
             if (!method) continue;
             const owner = this.ownerOf(r, fn, method);
             if (owner) owner.methods.push(method);
             else r.functions.push(method);
         }
-        if (p.id === 'r') this.collectRFunctions(r);
-        // Module-level variables.
-        for (const n of descendants(root, ...p.globals)) {
+        if (r.profile.id === 'r') this.collectRFunctions(r);
+        this.collectGlobals(r);
+        if (r.profile.id === 'ruby') this.collectRubyFields(r);
+    }
+
+    /** Classes, structs, objects. */
+    collectClasses(r: FileRec): void {
+        const p = r.profile;
+        for (const n of descendants(r.tree.rootNode, ...p.classes)) {
+            if (!isClassLike(p.id, n)) continue;
+            const name = nameOf(n);
+            if (!name) continue;
+            const caseObject = /\bcase\s*$/.test(r.text.slice(Math.max(0, n.startIndex - 6), n.startIndex)) || /^\s*case\b/.test(n.text);
+            if (n.type === 'object_definition' && caseObject) continue; // an enumeration value, not a class
+            const cls: ClassRec = { id: `${r.file}#${name}`, name, node: n, file: r.file, fields: new Map(), methods: [], implements: [], decorators: [], singleton: false, abstract: /^\s*(\w+\s+)*(abstract|sealed)\b/.test(header(n)) };
+            this.bases(r, n, cls);
+            cls.singleton = n.type === 'object_declaration' || n.type === 'object_definition' || (!!p.singleton && p.id !== 'rust' && p.singleton.test(p.id === 'swift' || p.id === 'ruby' ? n.text : header(n)));
+            cls.decorators = [...header(n).matchAll(/@(\w+)/g)].map(m => m[1]);
+            r.classes.push(cls);
+        }
+    }
+
+    /** The fields of a class: declared in its body, and Kotlin/Scala primary constructor properties. */
+    collectFields(r: FileRec, cls: ClassRec): void {
+        for (const f of this.bodyFields(r, cls)) cls.fields.set(f.name, f);
+        // class Job(private var state: State = State.IDLE)
+        for (const n of walk(cls.node).filter(n => n.type === 'class_parameter' && /\b(var|val)\b/.test(n.text))) {
+            const name = nameOf(n);
+            if (name) cls.fields.set(name, { name, type: typeText(n.childForFieldName('type') ?? n.namedChildren.find(c => c?.type === 'user_type') ?? undefined), init: lastNamed(n), loc: locOf(r, n), visibility: /private/.test(n.text) ? 'private' : 'public', static: false, readonly: /\bval\b/.test(n.text) });
+        }
+    }
+
+    /** Fields declared in a class's own body (not in nested classes or methods); C++ access sections set their visibility. */
+    bodyFields(r: FileRec, cls: ClassRec): Field[] {
+        const p = r.profile;
+        const classNodes = new Set(p.classes);
+        let access: FieldFact['visibility'] = p.id === 'cpp' && cls.node.type === 'class_specifier' ? 'private' : 'public';
+        const out: Field[] = [];
+        for (const n of walk(cls.node.childForFieldName('body') ?? cls.node)) {
+            if (n.type === 'access_specifier') access = accessOf(n.text);
+            const own = p.fields.includes(n.type) && nearestOf(n.parent, classNodes)?.id === cls.node.id && !ancestorOf(n, p.functions);
+            if (own) out.push(...this.fieldsOf(r, n, p.id === 'cpp' ? access : undefined));
+        }
+        return out;
+    }
+
+    /** Module-level variables (not extern declarations or function prototypes in C/C++). */
+    collectGlobals(r: FileRec): void {
+        const p = r.profile;
+        for (const n of descendants(r.tree.rootNode, ...p.globals)) {
             if (!isTopLevel(n, p)) continue;
-            if (p.id === 'c' || p.id === 'cpp') {
-                if (/\bextern\b/.test(n.text) || descendants(n, 'function_declarator').length > 0) continue;
-            }
+            if ((p.id === 'c' || p.id === 'cpp') && (/\bextern\b/.test(n.text) || descendants(n, 'function_declarator').length > 0)) continue;
             for (const f of this.fieldsOf(r, n)) r.globals.set(f.name, f);
         }
-        // Ruby: instance variables are the fields.
-        if (p.id === 'ruby') {
-            for (const cls of r.classes) {
-                for (const iv of descendants(cls.node, 'instance_variable')) {
-                    const name = iv.text.replace(/^@/, '');
-                    if (!cls.fields.has(name)) cls.fields.set(name, { name, loc: locOf(r, iv), visibility: 'private', static: false, readonly: false });
-                }
+    }
+
+    /** Ruby: instance variables are the fields. */
+    collectRubyFields(r: FileRec): void {
+        for (const cls of r.classes) {
+            for (const iv of descendants(cls.node, 'instance_variable')) {
+                const name = iv.text.replace(/^@/, '');
+                if (!cls.fields.has(name)) cls.fields.set(name, { name, loc: locOf(r, iv), visibility: 'private', static: false, readonly: false });
             }
         }
     }
@@ -284,4 +297,15 @@ export class Declarations {
         cls.implements = all.slice(1);
     }
 
+}
+
+/** A class-like node that really declares a class (not a Go non-struct type, nor a Kotlin/Swift interface or protocol). */
+function isClassLike(language: string, n: Node): boolean {
+    if (language === 'go') return n.childForFieldName('type')?.type === 'struct_type';
+    if (language === 'kotlin' || language === 'swift') return !(/^\s*(\w+\s+)*(enum|interface|protocol)\s+(class\s+)?\w/.test(n.text) && /^\s*(\w+\s+)*(interface|protocol)\b/.test(n.text));
+    return true;
+}
+
+function accessOf(text: string): FieldFact['visibility'] {
+    return /private/.test(text) ? 'private' : /protected/.test(text) ? 'protected' : 'public';
 }

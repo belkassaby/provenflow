@@ -1,0 +1,6 @@
+{
+  "$comment": "MCP server for coding agents (.mcp.json for Claude Code; the same command for Cursor, VS Code or Codex): project_conventions, find_existing_code, review_changes, propose_fix.",
+  "mcpServers": {
+    "provenflow": { "command": "pflow", "args": ["mcp"] }
+  }
+}

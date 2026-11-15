@@ -1,7 +1,8 @@
 # State of the art: designing, verifying and running agentic state machines
 
 *Survey date: 25 September 2026; section 2.9 on 27 September 2026, updated the same day when
-ProvenFlow started driving the analysers it lacked (Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL). The claims about other tools
+ProvenFlow started driving the analysers it lacked (Semgrep, Infer, ESBMC/CBMC, Kani, CodeQL);
+section 2.10 on 14 November 2026. The claims about other tools
 were checked against their documentation, repositories or arXiv abstracts on those dates (links in
 [Sources](#sources)). Items
 marked "not verified" come from general knowledge and were not re-checked.*
@@ -383,6 +384,57 @@ So the loop is now: extract and check models; run the code-level analysers; conf
 findings on the code; propose a change; accept it only if every check, the analysers and the
 build agree; review it on the diff.
 
+### 2.10 Guardrails for AI-generated code: fit, not only correctness
+
+*Checked on 14 November 2026. The full research list, the gap analysis and the roadmap are in
+[ai-code-guardrails.md](ai-code-guardrails.md).*
+
+Measurements of AI-generated code now point less to broken code than to code that does not fit
+the code base:
+- GitClear's 2026 data: duplicated blocks up 81% and copy/paste about 5× more common than
+  refactoring.
+- Agent-added functions are 1.87× more redundant with existing code than human ones (MSR 2026).
+- Merged agent PRs most often add code smells.
+- DORA: lower delivery stability as AI adoption rises.
+
+Tools respond at four points:
+- **Before writing: instruction files.** AGENTS.md, CLAUDE.md, Copilot instructions, Cursor
+  rules, Kiro steering, Spec Kit. They are advisory. A 2026 study found they do not generally
+  improve task success, though agents follow them.
+- **While writing: hooks and MCP tools.** Claude Code `PostToolUse`/`Stop` hooks, Semgrep
+  Guardian, SonarQube Agentic Analysis, Codacy Guardrails and CodeScene's MCP server run
+  analysers on each edit and feed the results back. Analyser feedback in the loop cuts
+  violations sharply (arXiv 2508.14419).
+- **At review: review bots that learn a repository's conventions.**
+  - With an LLM: CodeRabbit learnings, Greptile's repository graph, Qodo's Rules Miner, Bugbot's
+    learned rules, Graphite and Sourcery rules.
+  - Some add deterministic analysers: CodeRabbit runs more than 40 tools, Copilot code review
+    runs CodeQL and ESLint.
+  - Claude Code Review filters its findings with a verification step and reads its rules only
+    from the base branch.
+- **At merge: quality gates on new code only.** SonarQube "Sonar way for Agentic AI": no new
+  issues, coverage ≥ 80% and duplication ≤ 3% on new code. jscpd v5 `--fail-on-new-clones`.
+  Codecov and GitHub's native patch coverage. Baseline files (PHPStan, Psalm, detekt, Betterer).
+
+**ProvenFlow compared.** Its gate is deterministic, and an LLM proposal counts only after
+re-verification. That is what this research supports: LLM judges of code are random and
+sensitive to input order (CodeJudgeBench). Beyond the behaviour, layers and patterns that the
+review bots above do not prove, it now has:
+- **Duplication:** clones with names normalised, and functions re-implementing another one.
+- **Complexity:** Cognitive Complexity and nesting, measured in all 15 languages, with each
+  language's limits ([coding-standards.md](coding-standards.md)).
+- **Naming:** against the project's own conventions or the style guide.
+- **Dependencies:** imports of packages that are neither declared nor installed.
+- **Tests:** coverage reports and mutation testing of the changed lines.
+- **Gating what is new:** a baseline that can only shrink, new-code gating against the base
+  revision, and a stricter rule for lines written by coding agents.
+- **Agents:** an MCP server and Claude Code hooks, so they run the same checks before pushing.
+- **Other CI systems:** GitLab Code Quality and reviewdog outputs.
+- **Comparison:** `pflow compare` measures two versions side by side.
+
+[ai-code-guardrails.md](ai-code-guardrails.md#6-roadmap) gives the status of each item, and
+[quality-before-after.md](quality-before-after.md) the effect on ProvenFlow's own code.
+
 ## 3. Why it matters for LLM agents
 
 - **Agents fail in the ways model checking finds.** The MAST taxonomy (arXiv 2503.13657; 1,600+
@@ -456,6 +508,15 @@ build agree; review it on the diff.
   shape (graded by confidence; declare them to make them contracts). Security, heap and
   memory-safety results come from external tools that must be installed; their proofs are bounded
   and cover C, C++ and Rust only. Replays on the code cover TypeScript and Python classes.
+- *Fit of AI-generated code* (section 2.10):
+  - duplication covers copies with other names and functions sharing most tokens, not code that does
+    the same thing written differently;
+  - tree-sitter complexity is computed from node-type names;
+  - coverage is read from reports, not produced;
+  - confirmed counterexamples are not yet written out as runnable regression tests;
+  - agent attribution relies on commit trailers and Git AI notes.
+
+  See [ai-code-guardrails.md](ai-code-guardrails.md).
 
 ## 5. When to use what
 
@@ -514,6 +575,12 @@ All checked on 25 September 2026 unless marked otherwise.
   - Dafny specification-guided repair: https://arxiv.org/abs/2507.03659 ; Verifix: https://arxiv.org/abs/2106.16199
   - AWS Zelkova: https://www.amazon.science/publications/semantic-based-automated-reasoning-for-aws-access-policies-using-smt ; Tiros: https://www.amazon.science/publications/reachability-analysis-for-aws-based-networks
   - CodeRabbit: https://docs.coderabbit.ai/tools/
+- Guardrails for AI-generated code (section 2.10, checked 14 November 2026): the sources are
+  listed in [ai-code-guardrails.md](ai-code-guardrails.md#sources), among them:
+  - GitClear: https://www.gitclear.com/the_ai_code_quality_maintainability_gap ; *More Code, Less Reuse*: https://arxiv.org/html/2601.21276 ; agent bug-fix PRs: https://arxiv.org/abs/2601.20109
+  - context files: https://arxiv.org/abs/2602.11988 ; analyser feedback: https://arxiv.org/abs/2508.14419 ; CodeJudgeBench: https://arxiv.org/abs/2507.10535
+  - Claude Code hooks: https://code.claude.com/docs/en/hooks ; Semgrep Guardian: https://docs.semgrep.dev/guardian ; SonarQube Agentic Analysis: https://www.sonarsource.com/blog/agentic-analysis-beta/
+  - Sonar way for Agentic AI: https://docs.sonarsource.com/sonarqube-cloud/standards/ai-code-assurance/quality-gates-for-ai-code ; jscpd: https://github.com/kucherenko/jscpd
 
 - transitions — https://github.com/pytransitions/transitions ; transitions-gui — https://github.com/pytransitions/transitions-gui
 - python-statemachine — https://python-statemachine.readthedocs.io/en/latest/diagram.html , /guards.html

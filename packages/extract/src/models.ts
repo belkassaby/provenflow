@@ -8,7 +8,7 @@ import { nuxmvIdentifier, serializeDiagram, type DiagramModel, type SpecKind } f
 import { formatLocation, type Location } from './ir.js';
 
 export type Severity = 'error' | 'warning' | 'info';
-export type Category = 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build';
+export type Category = 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build' | 'duplication' | 'complexity' | 'naming' | 'tests' | 'dependencies';
 
 export interface CounterexampleStep {
     state: string;
@@ -41,6 +41,13 @@ export interface Finding {
     states?: string[];
     /** A proposed code change (quick fix or LLM) and whether re-running every check confirmed it. */
     suggestedPatch?: SuggestedPatch;
+    /**
+     * For findings about a measure (complexity, nesting, size): its value and limit. A pull request is
+     * held responsible for such a finding only when it raises the value (see review new-code gating).
+     */
+    measure?: { name: string; value: number; limit: number };
+    /** The lines a finding spans, when more than one (a duplicated block, a function). */
+    endLine?: number;
 }
 
 /** A finding checked against the code itself, not only the model. */

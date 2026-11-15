@@ -3,6 +3,7 @@ import { relative } from 'node:path';
 import ts from 'typescript';
 import type { ClassFact, DeclaredMachineFact, FieldFact, FunctionFact, InterfaceFact, MethodFact, ModuleFact } from './ir.js';
 import type { SourceContext } from './typescript-context.js';
+import { complexityOf } from './typescript-complexity.js';
 import { COMPILER_OPTIONS, escape, isFunctionLike, memberName, skipParens, TEMPLATE_PREFIX } from './typescript-util.js';
 
 export class ShapeFacts {
@@ -218,7 +219,8 @@ export class ShapeFacts {
             mutatesParams: [...mutatesParams],
             writesOuter: [...writesOuter],
             effects: [...effects],
-            usesThis
+            usesThis,
+            complexity: complexityOf(fn, name)
         };
     }
 

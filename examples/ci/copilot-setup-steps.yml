@@ -1,0 +1,20 @@
+# .github/workflows/copilot-setup-steps.yml: tools installed before the Copilot coding agent starts,
+# so that it can run ProvenFlow on its own work (pflow review . --base HEAD) before opening the
+# pull request. Copilot runs this job from the default branch.
+name: Copilot setup steps
+on: workflow_dispatch
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22 }
+      - name: Install ProvenFlow
+        run: |
+          git clone --depth 1 https://github.com/belkassaby/provenflow.git "$HOME/provenflow"
+          cd "$HOME/provenflow" && npm ci --no-audit --no-fund -w @provenflow/language -w @provenflow/extract -w @provenflow/server
+          npm run build -w @provenflow/language && npm run build -w @provenflow/extract && npm run build -w @provenflow/server
+          mkdir -p "$HOME/.local/bin" && printf '#!/bin/sh\nexec node "%s/packages/server/out/cli.js" "$@"\n' "$HOME/provenflow" > "$HOME/.local/bin/pflow" && chmod +x "$HOME/.local/bin/pflow"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"

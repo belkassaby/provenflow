@@ -9,14 +9,15 @@ const EXTENSIONS = /\.(ts|tsx|mts|cts|py|java|kts?|groovy|gradle|scala|sc|c|h|cp
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'build', '.angular', '.venv', 'venv', '__pycache__', '.provenflow', 'target', 'bin', 'obj', 'vendor', '.gradle', '.idea', 'cmake-build-debug', 'renv']);
 
 export function listSourceFiles(root: string, include: string[] = [], exclude: string[] = []): string[] {
-    const all = gitFiles(root) ?? walk(root);
+    const isSource = sourceFilter(include, exclude);
+    return (gitFiles(root) ?? walk(root)).filter(isSource).sort();
+}
+
+/** Whether a file is one of the project's source files: a known extension, included and not excluded. */
+export function sourceFilter(include: string[] = [], exclude: string[] = []): (file: string) => boolean {
     const excluded = [...DEFAULT_EXCLUDE, ...exclude].map(globToRegExp);
     const included = include.map(globToRegExp);
-    return all
-        .filter(f => EXTENSIONS.test(f))
-        .filter(f => !excluded.some(re => re.test(f)))
-        .filter(f => included.length === 0 || included.some(re => re.test(f)))
-        .sort();
+    return f => EXTENSIONS.test(f) && !excluded.some(re => re.test(f)) && (included.length === 0 || included.some(re => re.test(f)));
 }
 
 function gitFiles(root: string): string[] | undefined {

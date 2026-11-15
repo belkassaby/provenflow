@@ -12,6 +12,18 @@ checks every model. A problem is reported with:
 It reads TypeScript/JavaScript (with Angular templates), Python, Java, Kotlin, Groovy, Scala, C,
 C++, C#, Go, Rust, Swift, Ruby, PHP and R.
 
+It also checks what AI-generated code most often gets wrong while still compiling and passing its
+tests:
+- duplicated code, including a function that re-implements one the project already has;
+- complexity (Cognitive Complexity and nesting, with each language's limits);
+- naming that drifts from the project's conventions;
+- imports of packages that are neither declared nor installed (hallucinated dependencies);
+- changed lines no test runs, or that no test checks (mutation testing).
+
+On a pull request it reports only what the change adds: against the base revision's analysis, and
+against a baseline of accepted findings. Coding agents can run the same checks before they push,
+through an MCP server or Claude Code hooks.
+
 The use it was built for is **checking code written by AI assistants**. That code compiles and
 passes its tests, yet it can still:
 - forget a state in a switch;
@@ -29,13 +41,20 @@ code review is in [the state of the art, section 2.8](state-of-the-art.md#28-che
 - [Run it on ProvenFlow yourself](#run-it-on-provenflow-yourself)
 - [Languages](#languages)
 - [What is extracted and checked](#what-is-extracted-and-checked)
+- [Code quality: duplication, complexity, naming, dependencies, tests](#code-quality-duplication-complexity-naming-dependencies-tests)
 - [How it works](#how-it-works)
 - [What the results mean (soundness)](#what-the-results-mean-soundness)
 - [provenflow.config.json](#provenflowconfigjson)
 - [Code changes: quick fixes, review, apply](#code-changes-quick-fixes-review-apply)
 - [LLM assistance, verified](#llm-assistance-verified)
 - [Outputs and CI](#outputs-and-ci)
+- [Gating what is new: baseline and new-only](#gating-what-is-new-baseline-and-new-only)
+- [Coding agents: MCP server, hooks, setup steps](#coding-agents-mcp-server-hooks-setup-steps)
+- [Other CI systems](#other-ci-systems)
+- [Comparing two versions: pflow compare](#comparing-two-versions-pflow-compare)
+- [pflow init: a config from the code](#pflow-init-a-config-from-the-code)
 - [ProvenFlow checked by ProvenFlow](#provenflow-checked-by-provenflow)
+- [Limits as a CI gate](#limits-as-a-ci-gate)
 
 ## Quick start
 
@@ -106,11 +125,15 @@ npm run check:code                     # = pflow extract . --fail-on warning
 ```
 
 What you should see:
-- about 100 files and 20 models (state machines of the Angular app, resource lifecycles,
-  singleton contracts, the layer graph);
-- about 54 properties checked;
-- **0 errors, 0 warnings**, and around 20 notes (long functions, and states only reachable
-  through computed writes).
+- about 160 files and 25 models (state machines of the Angular app, resource lifecycles, singleton
+  contracts, the layer graph), and about 80 properties checked;
+- about 130 warnings and 50 notes, nearly all of them functions over their language's complexity
+  limit, mostly in the language front ends;
+- `Baseline: 177 finding(s) accepted, 0 new.` and exit code 0. The repository's
+  `provenflow-baseline.json` accepts today's findings; any new one fails.
+
+The **Code quality** section of report.md lists the most complex functions; `pflow compare . --base
+<ref>` shows how a change moves the measures.
 
 In the editor, the same check is File → Import code base… with the path of your clone
 (e.g. `/Users/me/git/provenflow`).
@@ -413,6 +436,109 @@ finding says **✓ confirmed on the code**, **✗ not reproduced** or nothing:
 The replay runs the project's code, with timers and I/O mocked, in a child process with a
 timeout; turn it off with `--no-confirm`.
 
+## Code quality: duplication, complexity, naming, dependencies, tests
+
+These checks need no declared intent; their defaults come from each language's style guide and main
+linter ([coding-standards.md](coding-standards.md)). Test files and generated files (marked
+`@generated`, "do not edit"...) are left out.
+
+### Duplicated code
+
+| rule | severity | how |
+| --- | --- | --- |
+| `duplicated-code` | warning | The same token sequence in two places, with identifiers and numbers normalised (copies that differ only in names: Type-1 and Type-2 clones). Windows of tokens are hashed (Rabin-Karp) and grown to the largest match, as PMD CPD and jscpd do. Default: 100 tokens over 10 lines (SonarQube's thresholds). Strings stay as written, so lines that differ only in their text (messages, tables) are not copies; a run that only repeats a short pattern is not reported. |
+| `similar-function` | warning | Two functions sharing 80% or more of their tokens (SourcererCC's measure, Type-3): the usual sign of a helper written again instead of reused, which coding agents do almost twice as often as people (MSR 2026). |
+
+Each finding names the other copy and how to reuse it. When the layer rules do not allow importing
+it, the fix says to move the shared code to a layer both may import.
+
+```json
+"duplication": { "minTokens": 100, "minLines": 10, "similarity": 0.8, "minFunctionTokens": 50, "tests": false }
+```
+
+### Complexity
+
+Every front end measures each function: **Cognitive Complexity** (SonarSource whitepaper v1.7: +1
+for each break in linear flow, `if`, `else if`, `else`, loops, `catch`, `switch`, `?:`, sequences of
+`&&`/`||`, labelled jumps, recursion; plus the nesting level for nested structures), **cyclomatic
+complexity**, and the deepest **nesting** of control structures.
+- The TypeScript and Python front ends measure it on their own syntax trees.
+- The tree-sitter languages measure it from node types the grammars name alike (`if_statement`,
+  `for_statement`, `catch_clause`, `match_expression`...).
+- An anonymous callback adds to the function it is in; a named inner function is measured on its
+  own.
+
+| rule | severity | default limit |
+| --- | --- | --- |
+| `cognitive-complexity` | warning | 15 (25 for C and C++, as clang-tidy and Sonar; per language in [coding-standards.md](coding-standards.md)) |
+| `deep-nesting` | warning | 4 (3 to 5 by language) |
+
+Both findings carry their measure. On a pull request, a function already over the limit fails only
+if the change makes it worse ("Raised from 18 by this change").
+
+```json
+"complexity": { "cognitive": 15, "nesting": 4 },
+"languages": { "python": { "complexity": { "cognitive": 12 } } }
+```
+
+### Naming conventions
+
+Class, function, method and field names are compared with the style expected for their language
+and kind of name. The expected style is, in order:
+1. the config (`languages.<language>.naming`);
+2. the project's own convention, when at least 80% of 8 or more names agree;
+3. the language's style guide.
+
+`naming-convention` findings are notes, with the name rewritten in the expected style (`parse_order_line`
+→ `parseOrderLine`). The conventions applied are listed in report.md.
+
+### Dependencies
+
+| rule | severity | when |
+| --- | --- | --- |
+| `unknown-dependency` | error (warning when the project declares no dependencies at all) | A file imports a package that is neither declared nor installed: the import fails, and the name may have been invented. LLMs suggest packages that do not exist, and attackers register those names ("slopsquatting"). |
+| `undeclared-dependency` | warning | Installed but not declared: it only works because another dependency brings it in. |
+
+What is read for each language:
+- **TypeScript/JavaScript:** every `package.json` from the file's folder up, with workspace packages,
+  `tsconfig` path aliases, ambient `declare module` and Node built-ins.
+- **Python:** `requirements*.txt`, `pyproject.toml` (PEP 621 and Poetry), `setup.cfg`/`setup.py` and
+  `Pipfile`; the standard library and what is installed come from `python3`.
+- **Go:** `go.mod`.
+
+### Tests and coverage
+
+ProvenFlow reads the coverage reports of the project's own test run: LCOV (Jest, Vitest, c8, nyc,
+gcov, cargo-llvm-cov), Cobertura XML (coverage.py, pytest-cov, gcovr, coverlet) and JaCoCo XML.
+Their paths are matched to the project's files, including absolute paths from another machine.
+
+```json
+"coverage": { "reports": ["coverage/lcov.info"], "severity": "warning" }
+```
+
+or `--coverage coverage/lcov.info` (repeatable).
+
+| rule | severity | when |
+| --- | --- | --- |
+| `uncovered-change` | warning (configurable) | In a review: changed lines no test runs, grouped by function. |
+| `change-without-test` | info (warning on agent-written lines) | In a review without a coverage report: functions changed by 3 lines or more, and no test file changed. |
+| `untested-complex-function` | info | A function above half its complexity limit that no test runs at all. |
+| `mutant-survived` | warning | With `--mutate N` or `pflow mutate`: a changed line was altered (see below) and every test still passed, so no test checks what it does. |
+
+**Mutation testing of the changed lines** works as at Google (*Practical Mutation Testing at
+Scale*):
+- at most one mutant per changed line, and a cap per run (20 by default);
+- lines with findings or without coverage first;
+- no mutant on arid lines: logging, imports, comments, braces.
+
+A mutant negates an equality, moves a boundary (`<` to `<=`), swaps `&&` and `||`, flips a boolean,
+swaps `+` and `-`, or removes a negation. Text in strings and comments is never changed. Each mutant
+runs the project's tests on a temporary copy, and the tests must pass on the unchanged code first.
+
+```sh
+pflow mutate . --base origin/main --max 20          # or: pflow review . --base origin/main --mutate 20
+```
+
 ## How it works
 
 ```
@@ -491,7 +617,19 @@ cycles and paradigm profiles.
     }
   },
   "ignore": [{ "rule": "fp-class", "subject": "Parser", "reason": "Compiler visitor, never shared." }],
-  "limits": { "classMethods": 30, "classLines": 600, "functionLines": 80, "inheritanceDepth": 3, "functionParams": 6 }
+  "limits": { "classMethods": 30, "classLines": 600, "functionLines": 80, "inheritanceDepth": 3, "functionParams": 6 },
+  "languages": {
+    "typescript": {
+      "limits": { "functionLines": 50, "functionParams": 7 },
+      "complexity": { "cognitive": 15, "nesting": 4 },
+      "naming": { "class": "PascalCase", "function": "camelCase", "method": "camelCase", "field": "camelCase" }
+    }
+  },
+  "duplication": { "minTokens": 100, "minLines": 10, "similarity": 0.8 },
+  "coverage": { "reports": ["coverage/lcov.info"] },
+  "mutation": { "test": "npm test", "max": 20 },
+  "baseline": "provenflow-baseline.json",
+  "agents": { "failOn": "warning", "requireTests": true }
 }
 ```
 
@@ -503,6 +641,16 @@ cycles and paradigm profiles.
   `adapter`, `decorator`, `state`, `command` and `facade`.
 - `ignore` entries match on `rule`, and optionally on `subject` and on a `file` glob. Give a
   `reason`: the file then documents the design decisions.
+- `languages` holds the coding standards of each language: size limits, complexity limits and
+  naming. They take precedence over the project-wide `limits`, `complexity` and `naming`.
+  `pflow init` writes them from [coding-standards.md](coding-standards.md).
+- `duplication`, `complexity` and `naming` set or turn off (`false`) those checks; `dependencies:
+  false` turns off the dependency check.
+- `coverage.reports` lists the coverage reports to read; `mutation` sets the test command and the
+  number of mutants.
+- `baseline` is the file of accepted findings (default `provenflow-baseline.json` when it exists).
+- `agents` sets how lines written by coding agents are held: `failOn`, `requireTests`, and `authors`
+  (extra patterns that recognise an agent).
 
 ## Code changes: quick fixes, review, apply
 
@@ -679,12 +827,16 @@ so a run can be reproduced and a second run costs nothing.
 | --- | --- |
 | `report.md` | people: findings by category, with fixes and counterexample tables, patterns found, paradigm profile, dependencies, models |
 | `report.json` | tools |
-| `report.sarif` | GitHub code scanning: findings appear on the pull request |
+| `report.sarif` | GitHub code scanning: findings appear on the pull request. Each result has a stable fingerprint (rule, subject and file, no line), so an alert keeps its identity when lines move; rules have help text and a link to this guide |
+| `report.codequality.json` | GitLab Code Quality (merge request widget) |
+| `report.rdjson` | reviewdog: comments on GitHub, GitLab, Gerrit, Bitbucket or Gitea; verified changes as suggestions |
 | `models/*.pflow` | the ProvenFlow editor: Open .pflow… to see, check and replay |
 | `scenarios/*` | a vitest/pytest skeleton per counterexample |
 
-The exit code is 5 when there are findings at or above `--fail-on`. That is `error` by default;
-use `warning` for stricter gates, or `none`. This is the GitHub Actions step ProvenFlow uses on
+The exit code is 5 when there are findings at or above `--fail-on`, beyond the baseline. That is
+`error` by default; use `warning` for stricter gates, or `none`. report.md also has a **Code quality**
+section: duplicated lines, complexity percentiles and hotspots, long functions, naming, dependencies,
+coverage, and the naming conventions applied. This is the GitHub Actions step ProvenFlow uses on
 itself:
 
 ```yaml
@@ -743,7 +895,12 @@ jobs:
 | input | default | what |
 | --- | --- | --- |
 | `path` | `.` | the folder to analyse |
-| `fail-on` | `error` | fail the check on findings at this level on the changed lines (`warning`, `none`) |
+| `fail-on` | `error` | fail the check on findings at this level on the changed lines (`warning`, `info`, `none`) |
+| `new-only` | `true` | analyse the base too, and count only the findings the pull request adds |
+| `baseline` | the config's | the file of accepted findings |
+| `coverage` | none | coverage reports written by an earlier step (one per line): changed lines no test runs are reported |
+| `mutate` | `0` | mutation-test up to this many changed lines (needs the dependencies installed) |
+| `check-run` | `false` | also post a check run named ProvenFlow with every finding as an annotation (`checks: write`) |
 | `fix` | `true` | propose verified fixes, posted as suggestions |
 | `files` | `false` | review the whole changed files, not only the changed lines |
 | `semgrep` / `cbmc` / `infer` | `true` / `false` / `false` | install the analyser on the runner |
@@ -752,10 +909,19 @@ jobs:
 | `anthropic-api-key`, `openai-api-key`, `openai-base-url` | none | the LLM's key: pass a secret, `${{ secrets.ANTHROPIC_API_KEY }}` |
 | `github-token` | the job's token | posts the review |
 
-It installs only the three packages the review needs (not the editor), with the npm and pip
-downloads cached; a run takes about a minute on a small project, plus the analysis.
+It installs only the three packages the review needs (not the editor). The built packages are cached
+under a key of the Action's own sources, so later runs skip `npm ci` and the build. Every action it
+uses is pinned to a commit, as organisations that enforce SHA pinning require.
 
-Make the check **required** (repository settings → branches) to block merges on its findings.
+Make the check **required** (repository settings → rules) to block merges on its findings. With a
+merge queue, also run the gate on `merge_group` (`pflow extract . --fail-on error`, as this
+repository's `ci.yml` does): a required check that never reports on the queue's commit fails the
+merge.
+
+Pull requests opened by the Copilot coding agent are like those from forks: their workflows wait
+until someone with write access approves them. GitHub's own validation of agent pull requests runs
+its own tools (CodeQL, the Advisory Database, secret scanning, Copilot review), so ProvenFlow joins
+as a required check or a code-scanning tool.
 
 **Pull requests from forks** get a read-only token, which cannot post. Their run writes the review
 to a file instead (the `provenflow-review` artifact), and a second workflow, which runs in the base
@@ -781,6 +947,120 @@ jobs:
 
 The review posts as `github-actions[bot]`. The analysis runs the pull request's code only where
 your CI already does (the build check, and the replay of counterexamples), inside the runner.
+
+## Gating what is new: baseline and new-only
+
+A code base adopting ProvenFlow already has findings. Two mechanisms hold a change responsible only
+for what it adds:
+
+- **The baseline** (`provenflow-baseline.json`).
+  - `pflow baseline .` writes the findings the code has today, keyed by rule, subject and file (no
+    line numbers, so they survive edits) and counted.
+  - `pflow extract` and `pflow review` then fail only on findings beyond it.
+  - Entries that no longer occur are reported, and `pflow baseline --update` removes them; it never
+    adds any, so the file can only shrink.
+  - A finding with a measure (complexity, nesting) records it: raising an accepted function's
+    complexity fails.
+- **New-only review** (`pflow review --base <ref> --new-only`, on by default in the Action).
+  - The base revision is analysed too, as overrides of the working tree, so dependencies are the
+    same and only the change differs.
+  - A finding on a changed line that the base already had is not counted: the summary says how
+    many were left out.
+
+```sh
+pflow baseline .                         # accept today's findings; commit the file
+pflow extract . --fail-on warning        # CI: fails on new findings only
+pflow baseline . --update                # after fixing some: remove them from the baseline
+```
+
+**Lines written by coding agents** can be held to a stricter rule:
+- **Which lines.** `pflow review` finds the commits since the base whose author or `Co-authored-by`
+  trailer is a coding agent (Claude, Copilot, Codex, Cursor, Devin, Jules, Gemini, Aider...), or that
+  carry a Git AI note (`refs/notes/ai`). `git blame` then gives the changed lines they wrote.
+- **What applies to them.** Findings there fail at `agents.failOn` (default `warning`), and a change
+  without a test change fails too (`agents.requireTests`, default true).
+- **What the summary shows.** How many commits and lines were agent-written.
+
+The review summary also shows, per rule, how many findings were commented on the pull request and
+how many were fixed afterwards. A rule whose comments are seldom acted on is noise to tune.
+
+## Coding agents: MCP server, hooks, setup steps
+
+The same checks can run inside a coding agent's loop, so that it fixes findings before the pull
+request exists (recipes in `examples/ci/`):
+
+- **MCP server** (`pflow mcp`, stdio). Configure it in `.mcp.json` or the agent's settings:
+  `{ "mcpServers": { "provenflow": { "command": "pflow", "args": ["mcp"] } } }`. Its tools:
+  - `project_conventions`: the layers and what each may import, naming per language, complexity and
+    size limits, declared patterns. To read before writing code.
+  - `find_existing_code`: the project's functions similar to a snippet the agent is about to write
+    (copies with other names, and functions sharing most tokens). To reuse a helper instead of
+    writing it again.
+  - `review_changes`: the findings on the lines changed since a revision (default HEAD: the
+    uncommitted work).
+  - `propose_fix`: the analysis's verified fix for one finding, as a diff.
+- **Claude Code hooks** (`examples/ci/claude-settings.json`).
+  - `pflow hook post-edit` runs after each Edit/Write: the findings on the uncommitted lines of the
+    file just written go back to Claude (exit code 2).
+  - `pflow hook stop` keeps Claude working until the uncommitted changes have no error or warning.
+  - Analysers and replays are skipped for speed, and the last run is kept in `.provenflow/state`, so
+    each hook re-analyses only what changed.
+- **Copilot coding agent** (`examples/ci/copilot-setup-steps.yml`): installs `pflow` in the agent's
+  environment.
+- **AGENTS.md** (`examples/ci/AGENTS.md`): the section that tells agents to use these.
+
+## Other CI systems
+
+- **GitLab:** `report.codequality.json` goes in `artifacts:reports:codequality` (the merge request
+  widget) and `report.sarif` in `sast` (`examples/ci/gitlab-ci.yml`).
+- **reviewdog** (GitHub, GitLab, Gerrit, Bitbucket, Gitea): `reviewdog -f=rdjson
+  -filter-mode=added < report.rdjson` (`examples/ci/reviewdog.yml`).
+- **Anything else:** the exit code (5 on new findings), `report.sarif` and `report.json`.
+
+## Comparing two versions: pflow compare
+
+```sh
+pflow compare . --base origin/main -o quality.md     # the working tree against a revision
+pflow compare after/ --before before/ -o quality.md   # two folders
+```
+
+Both versions are analysed with the same config, so only the code differs. The report gives:
+- the measures side by side (duplicated lines and clones, similar functions, Cognitive Complexity
+  mean, 90th percentile and highest, functions over the limit, nesting, length, parameters, naming,
+  dependencies, coverage, findings by severity), marked better or worse;
+- the findings by rule;
+- the findings fixed and introduced;
+- the functions whose complexity changed.
+
+Analysers are off unless `--analyzers`; `--json` gives the data. [ProvenFlow's own before and
+after](quality-before-after.md) was made with it.
+
+## pflow init: a config from the code
+
+`pflow init .` proposes a `provenflow.config.json` from the code as it is, with the evidence for
+each entry:
+- **Per language:** the coding standards ([coding-standards.md](coding-standards.md)), adjusted
+  where the project consistently names things otherwise.
+- **Layers:** from the current import graph, with the dependencies they have today and the style
+  each follows.
+- **Patterns:** those recognised from types and language constructs (not from names).
+- **Coverage:** reports found in the usual places.
+- **Baseline and agent policy:** set to their defaults.
+
+An existing config keeps its layers, patterns, machines, ignores and limits; `--force` writes over
+it, `-o` writes elsewhere.
+
+`pflow init . --instructions --llm anthropic:<model>` also reads the instruction files coding agents
+use:
+- `AGENTS.md`, `CLAUDE.md`, `REVIEW.md`, `GEMINI.md`;
+- `.github/copilot-instructions.md` and `.github/instructions/*.instructions.md`;
+- Cursor and Claude rules, Bugbot rules.
+
+The LLM turns the statements that can be checked ("UI code never imports the database layer",
+"functions under 40 lines") into config entries. An entry is kept only if it quotes the file and
+validates against the config schema; `ignore` entries are never accepted from it. With `--base
+<ref>` the files are read from that revision, so a pull request cannot change the rules it is
+checked against.
 
 ## ProvenFlow checked by ProvenFlow
 
@@ -815,3 +1095,30 @@ Other findings showed where the extractor was imprecise, and led to these improv
 
 CI now runs `pflow extract . --fail-on warning`, so a change that breaks one of these properties
 fails the build.
+
+The second run, with the code-quality checks, found the one copied block in the code base: the same
+41 lines in the extractor and in the editor, which the layer rules let neither import from the other.
+It moved to `language`, which both may import. It also found the functions with the highest Cognitive
+Complexity: the server's `createApp` and the CLI's `main` (189 each), the front ends' declaration
+collectors (96 and 101), and the Markdown report (92). They were split by responsibility. The
+measures before and after are in [quality-before-after.md](quality-before-after.md); the rest is
+accepted in `provenflow-baseline.json`, and only new findings fail.
+
+## Limits as a CI gate
+
+What a team adopting ProvenFlow in CI should know:
+- **nuXmv's licence.** nuXmv is free for non-commercial and academic use only, and the Action does
+  not install it. Without it, an explicit-state checker decides the standard properties
+  (reachability, settling, leaks, layer cycles); properties written in the config or suggested by an
+  LLM are then reported as not checked.
+- **Abstractions.** The models are abstractions of the code ([soundness](#what-the-results-mean-soundness)).
+  Complexity in the tree-sitter languages is computed from node-type names, so a construct a grammar
+  names differently can be missed.
+- **Duplication** finds copies with other names (Type-1 and Type-2) and functions sharing most
+  tokens (Type-3). It does not find code that does the same thing written differently (Type-4).
+- **Coverage** is read from reports; ProvenFlow does not run the tests to produce them. Mutation
+  testing runs the project's tests once per mutant, so it is opt-in.
+- **Agent attribution** relies on commit trailers and Git AI notes; an agent that commits under a
+  person's name, without a trailer, is not recognised.
+
+The research behind these choices is in [ai-code-guardrails.md](ai-code-guardrails.md).

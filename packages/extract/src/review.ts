@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ExtractionResult } from './index.js';
+import type { ExtractionResult } from './project.js';
 import { formatLocation } from './ir.js';
 import type { Finding } from './models.js';
 import { findingKey } from './incremental.js';
@@ -23,16 +23,18 @@ export function parseUnifiedDiff(diff: string): ChangedLines {
         if (target) {
             file = target[1] === '/dev/null' ? undefined : target[1].trim();
             if (file && !changed.has(file)) changed.set(file, new Set());
-            continue;
-        }
-        const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
-        if (hunk && file) {
-            const start = Number(hunk[1]);
-            const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
-            for (let i = 0; i < count; i++) changed.get(file)!.add(start + i);
-        }
+        } else if (file) addHunk(changed.get(file)!, line);
     }
     return changed;
+}
+
+/** The new-file lines of a hunk header (`@@ -a,b +start,count @@`). */
+function addHunk(lines: Set<number>, header: string): void {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(header);
+    if (!hunk) return;
+    const start = Number(hunk[1]);
+    const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
+    for (let i = 0; i < count; i++) lines.add(start + i);
 }
 
 /** Lines changed between `base` and the working tree (committed and not). */
@@ -82,30 +84,27 @@ const FIXED = 'fixed';
 
 /** One review comment per finding on a changed line; verified single-file changes become suggestions. */
 export function reviewComments(findings: Finding[], changed: ChangedLines, read: (file: string) => string | undefined): ReviewComment[] {
-    const comments: ReviewComment[] = [];
-    for (const f of findings) {
-        if (!f.loc) continue;
-        const lines = changed.get(f.loc.file);
-        if (!lines?.has(f.loc.line)) continue;
+    return findings.flatMap(f => {
+        const lines = f.loc ? changed.get(f.loc.file) : undefined;
+        if (!f.loc || !lines?.has(f.loc.line)) return [];
         const suggestion = suggestionFor(f, lines, read);
-        const body = [
-            `**${f.severity === 'error' ? '⛔' : f.severity === 'warning' ? '⚠️' : 'ℹ️'} ${f.rule}** · ${f.subject}`,
-            '',
-            f.message,
-            '',
-            `**Fix:** ${f.fix}`,
-            ...(f.confirmation ? ['', `**On the code:** ${f.confirmation.status === 'confirmed' ? '✓ confirmed' : f.confirmation.status === 'refuted' ? '✗ not reproduced' : '? not checked'} (${f.confirmation.by}): ${f.confirmation.detail}`] : []),
-            ...(f.counterexample && f.counterexample.length > 1 ? ['', '<details><summary>Counterexample</summary>', '', ...f.counterexample.map((s, i) => `${i}. ${s.event ? `\`${s.event}\` → ` : ''}**${s.state}**${s.loc ? ` (${formatLocation(s.loc)})` : ''}`), '', '</details>'] : []),
-            ...(suggestion ? ['', `**Suggested change** (${f.suggestedPatch!.by ?? 'LLM'}, ✓ verified: ${f.suggestedPatch!.note})`, '', '```suggestion', suggestion.text, '```'] : []),
-            '',
-            marker(findingKey(f))
-        ].join('\n');
         const key = findingKey(f);
-        comments.push(suggestion && suggestion.start < suggestion.end
-            ? { path: f.loc.file, line: suggestion.end, start_line: suggestion.start, side: 'RIGHT', start_side: 'RIGHT', body, key }
-            : { path: f.loc.file, line: suggestion ? suggestion.end : f.loc.line, side: 'RIGHT', body, key });
-    }
-    return comments;
+        const body = commentBody(f, suggestion);
+        if (suggestion && suggestion.start < suggestion.end) return [{ path: f.loc.file, line: suggestion.end, start_line: suggestion.start, side: 'RIGHT' as const, start_side: 'RIGHT' as const, body, key }];
+        return [{ path: f.loc.file, line: suggestion ? suggestion.end : f.loc.line, side: 'RIGHT' as const, body, key }];
+    });
+}
+
+const SEVERITY_ICON = { error: '⛔', warning: '⚠️', info: 'ℹ️' } as const;
+const CONFIRMATION = { confirmed: '✓ confirmed', refuted: '✗ not reproduced', unknown: '? not checked' } as const;
+
+function commentBody(f: Finding, suggestion: { text: string } | undefined): string {
+    const parts = [`**${SEVERITY_ICON[f.severity]} ${f.rule}** · ${f.subject}`, '', f.message, '', `**Fix:** ${f.fix}`];
+    if (f.confirmation) parts.push('', `**On the code:** ${CONFIRMATION[f.confirmation.status]} (${f.confirmation.by}): ${f.confirmation.detail}`);
+    if (f.counterexample && f.counterexample.length > 1) parts.push('', '<details><summary>Counterexample</summary>', '', ...f.counterexample.map((s, i) => `${i}. ${s.event ? `\`${s.event}\` → ` : ''}**${s.state}**${s.loc ? ` (${formatLocation(s.loc)})` : ''}`), '', '</details>');
+    if (suggestion) parts.push('', `**Suggested change** (${f.suggestedPatch!.by ?? 'LLM'}, ✓ verified: ${f.suggestedPatch!.note})`, '', '```suggestion', suggestion.text, '```');
+    parts.push('', marker(findingKey(f)));
+    return parts.join('\n');
 }
 
 /** A verified edit on changed lines, as whole replacement lines. */
@@ -127,7 +126,8 @@ function suggestionFor(f: Finding, lines: Set<number>, read: (file: string) => s
     return { start, end, text: text.slice(lineStart, at) + edit.replace + text.slice(endIndex, lineEnd) };
 }
 
-export function reviewSummary(result: ExtractionResult, relevant: Finding[], comments: number, base?: string): string {
+/** `extras`: lines about the gate (findings the base or the baseline already had, agent commits, mutation score). */
+export function reviewSummary(result: ExtractionResult, relevant: Finding[], comments: number, base?: string, extras: string[] = []): string {
     const count = (s: Finding['severity']) => relevant.filter(f => f.severity === s).length;
     const byCategory = new Map<string, number>();
     for (const f of relevant) byCategory.set(f.category, (byCategory.get(f.category) ?? 0) + 1);
@@ -140,6 +140,7 @@ export function reviewSummary(result: ExtractionResult, relevant: Finding[], com
             ? '✓ No finding on the changed lines.'
             : `**${count('error')} errors, ${count('warning')} warnings, ${count('info')} notes** on the changed lines (${[...byCategory].map(([c, n]) => `${n} ${c}`).join(', ')}); ${comments} inline comment(s), ${verified} with a verified change, ${confirmed} confirmed on the code.`,
         '',
+        ...(extras.length ? [...extras.map(e => `- ${e}`), ''] : []),
         `Checked: ${result.files} files, ${result.models.length} models, ${result.verdicts.length} properties (${result.checkedWith === 'nuxmv' ? 'nuXmv' : 'explicit-state'}); tools: ${result.tools.map(t => t.tool).join(', ') || 'ProvenFlow only'}; ${result.proofs.filter(p => p.status === 'proved').length} code proof(s).`,
         ...(result.notes.filter(n => /not installed/.test(n)).length ? ['', `<sub>${result.notes.filter(n => /not installed/.test(n)).join(' · ')}</sub>`] : [])
     ].join('\n');
@@ -200,67 +201,116 @@ interface GithubComment {
  * are folded into the summary.
  */
 export async function publishReview(target: GithubTarget, payload: ReviewPayload, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
-    const api = target.apiUrl ?? 'https://api.github.com';
-    const call = async (method: string, path: string, body?: unknown) => {
-        const res = await fetchImpl(`${api}${path}`, {
-            method,
-            headers: { authorization: `Bearer ${target.token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' },
-            body: body === undefined ? undefined : JSON.stringify(body)
-        });
-        return res;
-    };
-    const all = async <T>(path: string): Promise<T[]> => {
-        const out: T[] = [];
-        for (let page = 1; page <= 20; page++) {
-            const res = await call('GET', `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
-            if (!res.ok) throw new Error(`GitHub: HTTP ${res.status} reading ${path}: ${(await res.text()).slice(0, 200)}`);
-            const items = (await res.json()) as T[];
-            out.push(...items);
-            if (items.length < 100) break;
-        }
-        return out;
-    };
+    const api = githubApi(target, fetchImpl);
     const repo = `/repos/${payload.repository}`;
-    const inline = await all<GithubComment>(`${repo}/pulls/${payload.pull}/comments`);
-    const reported = new Map<string, GithubComment>();
-    const closed = new Set<number>();
-    for (const c of inline) {
-        const key = MARKER.exec(c.body ?? '')?.[1];
-        if (!key) continue;
-        if (key === FIXED && c.in_reply_to_id) closed.add(c.in_reply_to_id);
-        else if (!c.in_reply_to_id && !reported.has(key)) reported.set(key, c);
-    }
+    const { reported, closed } = earlierComments(await api.all<GithubComment>(`${repo}/pulls/${payload.pull}/comments`));
     const current = new Set(payload.keys);
     const fresh = payload.comments.filter(c => !reported.has(c.key.replace(/--/g, '- -')) && !reported.has(c.key));
     const gone = [...reported].filter(([key, c]) => !current.has(key) && !current.has(key.replace(/- -/g, '--')) && !closed.has(c.id));
     const short = payload.commit.slice(0, 7);
-    for (const [, c] of gone) await call('POST', `${repo}/pulls/${payload.pull}/comments/${c.id}/replies`, { body: `✓ No longer reported at ${short}.\n\n${marker(FIXED)}` });
-
-    let posted = 0;
-    let folded = '';
-    let url: string | undefined;
-    if (fresh.length > 0) {
-        const comments = fresh.map(({ key: _key, ...c }) => c);
-        const body = `ProvenFlow: ${fresh.length} new finding(s) at ${short}.`;
-        let res = await call('POST', `${repo}/pulls/${payload.pull}/reviews`, { commit_id: payload.commit, event: 'COMMENT', body, comments });
-        if (res.status === 422) {
-            folded = `\n\n<details><summary>${fresh.length} finding(s) on lines GitHub could not attach a comment to</summary>\n\n${fresh.map(c => `**${c.path}:${c.line}**\n\n${c.body}`).join('\n\n---\n\n')}\n\n</details>`;
-            res = { ok: true } as Response;
-        } else if (!res.ok) throw new Error(`GitHub refused the review: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
-        else {
-            posted = fresh.length;
-            url = ((await res.json()) as { html_url?: string }).html_url;
-        }
-    }
-
+    for (const [, c] of gone) await api.call('POST', `${repo}/pulls/${payload.pull}/comments/${c.id}/replies`, { body: `✓ No longer reported at ${short}.\n\n${marker(FIXED)}` });
+    const review = await postComments(api, repo, payload, fresh);
     const status = `\n\n<sub>At ${short}: ${fresh.length} new, ${payload.comments.length - fresh.length} already reported, ${gone.length} no longer reported since the last review.</sub>`;
-    const summary = `${payload.summary}${folded}${status}\n\n${marker(SUMMARY)}`;
-    const issueComments = await all<GithubComment>(`${repo}/issues/${payload.pull}/comments`);
-    const previous = issueComments.find(c => MARKER.exec(c.body ?? '')?.[1] === SUMMARY);
-    const res = previous ? await call('PATCH', `${repo}/issues/comments/${previous.id}`, { body: summary }) : await call('POST', `${repo}/issues/${payload.pull}/comments`, { body: summary });
+    const summary = `${payload.summary}${review.folded}${acceptance(reported, closed, new Set(gone.map(([k]) => k)))}${status}\n\n${marker(SUMMARY)}`;
+    const summaryUrl = await upsertSummary(api, repo, payload.pull, summary);
+    return { posted: review.posted, alreadyReported: payload.comments.length - fresh.length, fixed: gone.length, url: review.url, summaryUrl };
+}
+
+interface GithubApi {
+    call(method: string, path: string, body?: unknown): Promise<Response>;
+    /** Every page of a list (up to 2,000 items). */
+    all<T>(path: string): Promise<T[]>;
+}
+
+function githubApi(target: GithubTarget, fetchImpl: typeof fetch): GithubApi {
+    const base = target.apiUrl ?? 'https://api.github.com';
+    const headers = { authorization: `Bearer ${target.token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' };
+    const call = (method: string, path: string, body?: unknown) => fetchImpl(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    return {
+        call,
+        async all<T>(path: string): Promise<T[]> {
+            const out: T[] = [];
+            for (let page = 1; page <= 20; page++) {
+                const res = await call('GET', `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
+                if (!res.ok) throw new Error(`GitHub: HTTP ${res.status} reading ${path}: ${(await res.text()).slice(0, 200)}`);
+                const items = (await res.json()) as T[];
+                out.push(...items);
+                if (items.length < 100) break;
+            }
+            return out;
+        }
+    };
+}
+
+/** The findings commented before on this pull request (by their marker), and the comments already answered as fixed. */
+function earlierComments(inline: GithubComment[]): { reported: Map<string, GithubComment>; closed: Set<number> } {
+    const reported = new Map<string, GithubComment>();
+    const closed = new Set<number>();
+    for (const c of inline) {
+        const key = MARKER.exec(c.body ?? '')?.[1];
+        if (key === FIXED && c.in_reply_to_id) closed.add(c.in_reply_to_id);
+        else if (key && !c.in_reply_to_id && !reported.has(key)) reported.set(key, c);
+    }
+    return { reported, closed };
+}
+
+/** The new findings as one review; those GitHub cannot attach to the diff (422) are folded into the summary. */
+async function postComments(api: GithubApi, repo: string, payload: ReviewPayload, fresh: ReviewComment[]): Promise<{ posted: number; folded: string; url?: string }> {
+    if (fresh.length === 0) return { posted: 0, folded: '' };
+    const comments = fresh.map(({ key: _key, ...c }) => c);
+    const res = await api.call('POST', `${repo}/pulls/${payload.pull}/reviews`, { commit_id: payload.commit, event: 'COMMENT', body: `ProvenFlow: ${fresh.length} new finding(s) at ${payload.commit.slice(0, 7)}.`, comments });
+    if (res.status === 422) return { posted: 0, folded: `\n\n<details><summary>${fresh.length} finding(s) on lines GitHub could not attach a comment to</summary>\n\n${fresh.map(c => `**${c.path}:${c.line}**\n\n${c.body}`).join('\n\n---\n\n')}\n\n</details>` };
+    if (!res.ok) throw new Error(`GitHub refused the review: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+    return { posted: fresh.length, folded: '', url: ((await res.json()) as { html_url?: string }).html_url };
+}
+
+/** The one summary comment of the pull request, edited in place on later runs. */
+async function upsertSummary(api: GithubApi, repo: string, pull: number, summary: string): Promise<string | undefined> {
+    const previous = (await api.all<GithubComment>(`${repo}/issues/${pull}/comments`)).find(c => MARKER.exec(c.body ?? '')?.[1] === SUMMARY);
+    const res = previous ? await api.call('PATCH', `${repo}/issues/comments/${previous.id}`, { body: summary }) : await api.call('POST', `${repo}/issues/${pull}/comments`, { body: summary });
     if (!res.ok) throw new Error(`GitHub refused the summary comment: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
-    const summaryUrl = ((await res.json()) as { html_url?: string }).html_url;
-    return { posted, alreadyReported: payload.comments.length - fresh.length, fixed: gone.length, url, summaryUrl };
+    return ((await res.json()) as { html_url?: string }).html_url;
+}
+
+/**
+ * Per rule: findings commented on this pull request, and how many were fixed afterwards. Rules whose
+ * comments are seldom acted on are noise to tune (a limit, an `ignore`, or the rule turned off).
+ */
+function acceptance(reported: Map<string, GithubComment>, closed: Set<number>, gone: Set<string>): string {
+    const perRule = new Map<string, { commented: number; fixed: number }>();
+    for (const [key, c] of reported) {
+        const rule = key.split('|')[0];
+        const e = perRule.get(rule) ?? { commented: 0, fixed: 0 };
+        e.commented++;
+        if (closed.has(c.id) || gone.has(key)) e.fixed++;
+        perRule.set(rule, e);
+    }
+    if (perRule.size === 0) return '';
+    const rows = [...perRule].sort((a, b) => b[1].commented - a[1].commented).map(([rule, e]) => `| ${rule} | ${e.commented} | ${e.fixed} |`);
+    return `\n\n<details><summary>Findings commented on this pull request, and fixed since</summary>\n\n| rule | commented | fixed |\n| --- | ---: | ---: |\n${rows.join('\n')}\n\n</details>`;
+}
+
+/**
+ * A check run with the findings as annotations, sent 50 at a time (the Checks API's limit per
+ * request; later requests append). Its name is stable, so a ruleset can require it.
+ */
+export async function publishCheckRun(target: GithubTarget, findings: Finding[], conclusion: 'success' | 'failure' | 'neutral', summaryText: string, fetchImpl: typeof fetch = fetch): Promise<string | undefined> {
+    const api = target.apiUrl ?? 'https://api.github.com';
+    const headers = { authorization: `Bearer ${target.token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' };
+    const level = (f: Finding) => (f.severity === 'error' ? 'failure' : f.severity === 'warning' ? 'warning' : 'notice');
+    const annotationsOf = findings
+        .filter(f => f.loc)
+        .map(f => ({ path: f.loc!.file, start_line: f.loc!.line, end_line: f.endLine && f.endLine >= f.loc!.line ? f.endLine : f.loc!.line, annotation_level: level(f), title: `${f.rule}: ${f.subject}`.slice(0, 255), message: `${f.message}\nFix: ${f.fix}`.slice(0, 64_000) }));
+    const title = `${findings.filter(f => f.severity === 'error').length} errors, ${findings.filter(f => f.severity === 'warning').length} warnings`;
+    const output = (batch: typeof annotationsOf) => ({ title, summary: summaryText.slice(0, 65_000), annotations: batch });
+    const first = await fetchImpl(`${api}/repos/${target.repository}/check-runs`, { method: 'POST', headers, body: JSON.stringify({ name: 'ProvenFlow', head_sha: target.commit, status: 'completed', conclusion, output: output(annotationsOf.slice(0, 50)) }) });
+    if (!first.ok) throw new Error(`GitHub refused the check run: HTTP ${first.status} ${(await first.text()).slice(0, 300)}`);
+    const run = (await first.json()) as { id: number; html_url?: string };
+    for (let i = 50; i < annotationsOf.length; i += 50) {
+        const res = await fetchImpl(`${api}/repos/${target.repository}/check-runs/${run.id}`, { method: 'PATCH', headers, body: JSON.stringify({ output: output(annotationsOf.slice(i, i + 50)) }) });
+        if (!res.ok) throw new Error(`GitHub refused annotations ${i + 1}-${i + 50}: HTTP ${res.status}`);
+    }
+    return run.html_url;
 }
 
 /** Checks a review file against the pull request before posting it (it may come from a fork's run). */

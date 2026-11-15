@@ -1,0 +1,11 @@
+{
+  "$comment": "Claude Code (.claude/settings.json): ProvenFlow checks each file Claude writes, and before Claude finishes, all uncommitted changes. Findings go back to Claude (exit code 2), which fixes them. pflow must be on PATH.",
+  "hooks": {
+    "PostToolUse": [
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "pflow hook post-edit", "timeout": 120 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "pflow hook stop", "timeout": 300 }] }
+    ]
+  }
+}

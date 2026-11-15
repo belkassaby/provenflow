@@ -1,0 +1,31 @@
+name: OpenSSF Scorecard
+
+# A code-review tool is judged on its own supply chain: pinned actions, token permissions, branch
+# protection, signed releases. Results go to code scanning and to the public Scorecard API.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions: read-all
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@9418214df1f2c4b8128c770156c409013b07d6b9 # v3.39.3
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard

@@ -21,7 +21,15 @@ AI-generated code base, or a pull request:
   where possible) and a fix;
 - fixes are proposed without an LLM (automatic fixes) or with one, and each is marked verified only
   when re-running the analysis and the build on the changed code shows the finding gone and nothing
-  new.
+  new;
+- it checks what AI-generated code most often gets wrong: duplicated code and re-implemented
+  helpers, complexity (Cognitive Complexity, nesting), naming conventions, imports of packages that
+  do not exist, and changed lines no test runs or checks (coverage reports, mutation testing). The
+  limits and naming rules of each language come from its style guide and main linter
+  ([docs/coding-standards.md](docs/coding-standards.md));
+- on a pull request it counts only what the change adds (against the base, and against a baseline
+  of accepted findings), and holds lines written by coding agents to a stricter rule;
+- coding agents run the same checks before they push, through an MCP server or Claude Code hooks.
 
 Review a code base in the editor (File → Import code base…), with `pflow extract` / `pflow review`,
 or on every pull request with the GitHub Action, which posts the findings on the changed lines
@@ -477,6 +485,27 @@ The full guide is in [docs/code-model-checking.md](docs/code-model-checking.md).
 - the config reference and the LLM trust model;
 - what the first run on ProvenFlow found, and what was changed.
 
+AI-generated code more often fails by not fitting the code base than by being wrong: it
+duplicates existing helpers, adds complexity and drifts from the project's conventions.
+[docs/ai-code-guardrails.md](docs/ai-code-guardrails.md) collects the research on this and on the
+guardrails used against it, and what ProvenFlow does about each point:
+- the code-quality checks;
+- the baseline and new-code gating;
+- conventions inferred from the code (`pflow init`);
+- the MCP server and agent hooks;
+- outputs for GitLab and reviewdog.
+
+[docs/quality-before-after.md](docs/quality-before-after.md) shows the effect on ProvenFlow's own
+code: duplicated lines 74 → 0, highest Cognitive Complexity 189 → 93.
+
+```sh
+npx pflow init .                                   # provenflow.config.json from the code and the language standards
+npx pflow baseline .                               # accept today's findings: only new ones fail
+npx pflow review . --base origin/main --new-only   # what a change adds
+npx pflow compare . --base origin/main             # quality before and after
+npx pflow mcp                                      # MCP server for coding agents
+```
+
 ## Probabilistic analysis
 
 Give transitions a probability (`prob 0.3` in the text, or in the inspector) and the
@@ -539,13 +568,19 @@ packages/
 │   ├── src/patterns.ts                 design-pattern recognition and contract models
 │   ├── src/architecture.ts  paradigm.ts  layer graph model, cycles, facades; style rules
 │   ├── src/verify.ts                   nuXmv / explicit-state checks, counterexamples -> code
+│   ├── src/quality/                    duplication, complexity, naming, dependencies, coverage,
+│   │                                   per-language standards, and the measures
+│   ├── src/gate.ts  review-run.ts      baseline, new-code gating, agent-written lines, test findings
+│   ├── src/mutation.ts  compare.ts     mutation testing of changed lines; two versions compared
+│   ├── src/init.ts  instructions.ts    config proposed from the code; rules from AGENTS.md & co.
 │   ├── src/llm.ts                      optional LLM (Anthropic, OpenAI-compatible, Ollama), verified
-│   └── src/report.ts                   report.md / .json / .sarif, .pflow models, scenarios
+│   └── src/report.ts  report-formats.ts  report.md / .json, SARIF, GitLab Code Quality, rdjson
 ├── server/     @provenflow/server    Node.js + Express
 │   ├── src/nuxmv-runner.ts             spawns nuXmv (BDD / BMC / IC3), timeouts
 │   ├── src/nurv-runner.ts              runs NuRV, fixes and returns the generated monitors
-│   ├── src/app.ts                      REST API, live channel (SSE), serves the built UI
-│   └── src/cli.ts                      the `pflow` command-line tool
+│   ├── src/app.ts  routes/             REST API, live channel (SSE), serves the built UI
+│   ├── src/cli.ts  commands/           the `pflow` command-line tool
+│   └── src/mcp.ts                      MCP server for coding agents
 └── app/        @provenflow/app       Angular UI
     └── src/app/
         ├── diagram-store.ts            signals store keeping text and diagram in sync
@@ -720,7 +755,13 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow prism <d.pflow> [-o m.pm]` | PRISM / Storm model and properties |
 | `pflow nurv <d.pflow> [-o dir]` | NuRV full-LTL monitors (`NURV_PATH`) |
 | `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--llm p:model] [--llm-fixes N] [--no-analyzers] [--no-confirm]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes (exit 5 on findings) |
-| `pflow review <dir> [--base ref] [--files] [--fix] [--github] [--fail-on …]` | the findings on the lines changed since `ref`; `--github` posts them as a pull-request review with verified suggestions |
+| `pflow review <dir> [--base ref] [--files] [--new-only] [--mutate N] [--coverage report] [--fix] [--github] [--check-run] [--fail-on …]` | the findings on the lines changed since `ref` (only those the change adds with `--new-only`); `--github` posts them as a pull-request review with verified suggestions |
+| `pflow baseline <dir> [--update]` | accept today's findings (`provenflow-baseline.json`): only new ones fail; `--update` only removes |
+| `pflow compare <dir> (--base ref \| --before dir) [-o report.md]` | code quality of two versions side by side: duplication, complexity, findings fixed and introduced |
+| `pflow mutate <dir> [--base ref] [--max N]` | mutation testing of the changed lines with the project's tests |
+| `pflow init <dir> [--instructions --llm p:model]` | `provenflow.config.json` proposed from the code and the languages' coding standards (and the checkable rules of AGENTS.md, CLAUDE.md…) |
+| `pflow mcp` | MCP server for coding agents: `project_conventions`, `find_existing_code`, `review_changes`, `propose_fix` |
+| `pflow hook <post-edit\|stop>` | Claude Code hooks: the findings of the uncommitted changes go back to the agent |
 
 ## REST API
 
@@ -760,6 +801,11 @@ The extract tests run on three fixtures:
 - `packages/extract/test/fixtures/polyglot`: the same job lifecycle in each of the 13 tree-sitter
   languages, each with a state never set, a switch missing cases and a typical resource bug. With `NUXMV_PATH` set they also check the nuXmv
 counterexamples.
+- `packages/extract/test/fixtures/quality`: one seeded quality problem of each kind (a copied block,
+  a re-implemented helper, a function too complex and too deeply nested, a name off convention,
+  imports of packages that do not exist, an LCOV report). The tests also review a change in a
+  temporary git repository (agent commit, new-only gating), and the server tests drive the MCP
+  server, the hooks and the `baseline`, `compare` and `init` commands.
 
 Optional tools turn on more tests, and CI installs the Python packages:
 - `NUXMV_PATH`: every example is run on real nuXmv with all engines.

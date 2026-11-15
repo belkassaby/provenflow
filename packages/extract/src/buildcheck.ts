@@ -24,40 +24,60 @@ export interface CheckResult {
     ms: number;
 }
 
+/** What a detection rule may look at. */
+interface Project {
+    root: string;
+    files: string[];
+    pkg?: { scripts?: Record<string, string> };
+    env: NodeJS.ProcessEnv;
+    has(ext: RegExp): boolean;
+    exists(file: string): boolean;
+    tool(name: string): boolean;
+}
+
+/** A command to run when the project matches. */
+type Detection = [when: (p: Project) => boolean, check: CheckCommand | ((p: Project) => CheckCommand)];
+
+const BUILD: Detection[] = [
+    [p => p.has(/\.(ts|tsx|mts|cts)$/) && !!p.pkg?.scripts?.['typecheck'], { name: 'type check', command: 'npm run typecheck --silent' }],
+    [p => p.has(/\.(ts|tsx|mts|cts)$/) && !p.pkg?.scripts?.['typecheck'] && p.exists('tsconfig.json'), { name: 'type check', command: 'npx --no-install tsc --noEmit -p tsconfig.json' }],
+    [p => p.has(/\.py$/), { name: 'Python compile', command: 'python3 -m py_compile {files.py}' }],
+    [p => p.has(/\.go$/) && p.exists('go.mod') && p.tool('go'), { name: 'go build', command: 'go build ./...' }],
+    [p => p.has(/\.rs$/) && p.exists('Cargo.toml') && p.tool('cargo'), { name: 'cargo check', command: 'cargo check --quiet' }],
+    [p => p.has(/\.(java|kt)$/) && p.exists('pom.xml') && p.tool('mvn'), { name: 'mvn compile', command: 'mvn -q -o compile' }],
+    [p => p.has(/\.(java|kt|groovy)$/) && p.exists('gradlew'), { name: 'gradle compile', command: './gradlew -q compileJava' }],
+    // only when a project file exists
+    [p => p.has(/\.cs$/) && p.tool('dotnet') && p.files.some(f => /\.csproj$/.test(f)), { name: 'dotnet build', command: 'dotnet build -nologo -v q' }],
+    [p => p.has(/\.c$/), { name: 'C syntax', command: 'clang -fsyntax-only {files.c}' }],
+    [p => p.has(/\.(cc|cpp|cxx)$/), { name: 'C++ syntax', command: 'clang++ -std=c++17 -fsyntax-only {files.cpp}' }]
+];
+
+const TEST: Detection[] = [
+    [p => !!p.pkg?.scripts?.['test'] && !/no test specified/.test(p.pkg.scripts['test']), { name: 'npm test', command: 'npm test --silent' }],
+    [p => p.has(/\.py$/) && p.tool('pytest') && p.files.some(f => /(^|\/)(test_[^/]*|[^/]*_test)\.py$/.test(f)), { name: 'pytest', command: 'pytest -q' }],
+    [p => p.has(/\.go$/) && p.exists('go.mod') && p.tool('go'), { name: 'go test', command: 'go test ./...' }],
+    [p => p.has(/\.rs$/) && p.exists('Cargo.toml') && p.tool('cargo'), { name: 'cargo test', command: 'cargo test --quiet' }],
+    [p => p.exists('pom.xml') && p.tool('mvn'), { name: 'mvn test', command: 'mvn -q -o test' }]
+];
+
+function detect(rules: Detection[], p: Project): CheckCommand[] {
+    return rules.filter(([when]) => when(p)).map(([, check]) => (typeof check === 'function' ? check(p) : check));
+}
+
 /** The build/type-check and test commands of a project (from the config, or detected). */
 export function detectChecks(root: string, files: string[], config: ProvenflowConfig, env: NodeJS.ProcessEnv = process.env): { build: CheckCommand[]; test: CheckCommand[] } {
     const v = config.verification ?? {};
-    const pkg = readJson(join(root, 'package.json')) as { scripts?: Record<string, string> } | undefined;
-    const has = (ext: RegExp) => files.some(f => ext.test(f));
-    const build: CheckCommand[] = [];
-    if (v.build !== undefined) {
-        if (v.build.trim()) build.push({ name: 'build', command: v.build });
-    } else {
-        if (has(/\.(ts|tsx|mts|cts)$/)) {
-            if (pkg?.scripts?.['typecheck']) build.push({ name: 'type check', command: 'npm run typecheck --silent' });
-            else if (existsSync(join(root, 'tsconfig.json'))) build.push({ name: 'type check', command: 'npx --no-install tsc --noEmit -p tsconfig.json' });
-        }
-        if (has(/\.py$/)) build.push({ name: 'Python compile', command: 'python3 -m py_compile {files.py}' });
-        if (has(/\.go$/) && existsSync(join(root, 'go.mod')) && findTool('go', env)) build.push({ name: 'go build', command: 'go build ./...' });
-        if (has(/\.rs$/) && existsSync(join(root, 'Cargo.toml')) && findTool('cargo', env)) build.push({ name: 'cargo check', command: 'cargo check --quiet' });
-        if (has(/\.(java|kt)$/) && existsSync(join(root, 'pom.xml')) && findTool('mvn', env)) build.push({ name: 'mvn compile', command: 'mvn -q -o compile' });
-        if (has(/\.(java|kt|groovy)$/) && existsSync(join(root, 'gradlew'))) build.push({ name: 'gradle compile', command: './gradlew -q compileJava' });
-        if (has(/\.cs$/) && findTool('dotnet', env) && files.some(f => /\.(csproj|sln)$/.test(f) || existsSync(join(root, f.replace(/[^/]+$/, ''))))) {
-            // only when a project file exists at the root
-            if (files.some(f => /\.csproj$/.test(f))) build.push({ name: 'dotnet build', command: 'dotnet build -nologo -v q' });
-        }
-        if (has(/\.c$/)) build.push({ name: 'C syntax', command: 'clang -fsyntax-only {files.c}' });
-        if (has(/\.(cc|cpp|cxx)$/)) build.push({ name: 'C++ syntax', command: 'clang++ -std=c++17 -fsyntax-only {files.cpp}' });
-    }
-    const test: CheckCommand[] = [];
-    if (v.test && v.test !== 'auto') test.push({ name: 'tests', command: v.test });
-    else if (v.test === 'auto') {
-        if (pkg?.scripts?.['test'] && !/no test specified/.test(pkg.scripts['test'])) test.push({ name: 'npm test', command: 'npm test --silent' });
-        if (has(/\.py$/) && findTool('pytest', env) && files.some(f => /(^|\/)(test_[^/]*|[^/]*_test)\.py$/.test(f))) test.push({ name: 'pytest', command: 'pytest -q' });
-        if (has(/\.go$/) && existsSync(join(root, 'go.mod')) && findTool('go', env)) test.push({ name: 'go test', command: 'go test ./...' });
-        if (has(/\.rs$/) && existsSync(join(root, 'Cargo.toml')) && findTool('cargo', env)) test.push({ name: 'cargo test', command: 'cargo test --quiet' });
-        if (existsSync(join(root, 'pom.xml')) && findTool('mvn', env)) test.push({ name: 'mvn test', command: 'mvn -q -o test' });
-    }
+    const project: Project = {
+        root,
+        files,
+        env,
+        pkg: readJson(join(root, 'package.json')) as Project['pkg'],
+        has: ext => files.some(f => ext.test(f)),
+        exists: file => existsSync(join(root, file)),
+        tool: name => !!findTool(name, env)
+    };
+    const build = v.build !== undefined ? (v.build.trim() ? [{ name: 'build', command: v.build }] : []) : detect(BUILD, project);
+    const test = v.test === 'auto' ? detect(TEST, project) : v.test ? [{ name: 'tests', command: v.test }] : [];
     return { build, test };
 }
 

@@ -1,0 +1,19 @@
+# GitLab CI: ProvenFlow's findings in the merge request's Code Quality widget (and the diff, on
+# Ultimate). Only findings beyond provenflow-baseline.json fail the job (exit code 5).
+provenflow:
+  image: node:22
+  stage: test
+  variables:
+    GIT_DEPTH: 0
+  before_script:
+    - git clone --depth 1 https://github.com/belkassaby/provenflow.git /opt/provenflow
+    - (cd /opt/provenflow && npm ci --no-audit --no-fund -w @provenflow/language -w @provenflow/extract -w @provenflow/server && npm run build -w @provenflow/language && npm run build -w @provenflow/extract && npm run build -w @provenflow/server)
+  script:
+    - node /opt/provenflow/packages/server/out/cli.js extract . --fail-on warning -o provenflow-report
+  artifacts:
+    when: always
+    reports:
+      codequality: provenflow-report/report.codequality.json
+      sast: provenflow-report/report.sarif
+    paths:
+      - provenflow-report/
