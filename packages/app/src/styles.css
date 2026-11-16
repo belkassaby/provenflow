@@ -35,44 +35,44 @@
   --shadow: 0 8px 24px rgb(20 30 45 / 14%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --bg: #0f141a;
-    --surface: #161c23;
-    --canvas-bg: #12171d;
-    --border: #2a333d;
-    --hover: #212a34;
-    --text: #e3e9ef;
-    --muted: #93a3b3;
-    --accent: #6ea2ff;
-    --accent-bg: #1c2b45;
-    --success: #69db7c;
-    --success-bg: #173222;
-    --error: #ff8787;
-    --error-bg: #3a1c1c;
-    --warning: #ffc078;
-    --warning-bg: #3a2c16;
-    --node-bg: #1f3148;
-    --node-border: #6ea2ff;
-    --node-text: #e3e9ef;
-    --edge: #7f8fa0;
-    --trace-current: #f59f00;
-    --trace-border: #ffd8a8;
-    --trace-visited: #4a3a1c;
-    --syntax-comment: #7d8c9b;
-    --syntax-keyword: #c3a6ff;
-    --syntax-section: #ff8787;
-    --syntax-temporal: #66d9e8;
-    --syntax-constant: #ffa94d;
-    --syntax-string: #8ce99a;
-    --syntax-operator: #93a3b3;
-    --shadow: 0 8px 24px rgb(0 0 0 / 45%);
-  }
+/* Dark theme: set by the toggle in the top bar, or the system's when none was chosen (theme.ts, index.html). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f141a;
+  --surface: #161c23;
+  --canvas-bg: #12171d;
+  --border: #2a333d;
+  --hover: #212a34;
+  --text: #e3e9ef;
+  --muted: #93a3b3;
+  --accent: #6ea2ff;
+  --accent-bg: #1c2b45;
+  --success: #69db7c;
+  --success-bg: #173222;
+  --error: #ff8787;
+  --error-bg: #3a1c1c;
+  --warning: #ffc078;
+  --warning-bg: #3a2c16;
+  --node-bg: #1f3148;
+  --node-border: #6ea2ff;
+  --node-text: #e3e9ef;
+  --edge: #7f8fa0;
+  --trace-current: #f59f00;
+  --trace-border: #ffd8a8;
+  --trace-visited: #4a3a1c;
+  --syntax-comment: #7d8c9b;
+  --syntax-keyword: #c3a6ff;
+  --syntax-section: #ff8787;
+  --syntax-temporal: #66d9e8;
+  --syntax-constant: #ffa94d;
+  --syntax-string: #8ce99a;
+  --syntax-operator: #93a3b3;
+  --shadow: 0 8px 24px rgb(0 0 0 / 45%);
 }
 
 /* -------------------------------------------------------------------- base */
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--text); font: 14px/1.4 var(--sans); }
 h4 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
@@ -221,10 +221,19 @@ table.trace td.issue-col { box-shadow: inset 0 -3px 0 var(--error); }
 .walkthrough pre.code { margin: 6px 0; white-space: pre-wrap; }
 .walkthrough > .primary { margin-left: 38px; }
 
+/* Pages: the code base report and the C4 architecture, each in its own tab */
+.page { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); color: var(--text); }
+.page > section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.page-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.page-head h2 { margin: 0; font-size: 17px; }
+.page h3 { font-size: 14px; margin: 16px 0 6px; }
+.page a { color: var(--accent); }
+
 /* File → Import code base… */
-dialog.code-import { width: min(1000px, calc(100vw - 32px)); }
-dialog.code-import header { gap: 12px; }
-dialog.code-import header h2 { flex: 1; }
+.page > section.code-import { display: block; overflow: auto; }
+.code-import > .page-head { position: sticky; top: 0; z-index: 5; }
+.code-import > .page-head h2 { flex: 1; }
+.code-import > :not(.page-head) { width: 100%; max-width: 1280px; margin-inline: auto; }
 .code-root { font-family: var(--mono, ui-monospace, monospace); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-source { border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px 12px; margin: 12px 0; }
 .code-path { display: flex; gap: 8px; }
@@ -364,24 +373,30 @@ dialog.llm-settings { width: min(720px, calc(100vw - 32px)); }
 }
 
 /* File → C4 architecture… */
-dialog.c4-dialog { width: calc(100vw - 32px); height: calc(100vh - 32px); max-height: none; display: none; flex-direction: column; overflow: hidden; }
-dialog.c4-dialog[open] { display: flex; }
+section.c4-page { overflow: hidden; }
 .c4-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: relative; z-index: 5; }
 .c4-toolbar h2 { margin-right: 4px; }
 .c4-file { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c4-view-select { max-width: 320px; }
 .c4-toolbar .flash { font-size: 12px; background: var(--accent-bg); color: var(--accent); padding: 3px 8px; border-radius: 6px; }
-.c4-toolbar > button:last-child { margin-left: auto; }
-.c4-dialog .menu { position: relative; }
-.c4-dialog .menu-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; }
-.c4-dialog .menu-list.end { left: auto; right: 0; }
-.c4-dialog .menu-list button { text-align: left; border: 0; background: none; padding: 7px 10px; }
-.c4-dialog .menu-list button:hover { background: var(--hover); }
-.c4-dialog .menu-list hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; width: 100%; }
+.c4-page .menu { position: relative; }
+.c4-page .menu-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; }
+.c4-page .menu-list.end { left: auto; right: 0; }
+.c4-page .menu-list button { text-align: left; border: 0; background: none; padding: 7px 10px; }
+.c4-page .menu-list button:hover { background: var(--hover); }
+.c4-page .menu-list hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; width: 100%; }
 .c4-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
-.c4-main { position: relative; min-width: 0; min-height: 0; background: #ffffff; border-right: 1px solid var(--border); }
+.c4-main { position: relative; min-width: 0; min-height: 0; background: var(--canvas-bg); border-right: 1px solid var(--border); }
 .c4-main app-c4-canvas, .c4-canvas { display: block; position: absolute; inset: 0; }
 .c4-canvas:focus { outline: none; }
+/* The ends of the selected relationship, and the connection points of the boxes (c4-canvas.ts) */
+.c4-end { position: absolute; z-index: 3; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #f59e0b; border: 2px solid var(--surface); box-shadow: 0 0 0 1px #b45309; cursor: grab; touch-action: none; }
+.c4-end:active { cursor: grabbing; }
+.c4-port { position: absolute; z-index: 2; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); pointer-events: none; }
+.c4-port.near { width: 16px; height: 16px; margin: -8px 0 0 -8px; background: var(--accent); }
+.c4-drag-line { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.c4-drag-line line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; }
+.c4-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
 .c4-empty { padding: 32px; max-width: 520px; }
 .c4-side { display: flex; flex-direction: column; min-height: 0; }
 .c4-side .help-tabs { flex: 0 0 auto; padding: 4px 8px 0; border-bottom: 1px solid var(--border); }
@@ -400,13 +415,12 @@ dialog.c4-dialog[open] { display: flex; }
 .c4-suggestions > li.warning { border-left-color: var(--warning); }
 .c4-suggestions > li.error { border-left-color: var(--error); }
 .c4-suggestion-head { display: flex; gap: 6px; align-items: baseline; width: 100%; text-align: left; border: 0; background: none; padding: 2px 0; font-size: 13px; }
-.c4-files, .c4-links, .c4-problems { padding-left: 18px; margin: 4px 0; }
+.c4-files, .c4-links, .c4-problems, .c4-notes { padding-left: 18px; margin: 4px 0; }
 .c4-files code, .c4-links code { word-break: break-all; }
 .c4-problems li.error { color: var(--error); }
 tr.c4-focus td { font-weight: 600; }
 .c4-dsl { width: 100%; min-height: 50vh; font: 12px/1.45 var(--mono); background: var(--canvas-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; white-space: pre; }
 @media (max-width: 760px) {
-  dialog.c4-dialog { width: 100vw; height: 100vh; border-radius: 0; }
   .c4-body { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 1fr) minmax(200px, 45%); }
   .c4-main { border-right: 0; border-bottom: 1px solid var(--border); }
 }

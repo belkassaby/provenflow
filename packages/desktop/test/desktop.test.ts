@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { filesFromArgv, kindOf, readOpenable } from '../src/files.js';
 import { DOCS_URL, menuTemplate, type DesktopCommand } from '../src/menu.js';
 import { mergePath, parseShellPath } from '../src/shell-path.js';
-import { visibleBounds } from '../src/window-state.js';
+import { loadWindowState, saveWindowState, themeOf, visibleBounds } from '../src/window-state.js';
 
 function items(template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions[] {
     const menu = template.find(m => m.label?.replace('&', '') === label);
@@ -35,7 +35,8 @@ describe('the application menu', () => {
         click(items(template, 'Verify')[0]);
         click(items(template, 'Help').find(i => i.label === 'Documentation'));
         click(items(template, 'Help').find(i => i.label === 'About ProvenFlow'));
-        expect(sent).toEqual(['c4', 'check']);
+        click(items(template, 'View').find(i => i.label === 'Toggle Dark Theme'));
+        expect(sent).toEqual(['c4', 'check', 'toggle-theme']);
         expect(opened).toEqual(['dialog', DOCS_URL, 'about']);
         // Settings and Quit are in the File menu where there is no app menu.
         expect(file.some(i => i.role === 'quit')).toBe(true);
@@ -82,6 +83,22 @@ describe('the window and the environment', () => {
         expect(visibleBounds({ x: 2500, y: 100, width: 1200, height: 800 }, [screen])).toBeUndefined();
         expect(visibleBounds({ x: 2500, y: 100, width: 1200, height: 800 }, [screen, { x: 1920, y: 0, width: 2560, height: 1440 }])).toBeDefined();
         expect(visibleBounds(undefined, [screen])).toBeUndefined();
+    });
+
+    it('keeps the theme chosen in the editor with the window state, and nothing else the page sends', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'pflow-desktop-'));
+        try {
+            const file = join(dir, 'window-state.json');
+            saveWindowState(file, { bounds: { x: 1, y: 2, width: 800, height: 600 }, maximized: false });
+            saveWindowState(file, { theme: 'dark' });
+            saveWindowState(file, { maximized: true });
+            expect(loadWindowState(file)).toEqual({ bounds: { x: 1, y: 2, width: 800, height: 600 }, maximized: true, theme: 'dark' });
+            expect(themeOf('light')).toBe('light');
+            expect(themeOf('system')).toBeUndefined();
+            expect(themeOf({ theme: 'dark' })).toBeUndefined();
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     it('takes the PATH of the login shell, before its own', () => {

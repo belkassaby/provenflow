@@ -1,5 +1,5 @@
 import type { ElementDefinition } from 'cytoscape';
-import { elementStyle, relationshipStyle, type C4Element, type C4ElementType, type C4ViewContents, type C4ViewEdge, type C4ViewNode, type C4Workspace } from '@provenflow/language';
+import { elementStyle, relationshipStyle, routingOf, type C4Anchors, type C4Element, type C4ElementType, type C4View, type C4ViewContents, type C4ViewEdge, type C4ViewNode, type C4Workspace } from '@provenflow/language';
 
 /** C4's own colours (c4model.com), for elements no style of the workspace covers. */
 const DEFAULT_FILL: Record<C4ElementType, [string, string]> = {
@@ -67,8 +67,26 @@ function shade(hex: string): string {
 const SHAPES: Record<string, string> = { cylinder: 'barrel', pipe: 'barrel', person: 'round-rectangle', box: 'rectangle', roundedbox: 'round-rectangle', ellipse: 'ellipse', circle: 'ellipse', hexagon: 'hexagon', component: 'rectangle', folder: 'rectangle', webbrowser: 'round-rectangle', mobiledeviceportrait: 'round-rectangle', mobiledevicelandscape: 'round-rectangle', robot: 'round-rectangle' };
 
 /** The Cytoscape elements of a view: boxes (with C4 labels and the workspace's styles), boundaries, and relationships. */
-export function cytoscapeElements(ws: C4Workspace, contents: C4ViewContents, index: Map<string, C4Element>, highlight: ReadonlySet<string>): ElementDefinition[] {
-    return [...contents.nodes.map(n => nodeElement(ws, n, index, highlight)), ...contents.edges.map(e => edgeElement(ws, e))];
+export function cytoscapeElements(ws: C4Workspace, view: C4View | undefined, contents: C4ViewContents, index: Map<string, C4Element>, highlight: ReadonlySet<string>): ElementDefinition[] {
+    return [...contents.nodes.map(n => nodeElement(ws, n, index, highlight)), ...contents.edges.map(e => edgeElement(ws, view, e))];
+}
+
+/**
+ * The classes that draw a relationship as its routing says (see the canvas's style): right angles
+ * turning across the view's direction, or a curve; none for a straight line. Right angles with an
+ * end on a chosen side are routed by the canvas (routeEdge).
+ */
+function routingClasses(ws: C4Workspace, view: C4View | undefined, e: C4ViewEdge): string[] {
+    const routing = routingOf(ws, view, e);
+    if (routing === 'Curved') return ['curved'];
+    if (routing === 'Direct') return [];
+    const across = view?.autoLayout?.direction === 'lr' || view?.autoLayout?.direction === 'rl';
+    return ['orthogonal', across ? 'horizontal' : 'vertical'];
+}
+
+/** The classes that attach a relationship's ends to sides of their boxes. */
+function anchorClasses(anchors: C4Anchors): string[] {
+    return [...(anchors.source ? [`src-${anchors.source}`] : []), ...(anchors.target ? [`tgt-${anchors.target}`] : [])];
 }
 
 function nodeElement(ws: C4Workspace, n: C4ViewNode, index: Map<string, C4Element>, highlight: ReadonlySet<string>): ElementDefinition {
@@ -86,15 +104,16 @@ function nodeElement(ws: C4Workspace, n: C4ViewNode, index: Map<string, C4Elemen
     };
 }
 
-function edgeElement(ws: C4Workspace, e: C4ViewEdge): ElementDefinition {
+function edgeElement(ws: C4Workspace, view: C4View | undefined, e: C4ViewEdge): ElementDefinition {
     const style = relationshipStyle(ws, e);
     const description = e.order !== undefined ? `${e.order}. ${e.description ?? ''}` : (e.description ?? '');
     const text = [description, ...(e.technology ? [`[${e.technology}]`] : [])].map(l => wrap(l, 36, 2).join('\n')).filter(Boolean).join('\n');
     // Structurizr draws relationships dashed unless a style says otherwise.
     const lineStyle = style.style ?? (style.dashed === false ? 'solid' : 'dashed');
+    const anchors = view?.anchors?.[e.id] ?? {};
     return {
         group: 'edges',
         data: { id: e.id, source: e.source, target: e.target, label: text, color: style.color ?? '#707070', width: style.thickness ?? 1.5, lineStyle, implied: !!e.implied },
-        classes: e.implied ? 'implied' : ''
+        classes: [...(e.implied ? ['implied'] : []), ...routingClasses(ws, view, e), ...anchorClasses(anchors)].join(' ')
     };
 }

@@ -106,6 +106,9 @@ developments" and removes the limitations listed in its evaluation chapter.
   [nomenclature of logic symbols](https://en.wikipedia.org/wiki/List_of_logic_symbols).
 - **Files.** Save and open `.pflow` files, export the `.smv` model, import the legacy
   `attributeData.txt` format, and load the built-in examples.
+- **Tabs and themes.** Each diagram opens in a tab, and so do the code base report and the C4
+  architecture editor. The switch at the top right of the window changes between the light and the
+  dark theme; until you choose one, the editor follows the system's.
 - **Guards and bounded data.** Variables (counters, flags) updated by transitions
   (`when retries < 2 do retries := retries + 1`), checked by nuXmv, simulated in the editor and
   enforced by the generated code.
@@ -415,11 +418,11 @@ In the editor, choose **File → Import code base…** and pick a folder on your
 are uploaded to the ProvenFlow server) or type a folder path. The path option is for when the
 server runs on your machine: the folder is then read in place, with its `node_modules`. While it runs, a progress bar shows the percentage, what is being done (the model being
 checked, the analyser still running, the change being verified), the elapsed time and the steps
-already finished; you can close the window meanwhile. Findings,
-models, patterns and paradigm profiles show in the dialog. **Open model** opens a model in a new
-tab and checks it, so its counterexample is one click away. Every model can have its own tab, and
-the **Code report** button next to the tabs reopens the findings and the list of models, also after
-a reload.
+already finished. Import code base has a tab of its own next to the diagrams, so you can work in
+another tab, or close it, meanwhile. Findings, models, patterns and paradigm profiles show in that
+tab. **Open model** opens a model in a new tab and checks it, so its counterexample is one click
+away. Every model can have its own tab, and the **Code report** button next to the tabs reopens the
+findings and the list of models, also after a reload.
 
 Findings are the problems. Most are a property of an extracted **model** that nuXmv found false;
 **Models → Properties** lists each model's properties with their verdicts and what to do about the
@@ -610,7 +613,10 @@ packages/
         ├── text-editor/                CodeMirror + Langium diagnostics
         ├── diagram-canvas/             Cytoscape.js editor, trace highlighting
         ├── attribute-table/  inspector/  properties-panel/  trace-panel/  output-panel/
+        ├── document-tabs/              the tabs: diagrams, the code base report, the C4 architecture
+        ├── code-import/                Import code base and its review (a page in its own tab)
         ├── c4/                         C4 viewer and editor: canvas, properties, project map, exports
+        ├── theme.ts                    the light and dark themes (the switch at the top right)
         ├── desktop-bridge.ts           native menus, opened files and folder dialogs (desktop only)
         └── nuxmv-api.ts                calls the backend
 ```

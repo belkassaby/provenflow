@@ -7,6 +7,13 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <script>
+    // The theme before the first paint: the one chosen with the toggle, else the system's (see theme.ts).
+    try {
+      var saved = localStorage.getItem('provenflow.theme');
+      document.documentElement.dataset.theme = saved === 'light' || saved === 'dark' ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <app-root></app-root>

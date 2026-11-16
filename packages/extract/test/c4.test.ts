@@ -1,3 +1,5 @@
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseC4Dsl, viewContents } from '@provenflow/language';
@@ -81,6 +83,41 @@ describe('the projects around a code base', () => {
         expect(kinds('move-to-consumer').map(s => `${s.files[0].file} -> ${name(s.target!)}`)).toEqual(['src/app-only.ts -> @acme/app']);
         // The app bundles @acme/viz: lodash ^4 and ^3 have no version in common.
         expect(kinds('version-drift').map(s => s.title)).toEqual(['lodash is used at different versions']);
+    });
+
+    it('says which projects it found and left out, and why', () => {
+        expect(map.notes.find(n => n.startsWith('Not shown'))).toContain('thing');
+    });
+
+    it('maps again what changed: a project added inside the code base is one of its parts', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'pflow-c4-'));
+        try {
+            cpSync(FIXTURE, dir, { recursive: true });
+            const app = join(dir, 'app');
+            expect(mapProjects(app).projects.find(p => p.focus)?.modules).toEqual([]);
+            // A package added to the repository without a workspace entry, and test data that is not a part.
+            mkdirSync(join(app, 'plugins', 'charts'), { recursive: true });
+            writeFileSync(join(app, 'plugins', 'charts', 'package.json'), JSON.stringify({ name: '@acme/charts', version: '0.1.0', dependencies: { '@acme/render': '^0.3.0' } }));
+            mkdirSync(join(app, 'test', 'fixtures', 'sample'), { recursive: true });
+            writeFileSync(join(app, 'test', 'fixtures', 'sample', 'package.json'), JSON.stringify({ name: 'sample' }));
+            // Next to it: a new local project with no owner of its own, and a git worktree of the app.
+            mkdirSync(join(dir, 'notes'));
+            writeFileSync(join(dir, 'notes', 'package.json'), JSON.stringify({ name: 'notes', version: '0.0.1' }));
+            cpSync(app, join(dir, 'app-wt'), { recursive: true });
+            mkdirSync(join(app, '.git', 'worktrees', 'app-wt'), { recursive: true });
+            writeFileSync(join(dir, 'app-wt', '.git'), `gitdir: ${join(app, '.git', 'worktrees', 'app-wt')}\n`);
+            const again = mapProjects(app);
+            expect(again.projects.filter(p => p.name === '@acme/app')).toHaveLength(1);
+            expect(again.projects.find(p => p.name === 'notes')?.owned).toBe(true);
+            const focus = again.projects.find(p => p.focus)!;
+            expect(focus.modules.map(m => `${m.name} ${m.dir} ${m.kind}`)).toEqual(['@acme/charts plugins/charts library']);
+            // The app keeps its own code next to the package added in it.
+            expect(again.workspace.elements.filter(e => e.type === 'container' && e.parent === focus.id).map(e => e.name)).toEqual(['@acme/app', '@acme/charts']);
+            const renderId = again.projects.find(p => p.name === '@acme/render')!.id;
+            expect(again.links.find(l => l.from === focus.id && l.to === renderId)).toMatchObject({ fromModule: '@acme/charts' });
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     it('describes them as a C4 model', () => {

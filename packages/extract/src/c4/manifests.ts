@@ -24,6 +24,8 @@ export interface ProjectModule {
     kind: 'application' | 'library' | 'module';
     aliases: string[];
     dependencies: ManifestDependency[];
+    /** A project inside this one that its manifest does not list (see undeclaredModules). */
+    undeclared?: boolean;
 }
 
 export interface Manifest {

@@ -1,6 +1,6 @@
 /**
  * The bridge between the editor (a sandboxed page) and the desktop application: menu commands and
- * files to open come in, a folder picker goes out. Nothing else of Node or Electron is exposed.
+ * files to open come in; a folder picker and the theme go out. Nothing else of Node or Electron is exposed.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
@@ -25,5 +25,7 @@ contextBridge.exposeInMainWorld('provenflowDesktop', {
     onOpenFile: (callback: (file: OpenedFile) => void) => subscribe('provenflow:open-file', callback),
     /** The editor listens: files waiting since the start can come. */
     ready: () => ipcRenderer.send('provenflow:ready'),
-    pickFolder: (title?: string): Promise<string | null> => ipcRenderer.invoke('provenflow:pick-folder', title)
+    pickFolder: (title?: string): Promise<string | null> => ipcRenderer.invoke('provenflow:pick-folder', title),
+    /** The editor's theme, for the window's frame and menus. */
+    setTheme: (theme: 'light' | 'dark') => ipcRenderer.send('provenflow:theme', theme)
 });

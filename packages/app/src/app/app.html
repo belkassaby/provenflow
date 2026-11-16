@@ -83,7 +83,7 @@
   </nav>
   <span class="spacer"></span>
   @if (message()) {
-    <span class="flash" role="status">{{ message() }}</span>
+    <span class="flash" role="status" [title]="message()">{{ message() }}</span>
   }
   <span class="file mono" [title]="store.dirty() ? 'Unsaved changes' : 'Saved'">{{ store.fileName() }}{{ store.dirty() ? ' •' : '' }}</span>
   <span class="status" [class.ok]="api.status().available" [class.bad]="api.status().checked && !api.status().available"
@@ -91,11 +91,15 @@
     @if (!api.status().checked) { checking nuXmv… } @else if (api.status().available) { {{ api.status().version ?? 'nuXmv' }} } @else { nuXmv unavailable }
   </span>
   <button type="button" class="primary" (click)="check()" [disabled]="store.errorCount() > 0 || store.verification()?.running">▶ Check</button>
+  <button type="button" class="theme-toggle" role="switch" [attr.aria-checked]="theme.dark()" (click)="theme.toggle()"
+    [title]="theme.dark() ? 'Dark theme: switch to light' : 'Light theme: switch to dark'" aria-label="Dark theme">
+    <span class="theme-track" aria-hidden="true"><span class="theme-thumb">{{ theme.dark() ? '☾' : '☀' }}</span></span>
+  </button>
 </header>
 
 <app-document-tabs (showReport)="showCodeReport()" />
 
-<main class="workspace" [class.no-text]="!showText()" [class.maximized]="canvasMax()"
+<main class="workspace" [hidden]="!!documents.page()" [class.no-text]="!showText()" [class.maximized]="canvasMax()"
   [style.--text-w]="(showText() ? textW() : 28) + 'px'" [style.--insp-w]="inspectorW() + 'px'" [style.--bottom-h]="bottomH() + 'px'">
   @if (showText()) {
     <section class="pane text-pane" aria-label="Text editor">
@@ -153,7 +157,12 @@
   </section>
 </main>
 
+@if (documents.pages().has('report')) {
+  <app-code-report-page [hidden]="documents.page() !== 'report'" (openModel)="openCodeModel($event)" (llmSettings)="openLlmSettings()" (openC4)="openC4($event)" />
+}
+@if (documents.pages().has('c4')) {
+  <app-c4-page [hidden]="documents.page() !== 'c4'" />
+}
+
 <app-help-dialog />
-<app-code-import-dialog (openModel)="openCodeModel($event)" (llmSettings)="openLlmSettings()" (openC4)="openC4($event)" />
-<app-c4-dialog />
 <app-llm-settings-dialog />

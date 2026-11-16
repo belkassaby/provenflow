@@ -1,5 +1,5 @@
-<dialog #dialog class="help c4-dialog" (click)="backdropClick($event)" (keydown)="keydown($event)" aria-label="C4 architecture">
-  <header class="c4-toolbar">
+<section class="c4-page" (keydown)="keydown($event)" aria-label="C4 architecture">
+  <header class="page-head c4-toolbar">
     <h2>C4 architecture</h2>
     <span class="muted small c4-file" [title]="store.fileName()">{{ store.fileName() }}{{ store.dirty() ? ' •' : '' }}</span>
     <select class="c4-view-select" [value]="store.view()?.key ?? ''" (change)="store.showView($any($event.target).value)" aria-label="View">
@@ -24,6 +24,10 @@
     <button type="button" (click)="store.undo()" [disabled]="!store.canUndo()" title="Undo (⌘Z)">↶</button>
     <button type="button" (click)="store.redo()" [disabled]="!store.canRedo()" title="Redo (⇧⌘Z)">↷</button>
     <button type="button" (click)="store.relayout()" title="Lay the view out again (forgets where boxes were dragged)">Layout</button>
+    <select class="c4-lines" [value]="store.routing()" (change)="store.setDefaultRouting($any($event.target).value)" aria-label="Lines"
+      title="How relationships are drawn: straight, at right angles, or curved (a relationship can have its own in Properties)">
+      @for (r of routings; track r) { <option [value]="r">Lines: {{ routingLabels[r] }}</option> }
+    </select>
     <button type="button" (click)="canvas()?.fit()" title="Fit to the window">Fit</button>
     <button type="button" (click)="openFile()">Open…</button>
     <div class="menu">
@@ -41,13 +45,12 @@
       }
     </div>
     @if (message()) { <span class="flash small" role="status">{{ message() }}</span> }
-    <button type="button" (click)="close()" aria-label="Close">✕</button>
   </header>
 
   <div class="c4-body">
     <div class="c4-main">
       @if (store.workspace().views.length) {
-        <app-c4-canvas [connectMode]="connect()" />
+        <app-c4-canvas [connectMode]="connect()" (notice)="flash($event)" />
       } @else {
         <div class="c4-empty muted">
           <p>Open a Structurizr DSL file (Open…), map the projects around a code base (Map tab), or add a person or a software system.</p>
@@ -84,6 +87,11 @@
             @if (discovery.error(); as e) { <p class="small error-text">{{ e }}</p> }
             @if (discovery.map(); as m) {
               <h4>{{ m.projects.length }} projects mapped from <code>{{ m.root }}</code></h4>
+              @if (m.notes.length) {
+                <ul class="small muted c4-notes">
+                  @for (n of m.notes; track $index) { <li>{{ n }}</li> }
+                </ul>
+              }
               <div class="c4-actions">
                 <button type="button" (click)="discovery.openDiscovered()">Show the discovered model</button>
                 @if (m.existing) { <button type="button" (click)="discovery.openMerged()" [title]="'Its own model, with the discovered projects tagged Discovered'">Open {{ m.existing.file }} + discovered</button> }
@@ -113,4 +121,4 @@
       </div>
     </aside>
   </div>
-</dialog>
+</section>

@@ -57,7 +57,10 @@ export function buildWorkspace(ctx: PlacementContext, focus: ProjectInfo, librar
 function addProject(b: Builder, p: ProjectInfo): void {
     b.ws.elements.push(systemOf(p));
     const map = new Map<string, string>();
-    const modules: Array<{ name: string; dir: string; kind: string }> = p.modules.length ? p.modules : [{ name: '', dir: '.', kind: p.application ? 'application' : 'library' }];
+    // The project's own code is a container, unless it is only the root of the modules its manifest
+    // declares (a workspace root); a project with packages added inside it keeps its own code.
+    const own = { name: '', dir: '.', kind: p.application ? 'application' : 'library' };
+    const modules: Array<{ name: string; dir: string; kind: string }> = p.modules.length && !p.modules.some(m => m.undeclared) ? p.modules : [own, ...p.modules];
     for (const m of modules) {
         const cid = id(b, `${p.id}_${m.name || 'code'}`);
         map.set(m.name, cid);

@@ -1,10 +1,10 @@
 /** The `styles { element "Tag" { ... } relationship "Tag" { ... } }` block of the Structurizr DSL. */
 import { eachInBlock as eachIn, skipBlock as skip, type C4Statement, type StatementCursor as Cursor } from './dsl-lex.js';
-import type { C4ElementStyle, C4RelationshipStyle, C4Workspace } from './model.js';
+import { parseRouting, type C4ElementStyle, type C4RelationshipStyle, type C4Workspace } from './model.js';
 
 const NUMBERS = new Set(['strokeWidth', 'fontSize', 'opacity', 'width', 'height', 'thickness']);
 const ELEMENT_PROPS = new Set(['background', 'color', 'stroke', 'shape', 'border', 'strokeWidth', 'fontSize', 'opacity', 'width', 'height']);
-const RELATIONSHIP_PROPS = new Set(['color', 'dashed', 'style', 'thickness', 'fontSize']);
+const RELATIONSHIP_PROPS = new Set(['color', 'dashed', 'style', 'thickness', 'fontSize', 'routing']);
 /** DSL spellings → the model's property names. */
 const SPELLINGS: Record<string, string> = { colour: 'color', strokewidth: 'strokeWidth', fontsize: 'fontSize' };
 
@@ -32,6 +32,7 @@ function styleProperty(st: Cursor, p: C4Statement, style: Record<string, unknown
     const value = p.words[1]?.text;
     if (!known.has(name) || value === undefined) return;
     if (name === 'dashed') style[name] = value.toLowerCase() === 'true';
+    else if (name === 'routing') style[name] = parseRouting(value);
     else if (NUMBERS.has(name)) style[name] = Number(value);
     else style[name] = name === 'border' || name === 'style' ? value.toLowerCase() : value;
 }

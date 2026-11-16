@@ -79,24 +79,11 @@ function renderEdge(edge: EdgeSingular): string {
     const src = edge.sourceEndpoint();
     const tgt = edge.targetEndpoint();
     if (!isFinitePoint(src) || !isFinitePoint(tgt)) return '';
-    const cps = (edge.controlPoints() ?? []).filter(isFinitePoint);
     const width = edge.numericStyle('width') as number;
     const color = edge.style('line-color') as string;
     const arrowColor = edge.style('target-arrow-color') as string;
     const dashed = edge.style('line-style') === 'dashed';
-
-    // Cytoscape draws a bezier edge with n control points as n chained
-    // quadratic curves meeting at the midpoints between control points.
-    let d = `M ${pt(src)}`;
-    if (cps.length === 0) {
-        d += ` L ${pt(tgt)}`;
-    } else {
-        for (let i = 0; i < cps.length; i++) {
-            const end = i === cps.length - 1 ? tgt : mid(cps[i], cps[i + 1]);
-            d += ` Q ${pt(cps[i])} ${pt(end)}`;
-        }
-    }
-    const from = cps.length > 0 ? cps[cps.length - 1] : src;
+    const { d, from } = edgePath(edge, src, tgt);
     const arrow = triangle(from, tgt, width);
     const dash = dashed ? ` stroke-dasharray="${num(width * 3)} ${num(width * 2)}"` : '';
     return (
@@ -105,6 +92,43 @@ function renderEdge(edge: EdgeSingular): string {
         (arrow ? `<polygon points="${arrow}" fill="${attr(arrowColor)}"/>` : '') +
         '</g>'
     );
+}
+
+/** The line of an edge: straight, through its bends (right-angled and segment edges), or curved through its control points. */
+function edgePath(edge: EdgeSingular, src: Position, tgt: Position): { d: string; from: Position } {
+    const curve = String(edge.style('curve-style'));
+    if (/^(round-)?(taxi|segments)$/.test(curve)) {
+        const bends = (edge.segmentPoints() ?? []).filter(isFinitePoint);
+        const radius = curve === 'round-taxi' ? Number(edge.numericStyle('taxi-radius')) || 0 : curve === 'round-segments' ? parseFloat(String(edge.style('segment-radii'))) || 0 : 0;
+        return { d: polyline([src, ...bends, tgt], radius), from: bends[bends.length - 1] ?? src };
+    }
+    // Cytoscape draws a bezier edge with n control points as n chained
+    // quadratic curves meeting at the midpoints between control points.
+    const cps = (edge.controlPoints() ?? []).filter(isFinitePoint);
+    if (cps.length === 0) return { d: `M ${pt(src)} L ${pt(tgt)}`, from: src };
+    const curves = cps.map((cp, i) => `Q ${pt(cp)} ${pt(i === cps.length - 1 ? tgt : mid(cp, cps[i + 1]))}`);
+    return { d: `M ${pt(src)} ${curves.join(' ')}`, from: cps[cps.length - 1] };
+}
+
+/**
+ * A line through points; with a radius, each corner is a curve that starts and ends that far from it
+ * (less when the segments either side are short), as Cytoscape draws right-angled edges.
+ */
+function polyline(points: Position[], radius: number): string {
+    const parts = [`M ${pt(points[0])}`];
+    for (let i = 1; i < points.length - 1; i++) {
+        const [before, corner, after] = [points[i - 1], points[i], points[i + 1]];
+        const r = Math.min(radius, Math.hypot(corner.x - before.x, corner.y - before.y) / 2, Math.hypot(after.x - corner.x, after.y - corner.y) / 2);
+        parts.push(r > 0 ? `L ${pt(towards(corner, before, r))} Q ${pt(corner)} ${pt(towards(corner, after, r))}` : `L ${pt(corner)}`);
+    }
+    parts.push(`L ${pt(points[points.length - 1])}`);
+    return parts.join(' ');
+}
+
+/** The point `distance` away from `from`, on the way to `to`. */
+function towards(from: Position, to: Position, distance: number): Position {
+    const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+    return { x: from.x + ((to.x - from.x) * distance) / length, y: from.y + ((to.y - from.y) * distance) / length };
 }
 
 function renderEdgeLabel(edge: EdgeSingular): string {

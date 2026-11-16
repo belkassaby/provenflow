@@ -7,6 +7,7 @@ import { LiveLink } from '../live-link';
 import { downloadText } from '../file-io';
 import { computeLayout, LAYOUTS, type LayoutKind } from './layouts';
 import { cytoscapeToSvg } from './svg-export';
+import { followSize, themeColour, ThemeService } from '../theme';
 
 const LAYOUT_KEY = 'provenflow.layout';
 
@@ -41,9 +42,15 @@ export class DiagramCanvas implements OnDestroy {
     private cy?: Core;
     private eh?: EdgeHandlesInstance;
     private fitPending = true;
+    private readonly theme = inject(ThemeService);
 
     constructor() {
         afterNextRender(() => this.init());
+        // The colours come from the theme's variables: drawn again when it changes.
+        effect(() => {
+            this.theme.dark();
+            untracked(() => this.cy?.style().update());
+        });
 
         effect(() => {
             const model = this.store.model();
@@ -91,8 +98,7 @@ export class DiagramCanvas implements OnDestroy {
         });
         this.cy = cy;
         // Keep Cytoscape's viewport in step with the pane size (splitters, maximize, window).
-        this.resizeObserver = new ResizeObserver(() => cy.resize());
-        this.resizeObserver.observe(this.host().nativeElement);
+        this.resizeObserver = followSize(cy, this.host().nativeElement);
         this.eh = (cy as unknown as { edgehandles(o: object): EdgeHandlesInstance }).edgehandles({
             canConnect: () => true,
             edgeParams: () => ({ data: { preview: true } }),
@@ -375,8 +381,7 @@ function longestLine(text: unknown): number {
     return typeof text === 'string' ? Math.max(...text.split('\n').map(l => l.length)) : 0;
 }
 
-const css = (name: string, fallback: string) =>
-    typeof document === 'undefined' ? fallback : getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+const css = themeColour;
 
 export const STYLE: StylesheetJson = [
     {

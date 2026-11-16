@@ -1,18 +1,25 @@
 import { computed, Injectable, signal } from '@angular/core';
 import {
     c4ViewToText,
+    defaultRouting,
     elementIndex,
     emptyWorkspace,
     identifierFor,
     parseC4Dsl,
     removeElement,
     viewContents,
+    withAnchor,
+    withDefaultRouting,
     writeC4Dsl,
+    type C4Anchors,
     type C4Diagnostic,
     type C4Element,
     type C4ElementType,
     type C4Relationship,
+    type C4Routing,
+    type C4Side,
     type C4View,
+    type C4ViewEdge,
     type C4ViewType,
     type C4Workspace
 } from '@provenflow/language';
@@ -81,6 +88,8 @@ export class C4Store {
     });
     readonly index = computed(() => elementIndex(this.workspace()));
     readonly addable = computed(() => ADDABLE[this.view()?.type ?? 'systemLandscape']);
+    /** How relationships are drawn unless a style or the view says otherwise. */
+    readonly routing = computed(() => defaultRouting(this.workspace()));
 
     /** Opens a Structurizr DSL file, or ProvenFlow's JSON form of a workspace. Errors leave the current one open. */
     open(text: string, name: string): boolean {
@@ -229,6 +238,53 @@ export class C4Store {
         this.edit(ws => ({ ...ws, views: ws.views.map(v => (v.key === key ? { ...v, positions } : v)) }));
     }
 
+    /** Draws every relationship this way by default (the `Relationship` style, kept in the DSL). */
+    setDefaultRouting(routing: C4Routing): void {
+        this.edit(ws => withDefaultRouting(ws, routing));
+    }
+
+    /** Draws one relationship of the current view this way; `undefined`: as its style says. */
+    setRouting(edgeId: string, routing: C4Routing | undefined): void {
+        const view = this.view();
+        if (!view) return;
+        const others = Object.entries(view.routing ?? {}).filter(([id]) => id !== edgeId);
+        const next = Object.fromEntries(routing ? [...others, [edgeId, routing]] : others);
+        this.updateView(view.key, { routing: Object.keys(next).length ? next : undefined });
+    }
+
+    /** Attaches one end of a relationship of the current view to a side of its box (`undefined`: the shortest way). */
+    setAnchor(edgeId: string, end: keyof C4Anchors, side: C4Side | undefined): void {
+        const view = this.view();
+        if (view) this.edit(ws => ({ ...ws, views: ws.views.map(v => (v.key === view.key ? withAnchor(v, edgeId, end, side) : v)) }));
+    }
+
+    /**
+     * Moves one end of a relationship of the current view to a side of a box: of its own box, or of
+     * another one, which then becomes its source or destination (one step to undo). A line standing
+     * for a relationship of elements inside the boxes keeps the other end where it is. Returns why
+     * it cannot, or null.
+     */
+    moveEnd(edgeId: string, end: keyof C4Anchors, box: string, side: C4Side): string | null {
+        const view = this.view();
+        const edge = this.contents().edges.find(e => e.id === edgeId);
+        if (!view || !edge) return null;
+        if (box === (end === 'source' ? edge.source : edge.target)) {
+            this.setAnchor(edgeId, end, side);
+            return null;
+        }
+        const why = cannotReconnect(view, edge, end, box, this.index());
+        const r = this.workspace().relationships.find(x => x.id === edge.relationship);
+        if (why || !r) return why;
+        const { moved, id } = reconnected(r, edge, end, box);
+        this.edit(ws => ({
+            ...ws,
+            relationships: ws.relationships.map(x => (x.id === r.id ? moved : x)),
+            views: ws.views.map(v => (v.key === view.key ? movedAnchors(v, edgeId, id, end, side) : v))
+        }));
+        this.selection.set({ kind: 'relationship', id });
+        return null;
+    }
+
     updateView(key: string, patch: Partial<C4View>): void {
         this.edit(ws => ({ ...ws, views: ws.views.map(v => (v.key === key ? { ...v, ...patch } : v)) }));
         if (patch.key) this.viewKey.set(patch.key);
@@ -288,4 +344,31 @@ export class C4Store {
             // Storage full or blocked: the workspace lasts for this page only.
         }
     }
+}
+
+/** Why one end of a relationship cannot be moved to another box in this view, or null. */
+function cannotReconnect(view: C4View, edge: C4ViewEdge, end: keyof C4Anchors, box: string, index: Map<string, C4Element>): string | null {
+    if (view.type === 'dynamic' || view.type === 'deployment') return 'Here a line can only move to another side of its box: change the relationship in a static view.';
+    if (!edge.relationship) return 'This step has no relationship to move.';
+    if (!index.has(box)) return 'A relationship joins elements, not boundaries or groups.';
+    if (box === (end === 'source' ? edge.target : edge.source)) return 'A relationship joins two different elements.';
+    return null;
+}
+
+/** A line's anchors under its new id in the view: the end moved on its new side, the other end where it was. */
+function movedAnchors(view: C4View, from: string, to: string, end: keyof C4Anchors, side: C4Side): C4View {
+    const other: keyof C4Anchors = end === 'source' ? 'target' : 'source';
+    const kept = view.anchors?.[from]?.[other];
+    const cleared = withAnchor(withAnchor(view, from, 'source', undefined), from, 'target', undefined);
+    return withAnchor(withAnchor(cleared, to, other, kept), to, end, side);
+}
+
+/**
+ * A relationship with one end moved to a box, and the id of its line in the view afterwards: the
+ * relationship's own when it joins the two boxes shown, else an implied one.
+ */
+function reconnected(r: C4Relationship, edge: C4ViewEdge, end: keyof C4Anchors, box: string): { moved: C4Relationship; id: string } {
+    const moved = end === 'source' ? { ...r, source: box } : { ...r, destination: box };
+    const [s, d] = end === 'source' ? [box, edge.target] : [edge.source, box];
+    return { moved, id: moved.source === s && moved.destination === d ? r.id : `${r.id}@${s}>${d}` };
 }

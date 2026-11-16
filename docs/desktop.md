@@ -22,7 +22,8 @@ Nothing in the editor or the server is specific to the desktop. The desktop appl
 - **The shell's `PATH`.** The application takes it at start on macOS and Linux, so nuXmv, Python,
   Semgrep, CBMC and the other tools are found as in a terminal. `NUXMV_PATH` and the other variables
   work the same way.
-- **The window.** Its size and place are kept between runs.
+- **The window.** Its size and place are kept between runs. Its frame, menus and system dialogs
+  follow the editor's theme (the switch at the top right, or View → Toggle Dark Theme).
 
 ## How it is put together
 
@@ -85,7 +86,8 @@ Open), and Windows SmartScreen warns. To sign:
   web server keeps them: `~/.config/provenflow/llm.json`, or `PROVENFLOW_SETTINGS`.
 - **The editor's own state** (open documents, the last report, the C4 workspace) is in the
   application's storage.
-- **The window's size and place** are in the user data folder:
+- **The window's size and place, and the theme last chosen,** are in `window-state.json` in the user
+  data folder:
   - macOS: `~/Library/Application Support/ProvenFlow`
   - Windows: `%APPDATA%\ProvenFlow`
   - Linux: `~/.config/ProvenFlow`

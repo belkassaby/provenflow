@@ -4,7 +4,7 @@
  * Container, Component, their _Ext and Db forms, boundaries, Deployment_Node, Rel), drawn from
  * what viewContents() says the view shows.
  */
-import { elementStyle, type C4Element, type C4View, type C4Workspace } from './model.js';
+import { defaultRouting, elementStyle, type C4Element, type C4View, type C4Workspace } from './model.js';
 import { viewContents, type C4ViewNode } from './views.js';
 
 export type C4TextFormat = 'plantuml' | 'mermaid';
@@ -27,12 +27,17 @@ const MERMAID_DIAGRAM: Record<C4View['type'], string> = {
     deployment: 'C4Deployment'
 };
 
+/** The view's direction, and right-angled lines when relationships are drawn so by default. */
+function plantUmlLayout(ws: C4Workspace, view: C4View): string[] {
+    return [...(view.autoLayout?.direction === 'lr' ? ['LAYOUT_LEFT_RIGHT()'] : []), ...(defaultRouting(ws) === 'Orthogonal' ? ['skinparam linetype ortho'] : [])];
+}
+
 export function c4ViewToText(ws: C4Workspace, view: C4View, format: C4TextFormat): string {
     const { nodes, edges } = viewContents(ws, view);
     const title = view.title ?? view.description ?? view.key;
     const out: string[] =
         format === 'plantuml'
-            ? ['@startuml', `!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/${PLANTUML_LIBRARY[view.type]}.puml`, '', `title ${title}`, ...(view.autoLayout?.direction === 'lr' ? ['LAYOUT_LEFT_RIGHT()'] : []), '']
+            ? ['@startuml', `!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/${PLANTUML_LIBRARY[view.type]}.puml`, '', `title ${title}`, ...plantUmlLayout(ws, view), '']
             : [MERMAID_DIAGRAM[view.type], `    title ${title}`, ''];
     const children = new Map<string | undefined, C4ViewNode[]>();
     for (const n of nodes) children.set(n.parent, [...(children.get(n.parent) ?? []), n]);

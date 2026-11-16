@@ -1,14 +1,13 @@
-<dialog #dialog class="help code-import" (click)="backdropClick($event)" [attr.aria-label]="report() ? 'Code base review' : 'Import code base'">
-  <header>
+<section class="code-import" [attr.aria-label]="report() ? 'Code base review' : 'Import code base'">
+  <header class="page-head">
     <h2>{{ report() && !codeImport.running() ? 'Code base review' : 'Import code base' }}</h2>
     @if (report(); as r) {
       <span class="muted small code-root" title="Analysed folder">{{ r.root }}</span>
       @if (r.applicable) {
-        <button type="button" class="small" (click)="openC4.emit(r.root); close()" title="The projects around this code base with the same owner, as a C4 model, and where code belongs">System map (C4)</button>
+        <button type="button" class="small" (click)="openC4.emit(r.root)" title="The projects around this code base with the same owner, as a C4 model, and where code belongs">System map (C4)</button>
       }
     }
     <button type="button" class="link small" (click)="walkthrough()">how does it work?</button>
-    <button type="button" class="icon" (click)="close()" aria-label="Close">×</button>
   </header>
 
   @if (codeImport.running()) {
@@ -29,7 +28,7 @@
           @for (s of codeImport.steps(); track $index) { <li><span class="ok-text">✓</span> {{ s.label }} <span class="muted mono">{{ duration(s.ms) }}</span></li> }
         </ul>
       }
-      <p class="muted small">Extracting the state machines, resource lifecycles, design-pattern contracts and layers, then checking every model{{ codeImport.analyzers() ? ', running the installed analysers and replaying findings on the code' : '' }}{{ codeImport.quickFixes() ? '; each proposed change is re-checked and built, which takes the longest' : '' }}. You can close this window: the analysis goes on, and File → Import code base… shows it again.</p>
+      <p class="muted small">Extracting the state machines, resource lifecycles, design-pattern contracts and layers, then checking every model{{ codeImport.analyzers() ? ', running the installed analysers and replaying findings on the code' : '' }}{{ codeImport.quickFixes() ? '; each proposed change is re-checked and built, which takes the longest' : '' }}. You can switch to another tab, or close this one: the analysis goes on, and File → Import code base… shows it again.</p>
     </div>
   } @else if (!report()) {
     <div class="help-body">
@@ -456,4 +455,4 @@
       }
     </div>
   }
-</dialog>
+</section>

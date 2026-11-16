@@ -3,8 +3,8 @@
  * kept on that page (links elsewhere open in the browser), with its size and place remembered.
  */
 import { join } from 'node:path';
-import { BrowserWindow, screen, shell, type WebContents } from 'electron';
-import { DEFAULT_SIZE, loadWindowState, saveWindowState, visibleBounds } from './window-state.js';
+import { BrowserWindow, nativeTheme, screen, shell, type WebContents } from 'electron';
+import { BACKGROUND, DEFAULT_SIZE, loadWindowState, saveWindowState, visibleBounds } from './window-state.js';
 
 export interface WindowOptions {
     url: string;
@@ -25,7 +25,7 @@ export function createWindow(options: WindowOptions): BrowserWindow {
         minHeight: 480,
         show: false,
         title: 'ProvenFlow',
-        backgroundColor: '#eef1f5',
+        backgroundColor: BACKGROUND[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
         ...(options.icon ? { icon: options.icon } : {}),
         webPreferences: { preload: options.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false }
     });

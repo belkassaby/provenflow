@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { c4ViewToText, elementStyle, mergeC4Workspaces, parseC4Dsl, removeElement, viewContents, writeC4Dsl, type C4Workspace } from '../src/index.js';
+import { c4ViewToText, defaultRouting, elementStyle, mergeC4Workspaces, parseC4Dsl, removeElement, routingOf, viewContents, withAnchor, withDefaultRouting, writeC4Dsl, type C4Workspace } from '../src/index.js';
 
 const DSL = `
 /* A shop, in the forms the Structurizr DSL allows. */
@@ -78,6 +78,7 @@ workspace "Shop" "Sells things." {
             }
             relationship "Relationship" {
                 dashed false
+                routing orthogonal
             }
         }
     }
@@ -121,6 +122,25 @@ describe('Structurizr DSL', () => {
         const db = ws.elements.find(e => e.id === 'db')!;
         expect(elementStyle(ws, db)).toMatchObject({ shape: 'Cylinder', border: 'dashed', strokeWidth: 3 });
         expect(ws.styles.elements[0]).toMatchObject({ color: '#ffffff' });
+    });
+
+    it('draws relationships straight, at right angles or curved: by default, by style, or one by one in a view', () => {
+        const ws = parse();
+        const view = ws.views.find(v => v.key === 'containers')!;
+        const edge = { id: 'web>api', tags: [] };
+        // `routing orthogonal` in the Relationship style: every relationship, written back as Structurizr spells it.
+        expect(defaultRouting(ws)).toBe('Orthogonal');
+        expect(routingOf(ws, view, edge)).toBe('Orthogonal');
+        expect(writeC4Dsl(ws)).toContain('routing Orthogonal');
+        expect(routingOf(ws, { ...view, routing: { 'web>api': 'Curved' } }, edge)).toBe('Curved');
+        expect(c4ViewToText(ws, view, 'plantuml')).toContain('skinparam linetype ortho');
+        // Back to straight: the style keeps its other properties; one with only its tag goes.
+        const straight = withDefaultRouting(ws, 'Direct');
+        expect(defaultRouting(straight)).toBe('Direct');
+        expect(straight.styles.relationships.find(s => s.tag === 'Relationship')).toEqual({ tag: 'Relationship', dashed: false });
+        const bare = withDefaultRouting({ ...ws, styles: { ...ws.styles, relationships: [] } }, 'Curved');
+        expect(bare.styles.relationships).toEqual([{ tag: 'Relationship', routing: 'Curved' }]);
+        expect(withDefaultRouting(bare, 'Direct').styles.relationships).toEqual([]);
     });
 
     it('reports what it cannot read, with the line, and goes on', () => {
@@ -197,6 +217,15 @@ describe('C4 views', () => {
 });
 
 describe('editing and merging C4 models', () => {
+    it('attaches the ends of a relationship to sides of their boxes, and lets them go again', () => {
+        const view = parseC4Dsl(DSL).workspace.views[2];
+        const top = withAnchor(view, 'r1', 'source', 'top');
+        expect(top.anchors).toEqual({ r1: { source: 'top' } });
+        expect(withAnchor(top, 'r1', 'target', 'left').anchors).toEqual({ r1: { source: 'top', target: 'left' } });
+        expect(withAnchor(top, 'r1', 'source', undefined).anchors).toBeUndefined();
+        expect(view.anchors).toBeUndefined();
+    });
+
     it('removes an element with its children, relationships and view references', () => {
         const ws = removeElement(parseC4Dsl(DSL).workspace, 'api');
         expect(ws.elements.some(e => e.id === 'orders' || e.instanceOf === 'api')).toBe(false);

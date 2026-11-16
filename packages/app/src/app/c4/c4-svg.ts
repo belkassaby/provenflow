@@ -31,7 +31,7 @@ export function renderC4Node(node: NodeSingular): string {
 function boundary(node: NodeSingular, d: C4NodeData, dash: string): string {
     const bb = node.boundingBox({ includeLabels: false, includeOverlays: false });
     const lines = [d.title.join(' '), d.typeLine];
-    const labels = lines.map((l, i) => `<text x="${num(bb.x1 + bb.w / 2)}" y="${num(bb.y2 + 16 + i * 14)}" text-anchor="middle" font-size="${i ? 10 : 12}" font-weight="${i ? 400 : 600}" fill="#3b4a52">${text(l)}</text>`);
+    const labels = lines.map((l, i) => `<text x="${num(bb.x1 + bb.w / 2)}" y="${num(bb.y2 + 16 + i * 14)}" text-anchor="middle" font-size="${i ? 10 : 12}" font-weight="${i ? 400 : 600}" fill="${attr(String(node.style('color')))}">${text(l)}</text>`);
     return `<g><rect x="${num(bb.x1)}" y="${num(bb.y1)}" width="${num(bb.w)}" height="${num(bb.h)}" rx="6" fill="${attr(d.bg)}" fill-opacity="0.06" stroke="${attr(d.stroke)}" stroke-width="${num(d.borderWidth)}"${dash}/>${labels.join('')}</g>`;
 }
 

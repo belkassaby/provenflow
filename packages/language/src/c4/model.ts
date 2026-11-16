@@ -82,7 +82,36 @@ export interface C4View {
     steps?: C4DynamicStep[];
     /** Where each element was placed by hand (ProvenFlow keeps these in its JSON form; the DSL lays views out automatically). */
     positions?: Record<string, { x: number; y: number }>;
+    /** How a relationship of this view is drawn, by its id in the view, when it differs from its style (JSON form only, as in Structurizr's). */
+    routing?: Record<string, C4Routing>;
+    /** The side of its box each end of a relationship is attached to, by its id in the view (JSON form only; by default the line takes the shortest way). */
+    anchors?: Record<string, C4Anchors>;
 }
+
+/** A side of a box: where a relationship's line can leave or reach it. */
+export type C4Side = 'top' | 'right' | 'bottom' | 'left';
+export const C4_SIDES: C4Side[] = ['top', 'right', 'bottom', 'left'];
+
+/** The sides a relationship's line is attached to, at its source and at its target. */
+export interface C4Anchors {
+    source?: C4Side;
+    target?: C4Side;
+}
+
+/** A view with one end of a relationship attached to a side (`undefined`: wherever is shortest). */
+export function withAnchor(view: C4View, edgeId: string, end: keyof C4Anchors, side: C4Side | undefined): C4View {
+    const { [edgeId]: current, ...others } = view.anchors ?? {};
+    const next: C4Anchors = { ...current, [end]: side };
+    const kept = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)) as C4Anchors;
+    const anchors = Object.keys(kept).length ? { ...others, [edgeId]: kept } : others;
+    return { ...view, anchors: Object.keys(anchors).length ? anchors : undefined };
+}
+
+/** How a relationship's line is drawn (Structurizr's `routing`): straight, with right angles (drawn with rounded corners), or curved. */
+export type C4Routing = 'Direct' | 'Orthogonal' | 'Curved';
+
+export const C4_ROUTINGS: C4Routing[] = ['Direct', 'Orthogonal', 'Curved'];
+export const C4_ROUTING_LABELS: Record<C4Routing, string> = { Direct: 'Straight', Orthogonal: 'Rounded angles', Curved: 'Curved' };
 
 export interface C4ElementStyle {
     tag: string;
@@ -105,6 +134,7 @@ export interface C4RelationshipStyle {
     style?: 'solid' | 'dashed' | 'dotted';
     thickness?: number;
     fontSize?: number;
+    routing?: C4Routing;
 }
 
 export interface C4Workspace {
@@ -192,6 +222,32 @@ export function relationshipStyle(ws: C4Workspace, r: { tags: string[] }): Omit<
         for (const s of ws.styles.relationships) if (s.tag === tag) Object.assign(out, withoutTag(s));
     }
     return out;
+}
+
+/** How a relationship is drawn in a view: as chosen for it in the view, else as its style says (straight by default). */
+export function routingOf(ws: C4Workspace, view: C4View | undefined, edge: { id: string; tags: string[] }): C4Routing {
+    return view?.routing?.[edge.id] ?? relationshipStyle(ws, edge).routing ?? 'Direct';
+}
+
+/** How relationships are drawn unless a style or a view says otherwise: the style of the `Relationship` tag. */
+export function defaultRouting(ws: C4Workspace): C4Routing {
+    return ws.styles.relationships.find(s => s.tag === 'Relationship')?.routing ?? 'Direct';
+}
+
+/** The workspace with every relationship drawn this way by default (in the `Relationship` style, so the DSL keeps it). */
+export function withDefaultRouting(ws: C4Workspace, routing: C4Routing): C4Workspace {
+    const routed = routing === 'Direct' ? undefined : routing;
+    const relationships = ws.styles.relationships.some(s => s.tag === 'Relationship')
+        ? ws.styles.relationships.map(s => (s.tag === 'Relationship' ? { ...s, routing: routed } : s))
+        : [...ws.styles.relationships, { tag: 'Relationship', routing: routed }];
+    // A style left with nothing but its tag is dropped.
+    const kept = relationships.filter(s => Object.entries(s).some(([k, v]) => k !== 'tag' && v !== undefined));
+    return { ...ws, styles: { ...ws.styles, relationships: kept } };
+}
+
+/** A routing written in the DSL, in any case (`orthogonal`, `Orthogonal`). */
+export function parseRouting(text: string): C4Routing | undefined {
+    return C4_ROUTINGS.find(r => r.toLowerCase() === text.toLowerCase());
 }
 
 function withoutTag<T extends { tag: string }>(s: T): Omit<T, 'tag'> {

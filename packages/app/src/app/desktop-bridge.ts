@@ -15,6 +15,7 @@ interface DesktopApi {
     onOpenFile(callback: (file: DesktopFile) => void): () => void;
     ready(): void;
     pickFolder(title?: string): Promise<string | null>;
+    setTheme?(theme: 'light' | 'dark'): void;
 }
 
 /**
@@ -38,6 +39,11 @@ export class DesktopBridge {
 
     pickFolder(title?: string): Promise<string | null> {
         return this.api ? this.api.pickFolder(title) : Promise.resolve(null);
+    }
+
+    /** The window's frame and native menus follow the editor's theme. */
+    setTheme(theme: 'light' | 'dark'): void {
+        this.api?.setTheme?.(theme);
     }
 }
 

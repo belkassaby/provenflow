@@ -63,8 +63,17 @@ export function mapProjects(dir: string, options: ProjectMapOptions = {}): Proje
     const suggestions = [...cycles(ctx), ...outdated(ctx), ...declaredVersusUsed(ctx), ...duplicatesAcross(ctx), ...[...sources.values()].flatMap(s => [...moveToDependency(ctx, s), ...moveToConsumer(ctx, s)]), ...versionDrift(ctx, libraries)].sort((a, b) => SEVERITY[a.severity] - SEVERITY[b.severity] || CONFIDENCE[a.confidence] - CONFIDENCE[b.confidence]);
     const workspace = buildWorkspace(ctx, focus, libraries);
     const existing = existingModel(root, workspace, notes);
-    notes.push(`${projects.length} project(s) shown of ${all.length} found${options.scan?.length ? ` in ${options.scan.join(', ')}` : ''}; ${projects.filter(p => p.owned).length} with the same owner as ${focus.name}.`);
+    notes.push(...shownNotes(all, projects, focus, options.scan));
     return { root, focus: focus.id, projects, links: shownLinks, libraries, suggestions, workspace, ...(existing ? { existing } : {}), notes };
+}
+
+/** How many projects were found and shown, and which were left out, with their owner (to name it and show them). */
+function shownNotes(all: ProjectInfo[], shown: ProjectInfo[], focus: ProjectInfo, scan: string[] | undefined): string[] {
+    const notes = [`${shown.length} project(s) shown of ${all.length} found${scan?.length ? ` in ${scan.join(', ')}` : ''}; ${shown.filter(p => p.owned).length} with the same owner as ${focus.name}.`];
+    const hidden = all.filter(p => !shown.includes(p));
+    const names = hidden.slice(0, 10).map(p => (p.remote ? `${p.name} (${p.remote})` : p.name));
+    if (hidden.length) notes.push(`Not shown, with another owner and not linked to the projects shown: ${names.join(', ')}${hidden.length > 10 ? ', …' : ''}. Name their owner (--owner, or "Also owned by" in the editor) to show them.`);
+    return notes;
 }
 
 const MODEL_FILES = ['docs/c4/workspace.dsl', 'docs/architecture/workspace.dsl', 'docs/workspace.dsl', 'architecture/workspace.dsl', 'c4/workspace.dsl', 'workspace.dsl'];

@@ -58,8 +58,9 @@ code review is in [the state of the art, section 2.8](state-of-the-art.md#28-che
 
 ## Quick start
 
-**In the editor.** Choose File → Import code base…; after the analysis the window becomes the
-**Code base review**. Choose the folder in one of two ways:
+**In the editor.** Choose File → Import code base…: it opens in a tab of its own, next to the
+diagrams, and after the analysis the tab becomes the **Code base review**. Choose the folder in one
+of two ways:
 - **Choose folder…:** the browser reads the sources, `package.json` and `provenflow.config.json`,
   and sends them to the ProvenFlow server for the analysis. They are deleted afterwards.
   `node_modules` is not sent, so types from libraries are only partly known.
@@ -70,7 +71,7 @@ code review is in [the state of the art, section 2.8](state-of-the-art.md#28-che
   precise. This is available when the server is bound to localhost, which is the default;
   `PROVENFLOW_EXTRACT_PATHS=0` turns it off.
 
-The dialog then shows:
+The tab then shows:
 - the findings by category, with their fix and counterexample;
 - the models, the patterns found, and the paradigm profile with the dependencies.
 
@@ -770,7 +771,7 @@ In the editor, **Review change** opens a side-by-side view:
   - For a folder opened in the browser (Chrome/Edge), the browser writes it.
   - For a folder analysed by path, the server writes it (`POST /api/apply`, 409 if the file
     changed).
-  - Otherwise the window says why Apply is not available: an uploaded copy, or a server restarted
+  - Otherwise the review says why Apply is not available: an uploaded copy, or a server restarted
     since the analysis.
 - **Verify this version** checks the right-hand text, with your edits, exactly like a proposed
   change: the analysis runs again on the changed file (in memory, nothing is written), the finding

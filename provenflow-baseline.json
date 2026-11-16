@@ -42,24 +42,17 @@
     },
     {
       "rule": "stuck-state",
-      "subject": "CodeImportDialog.back",
-      "file": "packages/app/src/app/code-import/code-import-dialog.ts",
+      "subject": "CodeReportPage.back",
+      "file": "packages/app/src/app/code-import/code-report-page.ts",
       "count": 1,
-      "message": "Once CodeImportDialog.back is 'findings' no code changes it again, and 'findings' does not look like a final state. (Unless a computed write, e.g. packages/app/src/app/code-import/code-import-dialog.t"
-    },
-    {
-      "rule": "train-wreck",
-      "subject": "verifyThis",
-      "file": "packages/app/src/app/code-import/code-import-dialog.ts",
-      "count": 1,
-      "message": "verifyThis reaches through 3 objects in `result.finding.suggestedPatch.files.length` (finding → suggestedPatch → files): it depends on the structure of objects it does not own, so a change in any of t"
+      "message": "Once CodeReportPage.back is 'findings' no code changes it again, and 'findings' does not look like a final state. (Unless a computed write, e.g. packages/app/src/app/code-import/code-report-page.ts"
     },
     {
       "rule": "unreachable-state",
-      "subject": "CodeImportDialog.back",
-      "file": "packages/app/src/app/code-import/code-import-dialog.ts",
+      "subject": "CodeReportPage.back",
+      "file": "packages/app/src/app/code-import/code-report-page.ts",
       "count": 2,
-      "message": "'edits' is a declared value of CodeImportDialog.back but no code path sets it."
+      "message": "'edits' is a declared value of CodeReportPage.back but no code path sets it."
     },
     {
       "rule": "cognitive-complexity",

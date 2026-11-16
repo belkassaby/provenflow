@@ -6,7 +6,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { isDirectory, MANIFEST_FILES, normaliseName, readManifest, relativePath, type Ecosystem, type Manifest, type ManifestDependency } from './manifests.js';
+import { isDirectory, MANIFEST_FILES, normaliseName, readManifest, relativePath, type Ecosystem, type Manifest, type ManifestDependency, type ProjectModule } from './manifests.js';
 import { satisfies } from './semver.js';
 
 export interface ProjectInfo extends Manifest {
@@ -55,13 +55,14 @@ function hasManifest(dir: string): boolean {
     return MANIFEST_FILES.some(f => existsSync(join(dir, f)));
 }
 
-/** The project folders under `root`, not descending into a project (its modules come from its manifest). */
-export function projectFolders(root: string, depth: number, limit: number): string[] {
+/** The project folders under `root`, not descending into a project (its modules come from its manifest), nor into folders `skip` names. */
+export function projectFolders(root: string, depth: number, limit: number, skip: (dir: string) => boolean = () => false): string[] {
     let entries: string[] = [];
     try {
         entries = readdirSync(root, { withFileTypes: true })
             .filter(e => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_') && !SKIP.has(e.name))
             .map(e => join(root, e.name))
+            .filter(dir => !skip(dir))
             .sort();
     } catch {
         return [];
@@ -69,10 +70,32 @@ export function projectFolders(root: string, depth: number, limit: number): stri
     const found: string[] = [];
     for (const dir of entries) {
         if (found.length >= limit) break;
-        const here = hasManifest(dir) ? [dir] : depth > 1 ? projectFolders(dir, depth - 1, limit - found.length) : [];
+        const here = hasManifest(dir) ? [dir] : depth > 1 ? projectFolders(dir, depth - 1, limit - found.length, skip) : [];
         found.push(...here);
     }
     return found.slice(0, limit);
+}
+
+/** Folders inside a project that hold examples or test data, not parts of it. */
+const NOT_PARTS = new Set(['test', 'tests', '__tests__', 'spec', 'fixtures', 'testdata', 'examples', 'example', 'samples', 'docs', 'e2e']);
+
+/**
+ * The projects inside a project that its manifest does not list as modules (a package added to a
+ * repository without a workspace entry): they are parts of it too, as its declared modules are.
+ */
+export function undeclaredModules(dir: string, declared: ProjectModule[]): ProjectModule[] {
+    const known = declared.map(m => resolve(dir, m.dir));
+    const skip = (d: string) => NOT_PARTS.has(basename(d)) || known.some(k => d === k || d.startsWith(`${k}/`));
+    return projectFolders(dir, 3, 50, skip).flatMap(d => {
+        const m = readManifest(d);
+        return m ? [{ name: m.name, dir: relativePath(dir, d), kind: m.application ? ('application' as const) : ('library' as const), aliases: m.aliases, dependencies: m.dependencies, undeclared: true }] : [];
+    });
+}
+
+/** A manifest with the projects inside its folder that it does not declare added to its modules. */
+function withUndeclared(dir: string, manifest: Manifest): Manifest {
+    const extra = undeclaredModules(dir, manifest.modules);
+    return extra.length ? { ...manifest, modules: [...manifest.modules, ...extra], aliases: [...manifest.aliases, ...extra.flatMap(m => m.aliases)] } : manifest;
 }
 
 /** `git@github.com:Org/repo.git`, `https://github.com/Org/repo` → `github.com/org`. */
@@ -136,18 +159,33 @@ export function discoverProjects(focusDir: string, options: DiscoverOptions = {}
     const focus = resolve(focusDir);
     const roots = (options.scan?.length ? options.scan : [dirname(focus)]).map(r => resolve(r));
     const limit = options.limit ?? 300;
-    const dirs = [...new Set([focus, ...roots.flatMap(r => projectFolders(r, options.depth ?? 2, limit))])].filter(d => d === focus || !d.startsWith(`${focus}/`));
+    // A git worktree is another checkout of a project already there: only the one mapped is kept.
+    const focusCheckout = worktreeOf(focus);
+    const dirs = [...new Set([focus, ...roots.flatMap(r => projectFolders(r, options.depth ?? 2, limit))])].filter(d => d === focus || (!d.startsWith(`${focus}/`) && d !== focusCheckout && !worktreeOf(d)));
     const taken = new Set<string>();
     const projects: ProjectInfo[] = [];
     for (const dir of dirs) {
-        const manifest = readManifest(dir) ?? (dir === focus ? emptyManifest(dir) : undefined);
-        if (!manifest) continue;
+        const read = readManifest(dir) ?? (dir === focus ? emptyManifest(dir) : undefined);
+        if (!read) continue;
+        const manifest = withUndeclared(dir, read);
         // The manifest says whose project it is; a git remote found further up may be another repository's.
         const remote = remoteOwner(manifest.repository) ?? remoteOwner(gitRemote(dir));
         projects.push({ ...manifest, id: identifier(manifest.name, taken), dir, path: relativePath(roots[0], dir), remote, owned: false, focus: dir === focus });
     }
     markOwned(projects, extraOwnerKeys(options.owners ?? []));
     return projects;
+}
+
+/** The main checkout of a git worktree (its `.git` is a file pointing into `<main>/.git/worktrees/`), else nothing. */
+export function worktreeOf(dir: string): string | undefined {
+    const git = join(dir, '.git');
+    if (!existsSync(git) || isDirectory(git)) return undefined;
+    try {
+        const target = /gitdir:\s*(.+)/.exec(readFileSync(git, 'utf8'))?.[1]?.trim();
+        return target ? /^(.*)\/\.git\/worktrees\/[^/]+$/.exec(resolve(dir, target))?.[1] : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 function emptyManifest(dir: string): Manifest {
@@ -158,6 +196,8 @@ function emptyManifest(dir: string): Manifest {
  * The projects with the code base's owner (or one given), and the other local projects linked to
  * one of those: what the map shows. Ownership spreads through the git organisation, the npm scope
  * and the author, so a scoped package of the same organisation counts even in another repository.
+ * A project with no owner at all (no git remote, scope or author) is local, unpublished work: the
+ * user's own, like the code base next to it.
  */
 function markOwned(projects: ProjectInfo[], extra: string[]): void {
     const focus = projects.find(p => p.focus);
@@ -167,7 +207,7 @@ function markOwned(projects: ProjectInfo[], extra: string[]): void {
         for (const p of projects) {
             if (p.owned) continue;
             const own = ownerKeys(p);
-            if (p.focus || own.some(k => keys.has(k))) {
+            if (p.focus || own.length === 0 || own.some(k => keys.has(k))) {
                 p.owned = true;
                 // An organisation's projects bring their npm scope (and the other way round), not their authors.
                 own.filter(k => !k.startsWith('author:')).forEach(k => keys.add(k));

@@ -1,5 +1,5 @@
-import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
-import { C4_TYPE_LABELS, C4_VIEW_LABELS, type C4ElementType } from '@provenflow/language';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
+import { C4_ROUTING_LABELS, C4_ROUTINGS, C4_TYPE_LABELS, C4_VIEW_LABELS, type C4ElementType } from '@provenflow/language';
 import { downloadText, pickFile } from '../file-io';
 import { CodeImport } from '../code-import/code-import';
 import { FolderBrowse } from '../desktop-bridge';
@@ -15,26 +15,28 @@ type ExportKind = C4ExportFormat | 'svg' | 'png';
 const EXTENSIONS: Record<C4ExportFormat, string> = { dsl: 'dsl', json: 'c4.json', plantuml: 'puml', mermaid: 'mmd' };
 
 /**
- * File → C4 architecture…: a C4 model (Structurizr DSL) to view, edit and export; and the map of
- * the projects around a code base (same owner), with where code belongs.
+ * File → C4 architecture…, in its own tab: a C4 model (Structurizr DSL) to view, edit and export;
+ * and the map of the projects around a code base (same owner), with where code belongs.
  */
 @Component({
-    selector: 'app-c4-dialog',
+    selector: 'app-c4-page',
     imports: [C4Canvas, C4Properties, C4Suggestions, C4Projects, FolderBrowse],
-    templateUrl: './c4-dialog.html'
+    templateUrl: './c4-page.html',
+    host: { class: 'page' }
 })
-export class C4Dialog {
+export class C4Page {
     readonly store = inject(C4Store);
     readonly discovery = inject(C4Discovery);
     readonly codeImport = inject(CodeImport);
     readonly typeLabels = C4_TYPE_LABELS;
     readonly viewLabels = C4_VIEW_LABELS;
-    private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+    readonly routings = C4_ROUTINGS;
+    readonly routingLabels = C4_ROUTING_LABELS;
     readonly canvas = viewChild(C4Canvas);
-    readonly tab = signal<Tab>('map');
+    readonly tab = signal<Tab>(this.store.workspace().elements.length ? 'properties' : 'map');
     readonly menu = signal<'none' | 'add' | 'export'>('none');
     readonly connect = signal(false);
-    readonly path = signal('');
+    readonly path = signal(this.discovery.map()?.root ?? this.discovery.recent()[0] ?? this.codeImport.recentPaths()[0] ?? '');
     readonly scan = signal('');
     readonly owners = signal('');
     readonly dsl = signal('');
@@ -44,26 +46,20 @@ export class C4Dialog {
     readonly addTypes = computed<C4ElementType[]>(() => (this.store.workspace().views.length ? this.store.addable() : ['person', 'softwareSystem']));
     readonly errors = computed(() => this.store.diagnostics().filter(d => d.severity === 'error').length);
 
-    /** Opens the editor; with a folder (from the code base report), maps its projects. */
-    open(folder?: string): void {
-        if (!this.dialog().nativeElement.open) this.dialog().nativeElement.showModal();
+    constructor() {
         void this.codeImport.refresh();
-        const start = folder ?? this.discovery.map()?.root ?? this.discovery.recent()[0] ?? this.codeImport.recentPaths()[0] ?? '';
-        this.path.set(start);
-        if (folder) void this.discover();
-        else this.tab.set(this.store.workspace().elements.length ? 'properties' : 'map');
+    }
+
+    /** Maps the projects around a folder (from the code base report). */
+    mapFolder(folder: string): void {
+        this.path.set(folder);
+        void this.discover();
     }
 
     /** A workspace opened with the desktop application (File → Open…, the file manager). */
     openText(text: string, name: string): void {
-        this.open();
         this.flash(this.store.open(text, name) ? `Opened ${name}.` : `${name} could not be read: see the DSL tab.`);
         this.tab.set(this.errors() ? 'dsl' : 'properties');
-    }
-
-    close(): void {
-        this.menu.set('none');
-        this.dialog().nativeElement.close();
     }
 
     toggleMenu(name: 'add' | 'export'): void {
@@ -71,11 +67,8 @@ export class C4Dialog {
         else this.menu.set(name);
     }
 
-    backdropClick(event: MouseEvent): void {
-        if (event.target === this.dialog().nativeElement) this.close();
-    }
-
     keydown(event: KeyboardEvent): void {
+        if (event.key === 'Escape') this.menu.set('none');
         const editing = /^(INPUT|TEXTAREA|SELECT)$/.test((event.target as HTMLElement).tagName);
         if (editing || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
         event.preventDefault();
@@ -131,7 +124,8 @@ export class C4Dialog {
         this.flash(error ?? `Saved ${this.saveFile()} in ${this.discovery.map()?.root}.`);
     }
 
-    private flash(text: string): void {
+    /** A short message in the toolbar (also why a relationship's end could not move). */
+    flash(text: string): void {
         this.message.set(text);
         setTimeout(() => this.message() === text && this.message.set(null), 4000);
     }

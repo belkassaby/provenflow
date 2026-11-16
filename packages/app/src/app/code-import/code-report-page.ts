@@ -1,4 +1,4 @@
-import { Component, computed, DestroyRef, ElementRef, inject, output, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, inject, output, signal, viewChild } from '@angular/core';
 import { CodeDiff } from './code-diff';
 import { downloadText } from '../file-io';
 import { HelpService } from '../help-dialog/help.service';
@@ -53,15 +53,17 @@ const SOURCE_LABELS: Partial<Record<CodeFinding['source'], string>> = {
 };
 
 /**
- * File → Import code base…: runs `pflow extract` on a folder (uploaded, or a path of the machine
- * running the server) and shows the findings; every extracted model opens in the editor.
+ * File → Import code base…, in its own tab: runs `pflow extract` on a folder (uploaded, or a path
+ * of the machine running the server) and shows the findings; every extracted model opens in a
+ * diagram tab. The app chooses between a new analysis and the last report (CodeImport.clear/restore).
  */
 @Component({
-    selector: 'app-code-import-dialog',
+    selector: 'app-code-report-page',
     imports: [CodeDiff, ChangeActivity, PracticePicker, PracticeResults, FileEdits, FolderBrowse],
-    templateUrl: './code-import-dialog.html'
+    templateUrl: './code-report-page.html',
+    host: { class: 'page' }
 })
-export class CodeImportDialog {
+export class CodeReportPage {
     readonly codeImport = inject(CodeImport);
     readonly help = inject(HelpService);
     /** A model to open in the editor: its .pflow text and a file name. */
@@ -79,7 +81,6 @@ export class CodeImportDialog {
     readonly llmSpec = computed(() => this.codeImport.llm() || this.llm.choices()[0]?.spec || '');
     readonly changeKey = changeKey;
 
-    private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
     /** The folder path, the last one analysed to start with. */
     readonly path = signal(this.codeImport.recentPaths()[0] ?? '');
     readonly view = signal<View>('findings');
@@ -93,6 +94,8 @@ export class CodeImportDialog {
     readonly elapsed = computed(() => (this.codeImport.running() ? this.duration(this.now() - this.codeImport.startedAt()) : ''));
 
     constructor() {
+        void this.codeImport.refresh();
+        void this.llm.load();
         const timer = setInterval(() => {
             if (this.codeImport.running()) this.now.set(Date.now());
         }, 1000);
@@ -184,7 +187,6 @@ export class CodeImportDialog {
         const c = this.modelChange()?.change;
         if (c?.after) {
             this.openModel.emit({ text: c.after, name: `${c.id}-after-change.pflow`, check: true });
-            this.close();
         }
     }
 
@@ -258,9 +260,9 @@ export class CodeImportDialog {
         this.applyMessage.set(null);
         const result = await this.change.verify(f, changed);
         if (result.finding) {
-            this.reviewing.set(result.finding);
-            this.fileIndex.set(Math.min(index, (result.finding.suggestedPatch?.files?.length ?? 1) - 1));
             const p = result.finding.suggestedPatch!;
+            this.reviewing.set(result.finding);
+            this.fileIndex.set(Math.min(index, (p.files?.length ?? 1) - 1));
             this.applyMessage.set({ ok: p.verified, text: `${p.verified ? '✓ Verified' : '✗ Not verified'}: ${p.note}` });
         } else this.applyMessage.set({ ok: false, text: result.error ?? 'Nothing was checked.' });
     }
@@ -303,30 +305,6 @@ export class CodeImportDialog {
         }
     }
 
-    /** `fresh`: start a new analysis; otherwise show the last report (kept across reloads). */
-    open(fresh = false): void {
-        void this.codeImport.refresh();
-        void this.llm.load();
-        if (!this.codeImport.running()) {
-            if (fresh) this.codeImport.clear();
-            else this.codeImport.restore();
-        }
-        const dialog = this.dialog().nativeElement;
-        if (!dialog.open) dialog.showModal();
-    }
-
-    close(): void {
-        this.dialog().nativeElement.close();
-    }
-
-    /**
-     * Closes when the backdrop (the dialog element itself) is clicked. Returns nothing: an Angular
-     * handler returning false cancels the event, which would stop file pickers and links inside.
-     */
-    backdropClick(event: MouseEvent): void {
-        if (event.target === this.dialog().nativeElement) this.close();
-    }
-
     toggle(severity: Severity): void {
         const next = new Set(this.shown());
         if (next.has(severity)) next.delete(severity);
@@ -352,7 +330,6 @@ export class CodeImportDialog {
     /** Opens a model in the editor; from a finding, also checks it so the counterexample is one click away. */
     show(model: CodeModel, check = model.failed.length > 0): void {
         this.openModel.emit({ text: model.pflow, name: `${model.id}.pflow`, check });
-        this.close();
     }
 
     where(loc: { file: string; line: number } | undefined): string {
@@ -365,13 +342,11 @@ export class CodeImportDialog {
     }
 
     openLlmSettings(): void {
-        this.close();
         this.llmSettings.emit();
     }
 
     /** Help → a walkthrough: the Code base review, or how to install the analysers ('analyzers'). */
     walkthrough(id = 'code'): void {
-        this.close();
         this.help.walkthrough(id);
     }
 }

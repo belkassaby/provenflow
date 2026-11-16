@@ -7,12 +7,13 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
 import { filesFromArgv, OPEN_FILTERS, readOpenable, type OpenedFile } from './files.js';
 import { menuTemplate, type DesktopCommand } from './menu.js';
 import { startServer, type RunningServer } from './server.js';
 import { loginShellPath, mergePath } from './shell-path.js';
 import { createWindow, preloadPath } from './window.js';
+import { loadWindowState, saveWindowState, themeOf } from './window-state.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** The built editor: next to the application when packaged (see scripts/stage.mjs), else in the repository. */
@@ -59,9 +60,21 @@ class DesktopApp {
             this.flushPending();
         });
         ipcMain.handle('provenflow:pick-folder', (event, title: unknown) => this.pickFolder(event, typeof title === 'string' ? title : undefined));
+        // The window's frame, its menus and the system dialogs follow the editor's theme, from the next start too.
+        ipcMain.on('provenflow:theme', (event, value: unknown) => {
+            const theme = themeOf(value);
+            if (!theme || event.sender !== this.win?.webContents || nativeTheme.themeSource === theme) return;
+            nativeTheme.themeSource = theme;
+            saveWindowState(this.stateFile(), { theme });
+        });
+    }
+
+    private stateFile(): string {
+        return join(app.getPath('userData'), 'window-state.json');
     }
 
     private async ready(): Promise<void> {
+        nativeTheme.themeSource = loadWindowState(this.stateFile()).theme ?? 'system';
         try {
             this.server = await startServer(UI_DIR);
         } catch (error) {
@@ -77,7 +90,7 @@ class DesktopApp {
     private showWindow(): void {
         if (!this.server) return;
         this.rendererReady = false;
-        this.win = createWindow({ url: this.server.url, preload: preloadPath(here), stateFile: join(app.getPath('userData'), 'window-state.json'), icon: ICON });
+        this.win = createWindow({ url: this.server.url, preload: preloadPath(here), stateFile: this.stateFile(), icon: ICON });
         this.win.webContents.on('did-start-loading', () => {
             this.rendererReady = false;
         });

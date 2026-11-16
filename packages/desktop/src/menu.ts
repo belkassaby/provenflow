@@ -20,7 +20,8 @@ export type DesktopCommand =
     | 'simulate'
     | 'llm-settings'
     | 'help-guide'
-    | 'help-walkthroughs';
+    | 'help-walkthroughs'
+    | 'toggle-theme';
 
 export interface MenuActions {
     /** Sends a command to the editor. */
@@ -37,7 +38,7 @@ export const ISSUES_URL = 'https://github.com/belkassaby/provenflow/issues';
 
 export function menuTemplate(platform: NodeJS.Platform, appName: string, actions: MenuActions): MenuItemConstructorOptions[] {
     const send = (command: DesktopCommand) => () => actions.command(command);
-    return [...(platform === 'darwin' ? [appMenu(appName, send)] : []), fileMenu(platform, actions, send), editMenu(), viewMenu(), verifyMenu(send), windowMenu(platform), helpMenu(platform, actions, send)];
+    return [...(platform === 'darwin' ? [appMenu(appName, send)] : []), fileMenu(platform, actions, send), editMenu(), viewMenu(send), verifyMenu(send), windowMenu(platform), helpMenu(platform, actions, send)];
 }
 
 type Send = (command: DesktopCommand) => () => void;
@@ -83,8 +84,8 @@ function editMenu(): MenuItemConstructorOptions {
     return { label: '&Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'delete' }, { type: 'separator' }, { role: 'selectAll' }] };
 }
 
-function viewMenu(): MenuItemConstructorOptions {
-    return { label: '&View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] };
+function viewMenu(send: Send): MenuItemConstructorOptions {
+    return { label: '&View', submenu: [{ label: 'Toggle Dark Theme', accelerator: 'CmdOrCtrl+Alt+T', click: send('toggle-theme') }, { type: 'separator' }, { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] };
 }
 
 function verifyMenu(send: Send): MenuItemConstructorOptions {

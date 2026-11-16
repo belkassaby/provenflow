@@ -1,4 +1,4 @@
-/** The main window's size and place, kept between runs (in the user data folder). */
+/** The main window's size, place and theme, kept between runs (in the user data folder). */
 import { readFileSync, writeFileSync } from 'node:fs';
 
 export interface Bounds {
@@ -8,9 +8,13 @@ export interface Bounds {
     height: number;
 }
 
+export type Theme = 'light' | 'dark';
+
 export interface WindowState {
     bounds?: Bounds;
     maximized?: boolean;
+    /** The editor's theme, last chosen (the window opens in it, before the page has loaded). */
+    theme?: Theme;
 }
 
 export const DEFAULT_SIZE = { width: 1440, height: 900 };
@@ -25,9 +29,10 @@ export function loadWindowState(file: string): WindowState {
     }
 }
 
+/** Saves what changed, keeping the rest. */
 export function saveWindowState(file: string, state: WindowState): void {
     try {
-        writeFileSync(file, JSON.stringify(state));
+        writeFileSync(file, JSON.stringify({ ...loadWindowState(file), ...state }));
     } catch {
         // The user data folder is not writable: the next run opens at the default size.
     }
@@ -46,3 +51,11 @@ export function visibleBounds(saved: Bounds | undefined, screens: Bounds[]): Bou
 function overlap(a: number, aLength: number, b: number, bLength: number): number {
     return Math.min(a + aLength, b + bLength) - Math.max(a, b);
 }
+
+/** A theme sent by the page, if it is one. */
+export function themeOf(value: unknown): Theme | undefined {
+    return value === 'light' || value === 'dark' ? value : undefined;
+}
+
+/** The window's colour before the page paints: the editor's background in each theme. */
+export const BACKGROUND: Record<Theme, string> = { light: '#eef1f5', dark: '#0f141a' };
