@@ -11,6 +11,8 @@ import { createContext, type PlacementSuggestion } from './context.js';
 import { discoverProjects, linkProjects, shownProjects, type DiscoverOptions, type ProjectInfo, type ProjectLink } from './discover.js';
 import { cycles, declaredVersusUsed, outdated, sharedLibraries, versionDrift, type SharedLibrary } from './hygiene.js';
 import { buildWorkspace } from './landscape.js';
+import { driftFindings } from './drift.js';
+import type { Finding } from '../models.js';
 import { duplicatesAcross, moveToConsumer, moveToDependency } from './placement.js';
 import { readSources, type ProjectSources } from './sources.js';
 
@@ -78,9 +80,30 @@ function shownNotes(all: ProjectInfo[], shown: ProjectInfo[], focus: ProjectInfo
 
 const MODEL_FILES = ['docs/c4/workspace.dsl', 'docs/architecture/workspace.dsl', 'docs/workspace.dsl', 'architecture/workspace.dsl', 'c4/workspace.dsl', 'workspace.dsl'];
 
+/** The code base's own C4 model file (relative), if it has one. */
+export function modelFileOf(root: string): string | undefined {
+    return MODEL_FILES.find(f => existsSync(join(root, f))) ?? dslIn(root, 'docs/c4');
+}
+
+/**
+ * Where the code base's own C4 model and its code disagree: the code base alone is mapped (no
+ * projects around it), so the result depends only on what is checked out.
+ */
+export function modelDrift(dir: string, model?: string): { file?: string; findings: Finding[]; notes: string[] } {
+    const root = resolve(dir);
+    const file = model ?? modelFileOf(root);
+    if (!file || !existsSync(join(root, file))) return { findings: [], notes: [] };
+    const text = readFileSync(join(root, file), 'utf8');
+    const parsed = parseC4Dsl(text);
+    const errors = parsed.diagnostics.filter(d => d.severity === 'error');
+    if (errors.length) return { file, findings: [], notes: [`${file}: not compared with the code, ${errors.length} error(s), first on line ${errors[0].line}: ${errors[0].message}`] };
+    const discovered = mapProjects(root, { scan: [root] }).workspace;
+    return { file, findings: driftFindings({ file, text, workspace: parsed.workspace }, discovered), notes: [] };
+}
+
 /** The code base's own C4 model, if it has one, and the discovered projects merged into it. */
 function existingModel(root: string, discovered: C4Workspace, notes: string[]): ProjectMap['existing'] {
-    const file = MODEL_FILES.find(f => existsSync(join(root, f))) ?? dslIn(root, 'docs/c4');
+    const file = modelFileOf(root);
     if (!file) return undefined;
     const text = readFileSync(join(root, file), 'utf8');
     const parsed = parseC4Dsl(text);

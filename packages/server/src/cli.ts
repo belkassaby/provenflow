@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { hookCommand } from './commands/agents.js';
 import { c4Command } from './commands/c4.js';
+import { trendsCommand } from './commands/trends.js';
+import { benchCommand } from './commands/bench.js';
 import { catalogueCommand } from './commands/catalogue.js';
-import { baselineCommand, compareCommand, extractCommand, initCommand, mutateCommand, postReviewCommand, reviewCommand } from './commands/code.js';
+import { baselineCommand, compareCommand, extractCommand, fixPrCommand, initCommand, mutateCommand, postReviewCommand, reviewCommand } from './commands/code.js';
 import { diagramCommand, isDiagramCommand } from './commands/diagram.js';
 import { parse, type Values } from './commands/shared.js';
 import { serveMcp } from './mcp.js';
@@ -82,6 +84,7 @@ const CODE_COMMANDS: Record<string, CodeCommand> = {
     compare: compareCommand,
     mutate: mutateCommand,
     init: initCommand,
+    'fix-pr': fixPrCommand,
     'post-review': file => postReviewCommand(file)
 };
 
@@ -95,6 +98,8 @@ async function main(): Promise<number> {
     if (command === 'hook' && rest[0]) return hookCommand(rest[0]);
     if (command === 'catalogue') return catalogueCommand(values, rest[0]);
     if (command === 'c4') return c4Command(values, rest[0]);
+    if (command === 'trends') return trendsCommand(values, rest);
+    if (command === 'bench') return benchCommand(values, rest);
     // pflow export <framework> <diagram>: the diagram is the second argument.
     const framework = command === 'export' ? rest.shift() : undefined;
     const [file, second] = rest;

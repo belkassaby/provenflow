@@ -723,14 +723,6 @@
     },
     {
       "rule": "cognitive-complexity",
-      "subject": "planFor",
-      "file": "packages/extract/src/replay.ts",
-      "count": 1,
-      "measure": 24,
-      "message": "planFor has a Cognitive Complexity of 24 (limit 15; cyclomatic 37, nesting 2): it is hard to read and to test."
-    },
-    {
-      "rule": "cognitive-complexity",
       "subject": "copy",
       "file": "packages/extract/src/tools/workspace.ts",
       "count": 1,

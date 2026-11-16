@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { c4ViewToText, defaultRouting, elementStyle, mergeC4Workspaces, parseC4Dsl, removeElement, routingOf, viewContents, withAnchor, withDefaultRouting, writeC4Dsl, type C4Workspace } from '../src/index.js';
+import { c4Drift, c4ViewToText, defaultRouting, elementStyle, mergeC4Workspaces, parseC4Dsl, removeElement, routingOf, viewContents, withAnchor, withDefaultRouting, writeC4Dsl, type C4Workspace } from '../src/index.js';
 
 const DSL = `
 /* A shop, in the forms the Structurizr DSL allows. */
@@ -245,5 +245,42 @@ describe('editing and merging C4 models', () => {
         expect(merged.relationships.find(r => r.source === 'web' && r.destination === merged.elements.find(e => e.name === 'Logger')!.id)?.tags).toContain('Discovered');
         expect(merged.elements.filter(e => e.name === 'Shop')).toHaveLength(1);
         expect(merged.views.map(v => v.key)).toContain('projects');
+    });
+
+    it('finds where a written model and the code disagree', () => {
+        const written = parseC4Dsl(`workspace { model {
+            shop = softwareSystem "Shop" {
+                web = container "Web app"
+                api = container "API" { orders = component "Orders" }
+                db = container "Database"
+            }
+            mail = softwareSystem "Mailer"
+            web -> api "Calls"
+            orders -> db "Reads"
+            api -> mail "Sends"
+            web -> db "Reads directly"
+        } }`).workspace;
+        const code = parseC4Dsl(`workspace { model {
+            s = softwareSystem "Shop" {
+                w = container "web-app"
+                a = container "api" { o = component "orders" \n p = component "payments" }
+                d = container "database"
+                q = container "queue"
+            }
+            w -> a "imports"
+            o -> d "imports"
+            p -> w "imports"
+            a -> q "imports"
+        } }`).workspace;
+        const drift = c4Drift(written, code);
+        // In the code, not in the model: the payments component (in the API) and the queue (in the shop).
+        expect(drift.elements.map(e => [e.element.name, e.within?.id])).toEqual([
+            ['payments', 'api'],
+            ['queue', 'shop']
+        ]);
+        // payments -> web-app stands for API -> Web app, which the model does not show; the queue's link is inside a new part.
+        expect(drift.relationships.map(r => [r.source.id, r.destination.id])).toEqual([['api', 'web']]);
+        // Web app -> Database: both are in the code, and nothing there backs it. API -> Mailer: the mailer is not in the code.
+        expect(drift.unbacked.map(r => r.description)).toEqual(['Reads directly']);
     });
 });

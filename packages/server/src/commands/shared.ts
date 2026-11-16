@@ -49,7 +49,17 @@ export const OPTIONS = {
     depth: { type: 'string' },
     format: { type: 'string' },
     view: { type: 'string' },
-    merge: { type: 'boolean', default: false }
+    merge: { type: 'boolean', default: false },
+    osv: { type: 'boolean', default: false },
+    history: { type: 'string' },
+    'no-history': { type: 'boolean', default: false },
+    check: { type: 'boolean', default: false },
+    branch: { type: 'string' },
+    'dry-run': { type: 'boolean', default: false },
+    last: { type: 'string' },
+    backfill: { type: 'string' },
+    projects: { type: 'boolean', default: false },
+    'fix-pr': { type: 'boolean', default: false }
 } as const;
 
 export function parse(argv: string[]) {

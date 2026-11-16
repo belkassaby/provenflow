@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
+    appendHistory,
     codeQuality,
     compareResults,
     comparisonMarkdown,
@@ -15,6 +16,8 @@ import {
     dominant,
     extractProject,
     findClones,
+    historyEntry,
+    historyPath,
     isAgentCommit,
     mergeConfigs,
     mutateLine,
@@ -24,12 +27,15 @@ import {
     planMutants,
     proposeConfig,
     rdjson,
+    readHistory,
     restyle,
     runReview,
     sarif,
     shapeOf,
     similarToSnippet,
+    sparkline,
     tokenize,
+    trendTable,
     validateFragment,
     type ExtractionResult,
     type Finding,
@@ -263,6 +269,65 @@ describe('a review of a change in a git repository', () => {
             expect(run.agents?.commits).toHaveLength(1);
             // A warning fails on agent-written lines (failOn is error for the others).
             expect(run.failing.map(f => f.rule)).toContain('duplicated-code');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('hotspots', () => {
+    const branches = (name: string, n: number) =>
+        `export function ${name}(x: number): number {\n${Array.from({ length: n }, (_, i) => `    if (x > ${i}) {\n        if (x % 2) {\n            x -= 1;\n        }\n    }`).join('\n')}\n    return x;\n}\n`;
+
+    it('ranks complex functions by how often their file changes', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'provenflow-hotspots-'));
+        try {
+            const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Jane', GIT_AUTHOR_EMAIL: 'jane@example.org', GIT_COMMITTER_NAME: 'Jane', GIT_COMMITTER_EMAIL: 'jane@example.org' } });
+            git('init', '-q');
+            // A very complex function nobody touches, and a less complex one changed three times.
+            writeFileSync(join(dir, 'calm.ts'), branches('calm', 8));
+            for (let i = 1; i <= 3; i++) {
+                writeFileSync(join(dir, 'busy.ts'), branches('busy', 3) + `export const VERSION = ${i};\n`);
+                git('add', '.');
+                git('commit', '-qm', `change ${i}`);
+            }
+            const r = await extractProject(dir, { ...quick, config: {} });
+            const [first, second] = r.quality.metrics.hotspots;
+            expect(r.quality.metrics.churn).toEqual({ months: 12, commits: 3 });
+            expect(first).toMatchObject({ name: 'busy', changes: 3, score: first.cognitive * 3 });
+            expect(second).toMatchObject({ name: 'calm', changes: 1 });
+            expect(second.cognitive).toBeGreaterThan(first.cognitive);
+            // Without history: the most complex first.
+            const plain = await extractProject(dir, { ...quick, config: { hotspots: false } });
+            expect(plain.quality.metrics.churn).toBeUndefined();
+            expect(plain.quality.metrics.hotspots[0].name).toBe('calm');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('trends', () => {
+    it('keeps each run, a commit once, and shows how the measures moved', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'provenflow-trends-'));
+        try {
+            writeFileSync(join(dir, 'a.ts'), 'export function a(x: number): number {\n    return x + 1;\n}\n');
+            const result = await extractProject(dir, { ...quick, config: {} });
+            const file = join(dir, 'history.jsonl');
+            const entry = (date: string, commit: string, warnings: number, p90: number) => ({ ...historyEntry(result, date, commit), findings: { error: 0, warning: warnings, info: 0 }, complexity: { mean: 1, p90, overLimit: 0 } });
+            appendHistory(file, entry('2026-03-01T00:00:00Z', 'aaa', 9, 20));
+            appendHistory(file, entry('2026-01-01T00:00:00Z', 'zzz', 12, 25));
+            appendHistory(file, entry('2026-02-01T00:00:00Z', 'mmm', 10, 22));
+            appendHistory(file, entry('2026-03-02T00:00:00Z', 'aaa', 8, 18));
+            const history = readHistory(file);
+            expect(history.map(e => e.commit)).toEqual(['zzz', 'mmm', 'aaa']);
+            expect(history[2].findings.warning).toBe(8);
+            const table = trendTable(history).join('\n');
+            expect(table).toContain('| warnings | 12 | 8 | -4 | █▅▁ |');
+            expect(table).toContain('| complexity, 90th percentile | 25 | 18 | -7 |');
+            expect(sparkline([1, 1, 1])).toBe('▁▁▁');
+            expect(historyPath(dir, { history: false })).toBeUndefined();
+            expect(historyPath(dir, {})).toBe(join(dir, '.provenflow', 'history.jsonl'));
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

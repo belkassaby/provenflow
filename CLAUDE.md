@@ -1,6 +1,6 @@
 # ProvenFlow
 
-Design and verify state machines with nuXmv, and review code: model-check a code base or a pull request, measure its quality, and propose verified fixes. It ships as the `pflow` CLI, an Express server with an Angular editor (the web version), the same editor and server as a desktop application for macOS, Windows and Linux (Electron, `packages/desktop`), an MCP server for coding agents, and a GitHub Action (`action.yml`).
+Design and verify state machines with nuXmv, and review code: model-check a code base or a pull request, measure its quality, and propose verified fixes. It ships as the `pflow` CLI, an Express server with an Angular editor (the web version), the same editor and server as a desktop application for macOS, Windows and Linux (Electron, `packages/desktop`), an MCP server for coding agents, a VS Code extension (`packages/vscode`), and a GitHub Action (`action.yml`).
 
 ## Layout
 
@@ -13,6 +13,7 @@ npm workspaces, ESM, TypeScript, Node >= 20.19.
 | `packages/server` | Express app (`routes/`, `context.ts`), `pflow` CLI (`cli.ts`, `commands/`), MCP server (`mcp.ts`) | `language`, `extract` |
 | `packages/app` | Angular editor (object-oriented style) | `language` |
 | `packages/desktop` | Electron application: the server on a loopback port and the editor in a window, native menus, file associations (object-oriented style) | `server`, `extract` |
+| `packages/vscode` | VS Code extension: runs the `pflow` CLI on save, shows its findings as diagnostics and its verified fixes as quick fixes (object-oriented style) | nothing (it runs `pflow`) |
 
 These rules are enforced by `provenflow.config.json` (`layers`). Import a package only through its `index.ts` facade. Don't reach into another package's files.
 
@@ -22,6 +23,7 @@ These rules are enforced by `provenflow.config.json` (`layers`). Import a packag
 npm run build        # language → extract → server → app, in this order (the web version)
 npm run build:desktop  # the same, then packages/desktop (Electron); npm run desktop runs it
 npm run dist:desktop   # installers for this platform in packages/desktop/release/
+npm run build:vscode   # the VS Code extension (packages/vscode); npx @vscode/vsce package there makes the .vsix
 npm run typecheck
 npm test             # vitest in each package (app: ng test)
 npm run check:code   # self-check: pflow extract . --fail-on warning (needs a build first)
@@ -53,6 +55,7 @@ User-facing behaviour is documented in `README.md` (command table) and `docs/`:
 - `quality-before-after.md` has the before/after report.
 - `c4-architecture.md` covers the C4 editor, the project map and the placement suggestions.
 - `desktop.md` covers the web and desktop builds, packaging and signing.
+- `vscode.md` covers the VS Code extension: settings, commands, fixes and packaging.
 
 Update them in the same change as the code. The anchors in `docs/code-model-checking.md` must match `CATEGORY_DOCS` in `packages/extract/src/report-formats.ts`.
 

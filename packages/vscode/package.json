@@ -1,0 +1,91 @@
+{
+  "name": "provenflow-vscode",
+  "displayName": "ProvenFlow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ProvenFlow's findings in VS Code: model-checked state machines, resource lifecycles, code quality and verified fixes, from the pflow command-line tool.",
+  "license": "MIT",
+  "publisher": "belkassaby",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/belkassaby/provenflow"
+  },
+  "type": "commonjs",
+  "main": "./out/extension.js",
+  "engines": {
+    "vscode": "^1.140.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "provenflow.analyse",
+        "title": "Analyse workspace",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.openReport",
+        "title": "Open report",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.openModel",
+        "title": "Open model",
+        "category": "ProvenFlow"
+      }
+    ],
+    "configuration": {
+      "title": "ProvenFlow",
+      "properties": {
+        "provenflow.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path of the pflow command. Empty: node_modules/.bin/pflow in the workspace folder, then pflow on the PATH."
+        },
+        "provenflow.runOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analyse the workspace folder when a file is saved."
+        },
+        "provenflow.saveDelay": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 0,
+          "description": "Milliseconds to wait after the last save before analysing."
+        },
+        "provenflow.fullAnalysis": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also run the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and replay counterexamples on the code. Slower."
+        },
+        "provenflow.proposeFixes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Propose automatic fixes (pflow extract --fix), each verified by re-running the analysis and the build."
+        },
+        "provenflow.offerUnverifiedFixes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also offer fixes that could not be verified, to review before keeping them."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "1.140.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}

@@ -10,7 +10,7 @@ import type { C4Element, C4Relationship, C4View, C4Workspace } from '@provenflow
 import { importProfile, type PlacementContext } from './context.js';
 import type { ProjectInfo, ProjectLink } from './discover.js';
 import type { SharedLibrary } from './hygiene.js';
-import { resolveRelative, type ProjectSources } from './sources.js';
+import { packageOf, resolveRelative, type ProjectSources } from './sources.js';
 
 const MAX_COMPONENTS = 25;
 const MAX_LIBRARIES = 8;
@@ -47,6 +47,7 @@ export function buildWorkspace(ctx: PlacementContext, focus: ProjectInfo, librar
     const b: Builder = { ws: { name: `${focus.name} and related projects`, description: `The projects around ${focus.name}, how they depend on each other, and what each is made of.`, elements: [], relationships: [], environments: [], views: [], styles: DEFAULT_STYLES }, taken: new Set(ctx.projects.map(p => p.id)), containers: new Map(), rels: new Map() };
     for (const p of ctx.projects) addProject(b, p);
     for (const l of ctx.links) if (ctx.byId.has(l.from) && ctx.byId.has(l.to)) linkContainers(b, l);
+    for (const p of ctx.projects) linkModules(b, p);
     for (const [pid, sources] of ctx.sources) if (ctx.byId.get(pid)?.owned) addComponents(b, ctx, sources);
     addLibraries(b, libraries.slice(0, MAX_LIBRARIES));
     b.ws.relationships = [...b.rels.values()];
@@ -99,6 +100,22 @@ function linkContainers(b: Builder, l: ProjectLink): void {
     relate(b, from, to, 'Depends on', [l.dependency.name, l.dependency.range].filter(Boolean).join(' '), [...kind, ...(l.satisfied === false ? ['Outdated'] : [])]);
 }
 
+/** The module of a project a package name is (its name or one of its aliases). */
+function moduleNamed(p: ProjectInfo, name: string): ProjectInfo['modules'][number] | undefined {
+    return p.modules.find(m => m.name === name || m.aliases.includes(name));
+}
+
+/** Dependencies between the modules of one project (a workspace package on another), as their manifests declare them. */
+function linkModules(b: Builder, p: ProjectInfo): void {
+    for (const m of p.modules) {
+        for (const d of m.dependencies) {
+            const target = moduleNamed(p, d.name);
+            const [from, to] = [containerOf(b, p.id, m.name), target && containerOf(b, p.id, target.name)];
+            if (from && to && from !== to) relate(b, from, to, 'Depends on', [d.name, d.range].filter(Boolean).join(' '), ['Module dependency']);
+        }
+    }
+}
+
 /** The component a file is in: the first folder below the container's folder and its source roots. */
 function componentKey(file: string, containerDir: string, packages: string[]): string {
     const rel = containerDir === '.' ? file : file.slice(containerDir.length + 1);
@@ -143,6 +160,7 @@ function addComponents(b: Builder, ctx: PlacementContext, sources: ProjectSource
 
 function componentRelationships(b: Builder, ctx: PlacementContext, sources: ProjectSources, componentOf: Map<string, string>, ids: Map<string, string>): void {
     const files = new Set(sources.files.map(f => f.file));
+    const p = sources.project;
     const counts = new Map<string, { source: string; destination: string; n: number; names: Set<string> }>();
     const count = (source: string | undefined, destination: string | undefined, names: string[] = []) => {
         if (!source || !destination || source === destination) return;
@@ -155,9 +173,19 @@ function componentRelationships(b: Builder, ctx: PlacementContext, sources: Proj
     for (const f of sources.files.filter(x => !x.test)) {
         const from = ids.get(componentOf.get(f.file) ?? '');
         for (const imp of f.imports.filter(i => i.relative)) count(from, ids.get(componentOf.get(resolveRelative(f.file, imp, f.language, files) ?? '') ?? ''));
+        // Imports of another module of the same project (a workspace package).
+        for (const [module, names] of moduleImports(p, f)) count(from, containerOf(b, p.id, module), names);
         for (const [q, names] of importProfile(ctx, sources, f).projects) count(from, containerOf(b, q), [...names]);
     }
     for (const c of counts.values()) relate(b, c.source, c.destination, 'Uses', c.names.size ? [...c.names].slice(0, 4).join(', ') : `${c.n} import${c.n > 1 ? 's' : ''}`, ['Import']);
+}
+
+/** The modules of its own project a file imports (by package name), with the names imported. */
+function moduleImports(p: ProjectInfo, f: ProjectSources['files'][number]): Array<[string, string[]]> {
+    return f.imports.filter(i => !i.relative).flatMap(imp => {
+        const module = moduleNamed(p, packageOf(imp, f.language));
+        return module ? [[module.name, imp.names] as [string, string[]]] : [];
+    });
 }
 
 function addLibraries(b: Builder, libraries: SharedLibrary[]): void {

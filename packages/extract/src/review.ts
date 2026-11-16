@@ -216,13 +216,13 @@ export async function publishReview(target: GithubTarget, payload: ReviewPayload
     return { posted: review.posted, alreadyReported: payload.comments.length - fresh.length, fixed: gone.length, url: review.url, summaryUrl };
 }
 
-interface GithubApi {
+export interface GithubApi {
     call(method: string, path: string, body?: unknown): Promise<Response>;
     /** Every page of a list (up to 2,000 items). */
     all<T>(path: string): Promise<T[]>;
 }
 
-function githubApi(target: GithubTarget, fetchImpl: typeof fetch): GithubApi {
+export function githubApi(target: GithubTarget, fetchImpl: typeof fetch): GithubApi {
     const base = target.apiUrl ?? 'https://api.github.com';
     const headers = { authorization: `Bearer ${target.token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' };
     const call = (method: string, path: string, body?: unknown) => fetchImpl(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });

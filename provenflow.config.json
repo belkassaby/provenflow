@@ -55,6 +55,14 @@
         "extract"
       ],
       "style": "object-oriented"
+    },
+    {
+      "name": "vscode",
+      "paths": [
+        "packages/vscode/src/**"
+      ],
+      "mayImport": [],
+      "style": "object-oriented"
     }
   ],
   "packageEntries": true,
@@ -145,6 +153,11 @@
     "minFunctionTokens": 50
   },
   "ignore": [
+    {
+      "rule": "oop-mutates-foreign-object",
+      "file": "packages/vscode/src/extension.ts",
+      "reason": "VS Code hands activate() its ExtensionContext so that the extension adds its disposables to context.subscriptions; VS Code disposes them when it deactivates the extension. That is the API, not a foreign object changed behind its owner's back."
+    },
     {
       "rule": "fp-mutable-global",
       "file": "packages/language/src/parse.ts",

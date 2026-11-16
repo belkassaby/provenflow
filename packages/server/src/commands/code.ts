@@ -17,6 +17,7 @@ import {
     findingKey,
     formatFindings,
     fromFork,
+    historyPath,
     githubTargetFromEnv,
     loadConfig,
     logged,
@@ -28,6 +29,7 @@ import {
     publishReview,
     readBaseline,
     readInstructions,
+    recordRun,
     reviewComments,
     reviewSummary,
     rulesFromInstructions,
@@ -42,10 +44,11 @@ import {
     type ReviewPayload,
     type ReviewRun
 } from '@provenflow/extract';
+import { proposeFixes } from './fix-pr.js';
 import { checksOf, clearProgress, failOnLevel, githubBase, nuxmvChecker, terminalProgress, type Values } from './shared.js';
 
 /** Options of the analysis shared by the code commands. */
-async function analysisOptions(values: Values, defaults: { analyzers: boolean } = { analyzers: true }): Promise<ExtractOptions & { nuxmv: boolean }> {
+export async function analysisOptions(values: Values, defaults: { analyzers: boolean } = { analyzers: true }): Promise<ExtractOptions & { nuxmv: boolean }> {
     const { checker, available } = await nuxmvChecker(values);
     return {
         configFile: values.config,
@@ -58,6 +61,7 @@ async function analysisOptions(values: Values, defaults: { analyzers: boolean } 
         analyzers: values['no-analyzers'] ? false : values.analyzers || defaults.analyzers,
         confirm: !values['no-confirm'],
         coverage: values.coverage,
+        osv: values.osv,
         onProgress: values.quiet ? undefined : terminalProgress()
     };
 }
@@ -66,7 +70,8 @@ export async function extractCommand(dir: string, values: Values): Promise<numbe
     const { nuxmv, ...options } = await analysisOptions(values);
     const result = await extractProject(dir, options);
     clearProgress();
-    const written = writeOutputs(result, values.output ?? join(dir, '.provenflow', 'extract'));
+    const history = values['no-history'] ? [] : recordRun(result, historyPath(result.root, result.config, values.history));
+    const written = writeOutputs(result, values.output ?? join(dir, '.provenflow', 'extract'), history);
     if (!values.quiet) console.log(formatFindings(result, 'warning'));
     result.notes.forEach(n => console.error(`note: ${n}`));
     // Only findings beyond the baseline fail.
@@ -113,7 +118,16 @@ export async function reviewCommand(dir: string, values: Values): Promise<number
         const posted = await postToGithub(run, body, comments, values);
         if (posted !== 0) return posted;
     }
+    if (values['fix-pr']) await proposeFixes(dir, run.relevant, values);
     return run.failing.length > 0 ? 5 : 0;
+}
+
+/** pflow fix-pr: the verified fixes of every finding (of the changed lines with --base) as one pull request. */
+export async function fixPrCommand(dir: string, values: Values): Promise<number> {
+    const { nuxmv: _nuxmv, ...options } = await analysisOptions({ ...values, fix: true });
+    const findings = values.base ? (await runReview(dir, { ...options, base: values.base, newOnly: values['new-only'], failOn: 'none' })).relevant : (await extractProject(dir, options)).findings;
+    clearProgress();
+    return proposeFixes(dir, findings, values);
 }
 
 /** --state <dir>: the last run of this pull request (e.g. from the Actions cache), so a push re-analyses only what changed. */

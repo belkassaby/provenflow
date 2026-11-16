@@ -18,13 +18,20 @@ AI-generated code base, or a pull request:
 - it runs the analysers that are installed alongside: Semgrep (security and dataflow), Infer (heap),
   ESBMC/CBMC and Kani (memory safety, proved per function);
 - each finding comes with the code path that shows it (confirmed by replaying it on the real code
-  where possible) and a fix;
+  where possible) and a fix; a counterexample becomes a regression test (vitest or pytest) that
+  drives the real code along it, fails while the bug is there and passes once it is fixed, and
+  `pflow bench` counts how often the counterexamples of a code base are real;
 - fixes are proposed without an LLM (automatic fixes) or with one, and each is marked verified only
   when re-running the analysis and the build on the changed code shows the finding gone and nothing
-  new;
+  new; every verified fix of a run can go into one pull request (`pflow fix-pr`, or the Action's
+  `fix-pr` input);
 - it checks what AI-generated code most often gets wrong: duplicated code and re-implemented
   helpers, complexity (Cognitive Complexity, nesting), naming conventions, imports of packages that
-  do not exist, and changed lines no test runs or checks (coverage reports, mutation testing). The
+  do not exist, known vulnerabilities of the locked dependency versions (from
+  [OSV](https://osv.dev), opt-in), and changed lines no test runs or checks (coverage reports,
+  mutation testing). Hotspots rank complex functions by how often git says their file changes, and
+  `pflow trends` shows how the measures moved over the runs, for one code base or all of an
+  owner's projects. The
   limits and naming rules of each language come from its style guide and main linter
   ([docs/coding-standards.md](docs/coding-standards.md));
 - the checks are a catalogue of 32 patterns and practices, each explained, with a before/after example,
@@ -37,12 +44,15 @@ AI-generated code base, or a pull request:
 - it maps the projects around a code base that have the same owner (git organisation, npm scope,
   author) as a C4 model: how they depend on each other, what each is made of, and where code
   belongs between them (a file that only uses a dependency, code copied across projects, a library
-  file only one consumer uses, outdated or clashing versions, cycles). The editor views, edits and
+  file only one consumer uses, outdated or clashing versions, cycles), and where the code base's own
+  `workspace.dsl` no longer matches its code (`pflow c4 --check`, and in every analysis). The editor views, edits and
   exports C4 models (Structurizr DSL in and out; SVG, PNG, C4-PlantUML, Mermaid)
   ([docs/c4-architecture.md](docs/c4-architecture.md));
 - on a pull request it counts only what the change adds (against the base, and against a baseline
   of accepted findings), and holds lines written by coding agents to a stricter rule;
-- coding agents run the same checks before they push, through an MCP server or Claude Code hooks.
+- coding agents run the same checks before they push, through an MCP server or Claude Code hooks;
+- in VS Code, the findings show as you save, and verified fixes apply as quick fixes
+  ([docs/vscode.md](docs/vscode.md)).
 
 Review a code base in the editor (File → Import code base…), with `pflow extract` / `pflow review`,
 or on every pull request with the GitHub Action, which posts the findings on the changed lines
@@ -121,6 +131,9 @@ developments" and removes the limitations listed in its evaluation chapter.
   reaching a state, expected steps and visits, and export to PRISM / Storm.
 - **Import.** Existing LangGraph (JSON, Mermaid, Python source), CrewAI Flow, Mermaid and XState
   graphs become diagrams you can verify.
+- **VS Code.** An extension runs `pflow` when a file is saved, shows the findings in the Problems
+  panel with the steps of each counterexample, and applies verified fixes as quick fixes
+  ([docs/vscode.md](docs/vscode.md)).
 
 ### Limitations of the original tool, now removed
 
@@ -607,6 +620,7 @@ packages/
 │   ├── src/main.ts  server.ts  window.ts  the server on a loopback port, a sandboxed window, files to open
 │   ├── src/preload.cts  menu.ts        the bridge to the editor; native menus
 │   └── scripts/stage.mjs  electron-builder.yml  packaging and installers
+├── vscode/     provenflow-vscode     VS Code extension: runs pflow, diagnostics and quick fixes
 └── app/        @provenflow/app       Angular UI (the same in the browser and in the desktop application)
     └── src/app/
         ├── diagram-store.ts            signals store keeping text and diagram in sync
@@ -682,6 +696,17 @@ native menus, folder dialogs and `.pflow` / `.dsl` file associations
 node node_modules/electron/install.js    # Electron's binary, once
 npm run desktop                          # build and run it
 npm run dist:desktop                     # installers for this platform (DMG, NSIS, AppImage, deb...)
+```
+
+### 4. Or in VS Code
+
+The VS Code extension runs `pflow` on the workspace when you save, and shows the findings and
+verified fixes in the editor ([docs/vscode.md](docs/vscode.md)):
+
+```sh
+npm run build:vscode                     # build it
+cd packages/vscode && npx @vscode/vsce package --no-dependencies   # provenflow-vscode-0.1.0.vsix
+code --install-extension provenflow-vscode-0.1.0.vsix
 ```
 
 For development with live reload (Angular on :4200, API proxied to :3000):
@@ -797,14 +822,17 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow prob <d.pflow> --reach EXPR [--within K] [--steps EXPR] [--visits EXPR --until EXPR]` | probabilistic analysis |
 | `pflow prism <d.pflow> [-o m.pm]` | PRISM / Storm model and properties |
 | `pflow nurv <d.pflow> [-o dir]` | NuRV full-LTL monitors (`NURV_PATH`) |
-| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--checks ids \| --skip ids] [--llm p:model] [--llm-fixes N] [--no-analyzers] [--no-confirm]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes (exit 5 on findings) |
-| `pflow review <dir> [--base ref] [--files] [--new-only] [--mutate N] [--coverage report] [--fix] [--github] [--check-run] [--fail-on …]` | the findings on the lines changed since `ref` (only those the change adds with `--new-only`); `--github` posts them as a pull-request review with verified suggestions |
+| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--checks ids \| --skip ids] [--llm p:model] [--llm-fixes N] [--osv] [--no-analyzers] [--no-confirm] [--history file \| --no-history]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes, regression tests from the counterexamples (exit 5 on findings); `--osv` adds the known vulnerabilities of the locked dependencies; each run is added to the code base's history |
+| `pflow review <dir> [--base ref] [--files] [--new-only] [--mutate N] [--coverage report] [--fix] [--fix-pr] [--github] [--check-run] [--fail-on …]` | the findings on the lines changed since `ref` (only those the change adds with `--new-only`); `--github` posts them as a pull-request review with verified suggestions; `--fix-pr` opens one pull request with every verified fix |
+| `pflow fix-pr <dir> [--base ref] [--branch name] [--dry-run] [--llm p:model]` | every verified fix as one commit on a branch (the working tree is not touched), pushed, with a pull request opened or updated |
+| `pflow trends [<dir>...] [--projects] [--backfill N] [--last N] [--json] [-o file]` | how errors, warnings, duplication, complexity, false properties and coverage moved over the runs; `--projects` adds the owner's other projects, `--backfill` measures N older commits |
+| `pflow bench <dir>... [-o file] [--json]` | how often the counterexamples are real: every one is replayed on the code, and the share confirmed is counted per rule |
 | `pflow baseline <dir> [--update]` | accept today's findings (`provenflow-baseline.json`): only new ones fail; `--update` only removes |
 | `pflow compare <dir> (--base ref \| --before dir) [-o report.md]` | code quality of two versions side by side: duplication, complexity, findings fixed and introduced |
 | `pflow mutate <dir> [--base ref] [--max N]` | mutation testing of the changed lines with the project's tests |
 | `pflow init <dir> [--instructions --llm p:model]` | `provenflow.config.json` proposed from the code and the languages' coding standards (and the checkable rules of AGENTS.md, CLAUDE.md…) |
 | `pflow catalogue [<dir>] [--json] [-o file] [--checks ids \| --skip ids]` | the patterns, principles and anti-patterns the checks verify, explained with examples, and which are selected (`checks` in provenflow.config.json) |
-| `pflow c4 [<dir>] [--scan dirs] [--owner names] [-o file] [--format dsl\|json\|plantuml\|mermaid\|markdown] [--view key] [--merge]` | the projects around the code base with the same owner as a C4 model (Structurizr DSL), how they depend on each other, and where code belongs |
+| `pflow c4 [<dir>] [--scan dirs] [--owner names] [-o file] [--format dsl\|json\|plantuml\|mermaid\|markdown] [--view key] [--merge] [--check]` | the projects around the code base with the same owner as a C4 model (Structurizr DSL), how they depend on each other, and where code belongs; `--check` compares the code base's own `workspace.dsl` with its code (exit 5 on findings) |
 | `pflow mcp` | MCP server for coding agents: `project_conventions`, `find_existing_code`, `review_changes`, `propose_fix` |
 | `pflow hook <post-edit\|stop>` | Claude Code hooks: the findings of the uncommitted changes go back to the agent |
 
