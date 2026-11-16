@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Language } from './ir.js';
 
 export type Style = 'functional' | 'object-oriented' | 'any';
 
@@ -78,6 +79,76 @@ export interface VerificationConfig {
     timeoutSec?: number;
 }
 
+/** Duplicated code: copied blocks (clones) and functions that re-implement another one. */
+export interface DuplicationConfig {
+    /** Smallest clone reported, in tokens (default 100, as SonarQube). */
+    minTokens?: number;
+    /** Smallest clone reported, in lines (default 10). */
+    minLines?: number;
+    /** Also look for clones in test files (default false). */
+    tests?: boolean;
+    /** Token-bag overlap from which two functions are reported as similar (default 0.8). */
+    similarity?: number;
+    /** Smallest function compared for similarity, in tokens (default 50). */
+    minFunctionTokens?: number;
+}
+
+/** Limits per function. */
+export interface ComplexityConfig {
+    /** Cognitive Complexity (SonarSource whitepaper) above which a function is reported (default 15). */
+    cognitive?: number;
+    /** Nesting depth of control structures above which a function is reported (default 4). */
+    nesting?: number;
+}
+
+/** `MixedCaps`: camelCase or PascalCase (Go, where the case of the first letter is the visibility). */
+export type NamingStyle = 'camelCase' | 'PascalCase' | 'snake_case' | 'SCREAMING_SNAKE_CASE' | 'MixedCaps';
+export type NameKind = 'class' | 'function' | 'method' | 'field' | 'constant';
+
+/** Test coverage reports to read (LCOV, Cobertura XML, JaCoCo XML), produced by the project's own test run. */
+export interface CoverageConfig {
+    reports?: string[];
+    /** Severity of changed lines no test runs (default warning). */
+    severity?: 'error' | 'warning' | 'info';
+}
+
+/** Mutation testing of changed lines (`pflow mutate`, `pflow review --mutate`). */
+export interface MutationConfig {
+    /** Test command (default: detected, as for "verification": { "test": "auto" }). */
+    test?: string;
+    /** At most this many mutants (default 20). */
+    max?: number;
+    timeoutSec?: number;
+}
+
+/** Stricter rules for lines written by coding agents (detected from commit trailers and Git AI notes). */
+export interface AgentPolicyConfig {
+    /** Severity at or above which findings on agent-written lines fail the check (default: warning). */
+    failOn?: 'error' | 'warning' | 'info';
+    /** Agent-written source changes must come with a changed test or covered lines (default true). */
+    requireTests?: boolean;
+    /** Extra author patterns (regular expressions) to recognise agents by. */
+    authors?: string[];
+}
+
+/**
+ * Coding standards of one language: limits, complexity and naming. `pflow init` writes them from the
+ * language's style guide and main linter (quality/standards.ts); they take precedence over the
+ * project-wide `limits`, `complexity` and `naming`.
+ */
+export interface LanguageConfig {
+    limits?: Partial<Limits>;
+    complexity?: ComplexityConfig;
+    naming?: Partial<Record<NameKind, NamingStyle>>;
+}
+
+export interface ChecksConfig {
+    /** Catalogue entries to check, instead of the default selection. */
+    select?: string[];
+    /** Catalogue entries not to check. */
+    skip?: string[];
+}
+
 export interface ProvenflowConfig {
     include?: string[];
     exclude?: string[];
@@ -90,9 +161,37 @@ export interface ProvenflowConfig {
     limits?: Partial<Limits>;
     analyzers?: AnalyzersConfig;
     verification?: VerificationConfig;
+    /** `false` turns the duplication checks off. */
+    duplication?: DuplicationConfig | false;
+    /** `false` turns the complexity checks off. */
+    complexity?: ComplexityConfig | false;
+    /** Naming conventions per language and kind of name; inferred from the code when omitted. `false` turns the check off. */
+    naming?: Partial<Record<string, Partial<Record<NameKind, NamingStyle>>>> | false;
+    /** `false` turns off the check that imported packages are declared and exist. */
+    dependencies?: boolean;
+    coverage?: CoverageConfig;
+    mutation?: MutationConfig;
+    /** File of accepted findings (default provenflow-baseline.json when it exists): only findings not in it fail. */
+    baseline?: string;
+    agents?: AgentPolicyConfig;
+    /**
+     * Which entries of the patterns and practices catalogue to check (`pflow catalogue` lists them):
+     * `select` replaces the default selection, `skip` removes entries from it. Findings of rules no
+     * entry owns (security, state machines, dependencies...) are not affected.
+     */
+    checks?: ChecksConfig;
+    /** Standards per language (typescript, python, java, kotlin, groovy, scala, c, cpp, c_sharp, go, rust, swift, ruby, php, r). */
+    languages?: Partial<Record<Language, LanguageConfig>>;
+}
+
+/** The size limits that apply to a file of a language: the language's own, then the project's, then the defaults. */
+export function limitsFor(config: ProvenflowConfig, language: Language | undefined): Limits {
+    return { ...DEFAULT_LIMITS, ...config.limits, ...(language ? config.languages?.[language]?.limits : undefined) };
 }
 
 export const DEFAULT_LIMITS: Limits = { classMethods: 30, classLines: 600, functionLines: 80, inheritanceDepth: 3, functionParams: 6 };
+export const DEFAULT_DUPLICATION: Required<DuplicationConfig> = { minTokens: 100, minLines: 10, tests: false, similarity: 0.8, minFunctionTokens: 50 };
+export const DEFAULT_COMPLEXITY: Required<ComplexityConfig> = { cognitive: 15, nesting: 4 };
 
 export const CONFIG_FILE = 'provenflow.config.json';
 

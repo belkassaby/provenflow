@@ -9,13 +9,28 @@ inputs:
     description: Folder to analyse, relative to the repository.
     default: .
   fail-on:
-    description: Fail the check on findings of the changed lines at this level or above (error, warning or none).
+    description: Fail the check on findings of the changed lines at this level or above (error, warning, info or none).
     default: error
+  new-only:
+    description: Analyse the base of the pull request too, and count only the findings the pull request adds.
+    default: 'true'
+  baseline:
+    description: Baseline file of accepted findings (default provenflow-baseline.json when it exists; see pflow baseline).
+    default: ''
+  coverage:
+    description: Coverage reports (LCOV, Cobertura, JaCoCo) written by an earlier step, one per line; changed lines no test runs are reported.
+    default: ''
+  mutate:
+    description: Mutation-test up to this many changed lines with the project's tests (0 = off; needs the dependencies installed).
+    default: '0'
   fix:
     description: Propose verified fixes, posted as GitHub suggestions.
     default: 'true'
   files:
     description: Review the whole changed files, not only the changed lines.
+    default: 'false'
+  check-run:
+    description: Also post a check run named ProvenFlow with every finding as an annotation (needs checks write).
     default: 'false'
   semgrep:
     description: Install Semgrep (security and dataflow rules).
@@ -57,20 +72,36 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v4
+    # Every action is pinned to a commit (organisations can require it); the comment gives its version.
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: 22
     - id: keys
       shell: bash
+      working-directory: ${{ github.action_path }}
       run: |
-        echo "npm=provenflow-npm-${{ runner.os }}-$(sha256sum "${{ github.action_path }}/package-lock.json" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        echo "npm=provenflow-npm-${{ runner.os }}-$(sha256sum package-lock.json | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        sources=$(find package.json package-lock.json packages/language packages/extract packages/server -path '*/node_modules' -prune -o -path '*/out' -prune -o -path '*/test' -prune -o -type f -print | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-16)
+        echo "build=provenflow-build-${{ runner.os }}-$sources" >> "$GITHUB_OUTPUT"
         echo "state=provenflow-state-${{ github.event.pull_request.number || github.ref_name }}" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache@v4
+    # The built packages and their dependencies, for the Action's exact sources: a hit skips npm ci and the build.
+    - id: build-cache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          ${{ github.action_path }}/node_modules
+          ${{ github.action_path }}/packages/*/node_modules
+          ${{ github.action_path }}/packages/language/out
+          ${{ github.action_path }}/packages/extract/out
+          ${{ github.action_path }}/packages/server/out
+        key: ${{ steps.keys.outputs.build }}
+    - if: steps.build-cache.outputs.cache-hit != 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.npm
         key: ${{ steps.keys.outputs.npm }}
     - if: inputs.post-review-file == '' && inputs.semgrep == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/pip
         key: provenflow-pip-semgrep-${{ runner.os }}
@@ -82,22 +113,32 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        # CBMC publishes a .deb for some Ubuntu releases only: take the runner's own, else the
+        # newest one for the same architecture (it installs on later releases). CBMC is optional,
+        # so a failed install warns and the review goes on without it.
         release=$(. /etc/os-release && echo "ubuntu-${VERSION_ID}")
-        url=$(curl -fsSL -H "authorization: Bearer $GH_TOKEN" https://api.github.com/repos/diffblue/cbmc/releases/latest | grep -o "https://[^\"]*${release}-cbmc-[^\"]*-Linux.deb" | head -1)
-        curl -fsSL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb
+        arch=$([ "$(uname -m)" = aarch64 ] && echo "-arm64" || true)
+        debs=$(curl -fsSL -H "authorization: Bearer $GH_TOKEN" https://api.github.com/repos/diffblue/cbmc/releases/latest \
+          | grep -o "https://[^\"]*/ubuntu-[0-9.]*${arch}-cbmc-[^\"]*-Linux\.deb" | sort -uV || true)
+        url=$(printf '%s\n' "$debs" | grep -F "/${release}${arch}-cbmc-" | head -1 || true)
+        [ -n "$url" ] || url=$(printf '%s\n' "$debs" | tail -1)
+        if [ -z "$url" ] || ! { curl -fsSL "$url" -o /tmp/cbmc.deb && sudo apt-get install -y -q /tmp/cbmc.deb; }; then
+          echo "::warning title=ProvenFlow::CBMC could not be installed on ${release}${arch}; the review runs without it."
+        fi
     - if: inputs.post-review-file == '' && inputs.infer == 'true' && runner.os == 'Linux'
       shell: bash
       run: |
         curl -fsSL https://github.com/facebook/infer/releases/download/v1.3.0/infer-linux-x86_64-v1.3.0.tar.xz | tar -xJ -C "$RUNNER_TEMP"
         echo "INFER_PATH=$RUNNER_TEMP/infer-linux-x86_64-v1.3.0/bin/infer" >> "$GITHUB_ENV"
-    - shell: bash
+    - if: steps.build-cache.outputs.cache-hit != 'true'
+      shell: bash
       working-directory: ${{ github.action_path }}
       # Only the packages the review needs (not the editor).
       run: |
         npm ci --no-audit --no-fund --include-workspace-root -w @provenflow/language -w @provenflow/extract -w @provenflow/server
         npm run build -w @provenflow/language && npm run build -w @provenflow/extract && npm run build -w @provenflow/server
     - if: inputs.post-review-file == '' && inputs.incremental == 'true'
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ runner.temp }}/provenflow-state
         key: ${{ steps.keys.outputs.state }}-${{ github.sha }}
@@ -110,26 +151,32 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
+        INPUT_COVERAGE: ${{ inputs.coverage }}
       run: |
         args=(review "${{ inputs.path }}" --github --fail-on "${{ inputs.fail-on }}" -q)
         [ "${{ inputs.fix }}" = "true" ] && args+=(--fix)
         [ "${{ inputs.files }}" = "true" ] && args+=(--files)
+        [ "${{ inputs.new-only }}" = "true" ] && args+=(--new-only)
+        [ "${{ inputs.check-run }}" = "true" ] && args+=(--check-run)
+        [ -n "${{ inputs.baseline }}" ] && args+=(--baseline "${{ inputs.baseline }}")
+        [ "${{ inputs.mutate }}" != "0" ] && args+=(--mutate "${{ inputs.mutate }}")
+        while IFS= read -r report; do [ -n "$report" ] && args+=(--coverage "$report"); done <<< "$INPUT_COVERAGE"
         [ "${{ inputs.incremental }}" = "true" ] && args+=(--state "$RUNNER_TEMP/provenflow-state")
         [ -n "${{ inputs.llm }}" ] && args+=(--llm "${{ inputs.llm }}" --llm-fixes "${{ inputs.llm-fixes }}")
         set +e
         node "${{ github.action_path }}/packages/server/out/cli.js" "${args[@]}" | tee "$RUNNER_TEMP/provenflow-review.txt"
         code=${PIPESTATUS[0]}
         set -e
-        sed -n '/^### ProvenFlow review/,/^$/p;/^Checked:/p' "$RUNNER_TEMP/provenflow-review.txt" >> "$GITHUB_STEP_SUMMARY" || true
+        sed -n '/^### ProvenFlow review/,/^Checked:/p' "$RUNNER_TEMP/provenflow-review.txt" >> "$GITHUB_STEP_SUMMARY" || true
         if [ -f provenflow-review.json ]; then echo "review-file=provenflow-review.json" >> "$GITHUB_OUTPUT"; fi
         echo "code=$code" >> "$GITHUB_OUTPUT"
     - if: inputs.post-review-file == '' && inputs.incremental == 'true' && always()
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ runner.temp }}/provenflow-state
         key: ${{ steps.keys.outputs.state }}-${{ github.sha }}
     - if: steps.review.outputs.review-file != ''
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: provenflow-review
         path: provenflow-review.json

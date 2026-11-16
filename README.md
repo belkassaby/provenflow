@@ -3,7 +3,7 @@
 Design and verify state machines, and review code, with a model checker
 ([nuXmv](https://nuxmv.fbk.eu)).
 
-**Design and verify.** ProvenFlow is a browser-based diagram editor for nuXmv. Draw a directed
+**Design and verify.** ProvenFlow is a diagram editor for nuXmv, in the browser or as a desktop application for macOS, Windows and Linux. Draw a directed
 finite state transition system, or type it in a `.pflow` file, label its states with atoms, write
 LTL, CTL or invariant properties, and check them with nuXmv. When a property is false, the
 counterexample is replayed step by step on the diagram. From the same diagram it generates a Python
@@ -21,7 +21,28 @@ AI-generated code base, or a pull request:
   where possible) and a fix;
 - fixes are proposed without an LLM (automatic fixes) or with one, and each is marked verified only
   when re-running the analysis and the build on the changed code shows the finding gone and nothing
-  new.
+  new;
+- it checks what AI-generated code most often gets wrong: duplicated code and re-implemented
+  helpers, complexity (Cognitive Complexity, nesting), naming conventions, imports of packages that
+  do not exist, and changed lines no test runs or checks (coverage reports, mutation testing). The
+  limits and naming rules of each language come from its style guide and main linter
+  ([docs/coding-standards.md](docs/coding-standards.md));
+- the checks are a catalogue of 32 patterns and practices, each explained, with a before/after example,
+  and selectable: design patterns (Singleton, Observer, Strategy...), principles from *The Pragmatic
+  Programmer* (DRY, Orthogonality, the Law of Demeter, Dead Programs Tell No Lies...) and
+  anti-patterns (God Class, Flag Argument, Commented-Out Code...)
+  ([docs/patterns-and-practices.md](docs/patterns-and-practices.md)). In the editor, you choose the
+  entries before the analysis, and the result shows each file's proposed edits combined into one
+  before/after diff, each with its explanation;
+- it maps the projects around a code base that have the same owner (git organisation, npm scope,
+  author) as a C4 model: how they depend on each other, what each is made of, and where code
+  belongs between them (a file that only uses a dependency, code copied across projects, a library
+  file only one consumer uses, outdated or clashing versions, cycles). The editor views, edits and
+  exports C4 models (Structurizr DSL in and out; SVG, PNG, C4-PlantUML, Mermaid)
+  ([docs/c4-architecture.md](docs/c4-architecture.md));
+- on a pull request it counts only what the change adds (against the base, and against a baseline
+  of accepted findings), and holds lines written by coding agents to a stricter rule;
+- coding agents run the same checks before they push, through an MCP server or Claude Code hooks.
 
 Review a code base in the editor (File → Import code base…), with `pflow extract` / `pflow review`,
 or on every pull request with the GitHub Action, which posts the findings on the changed lines
@@ -85,6 +106,9 @@ developments" and removes the limitations listed in its evaluation chapter.
   [nomenclature of logic symbols](https://en.wikipedia.org/wiki/List_of_logic_symbols).
 - **Files.** Save and open `.pflow` files, export the `.smv` model, import the legacy
   `attributeData.txt` format, and load the built-in examples.
+- **Tabs and themes.** Each diagram opens in a tab, and so do the code base report and the C4
+  architecture editor. The switch at the top right of the window changes between the light and the
+  dark theme; until you choose one, the editor follows the system's.
 - **Guards and bounded data.** Variables (counters, flags) updated by transitions
   (`when retries < 2 do retries := retries + 1`), checked by nuXmv, simulated in the editor and
   enforced by the generated code.
@@ -394,11 +418,11 @@ In the editor, choose **File → Import code base…** and pick a folder on your
 are uploaded to the ProvenFlow server) or type a folder path. The path option is for when the
 server runs on your machine: the folder is then read in place, with its `node_modules`. While it runs, a progress bar shows the percentage, what is being done (the model being
 checked, the analyser still running, the change being verified), the elapsed time and the steps
-already finished; you can close the window meanwhile. Findings,
-models, patterns and paradigm profiles show in the dialog. **Open model** opens a model in a new
-tab and checks it, so its counterexample is one click away. Every model can have its own tab, and
-the **Code report** button next to the tabs reopens the findings and the list of models, also after
-a reload.
+already finished. Import code base has a tab of its own next to the diagrams, so you can work in
+another tab, or close it, meanwhile. Findings, models, patterns and paradigm profiles show in that
+tab. **Open model** opens a model in a new tab and checks it, so its counterexample is one click
+away. Every model can have its own tab, and the **Code report** button next to the tabs reopens the
+findings and the list of models, also after a reload.
 
 Findings are the problems. Most are a property of an extracted **model** that nuXmv found false;
 **Models → Properties** lists each model's properties with their verdicts and what to do about the
@@ -477,6 +501,29 @@ The full guide is in [docs/code-model-checking.md](docs/code-model-checking.md).
 - the config reference and the LLM trust model;
 - what the first run on ProvenFlow found, and what was changed.
 
+AI-generated code more often fails by not fitting the code base than by being wrong: it
+duplicates existing helpers, adds complexity and drifts from the project's conventions.
+[docs/ai-code-guardrails.md](docs/ai-code-guardrails.md) collects the research on this and on the
+guardrails used against it, and what ProvenFlow does about each point:
+- the code-quality checks;
+- the baseline and new-code gating;
+- conventions inferred from the code (`pflow init`);
+- the MCP server and agent hooks;
+- outputs for GitLab and reviewdog.
+
+[docs/quality-before-after.md](docs/quality-before-after.md) shows the effect on ProvenFlow's own
+code: duplicated lines 74 → 0, highest Cognitive Complexity 189 → 93.
+
+```sh
+npx pflow init .                                   # provenflow.config.json from the code and the language standards
+npx pflow baseline .                               # accept today's findings: only new ones fail
+npx pflow review . --base origin/main --new-only   # what a change adds
+npx pflow compare . --base origin/main             # quality before and after
+npx pflow catalogue                                # the patterns and practices checked, explained
+npx pflow c4 . -o docs/c4/projects.dsl             # the projects around it as a C4 model, and where code belongs
+npx pflow mcp                                      # MCP server for coding agents
+```
+
 ## Probabilistic analysis
 
 Give transitions a probability (`prob 0.3` in the text, or in the inspector) and the
@@ -527,7 +574,8 @@ packages/
 │   ├── src/probabilistic.ts            Markov chain analysis, PRISM export
 │   ├── src/nurv.ts                     NuRV monitor synthesis plan
 │   ├── src/notebook-generator.ts       DiagramModel -> Jupyter notebook
-│   └── src/legacy-attributes.ts        import of JungToNusmv attributeData.txt
+│   ├── src/legacy-attributes.ts        import of JungToNusmv attributeData.txt
+│   └── src/c4/                         C4 model: Structurizr DSL reader and writer, views, PlantUML/Mermaid
 ├── extract/    @provenflow/extract   code base -> verified models (pflow extract)
 │   ├── src/typescript-*.ts             TypeScript checker front end (+ Angular templates)
 │   ├── src/python_facts.py             Python front end (ast), same facts as JSON
@@ -539,19 +587,37 @@ packages/
 │   ├── src/patterns.ts                 design-pattern recognition and contract models
 │   ├── src/architecture.ts  paradigm.ts  layer graph model, cycles, facades; style rules
 │   ├── src/verify.ts                   nuXmv / explicit-state checks, counterexamples -> code
+│   ├── src/quality/                    duplication, complexity, naming, dependencies, coverage,
+│   │                                   practices (empty handlers, train wrecks...), standards, measures
+│   ├── src/catalogue/                  the patterns and practices catalogue: entries, selection
+│   ├── src/c4/                         the projects around a code base (manifests, owners, imports),
+│   │                                   as a C4 model, and where code belongs between them
+│   ├── src/gate.ts  review-run.ts      baseline, new-code gating, agent-written lines, test findings
+│   ├── src/mutation.ts  compare.ts     mutation testing of changed lines; two versions compared
+│   ├── src/init.ts  instructions.ts    config proposed from the code; rules from AGENTS.md & co.
 │   ├── src/llm.ts                      optional LLM (Anthropic, OpenAI-compatible, Ollama), verified
-│   └── src/report.ts                   report.md / .json / .sarif, .pflow models, scenarios
+│   └── src/report.ts  report-formats.ts  report.md / .json, SARIF, GitLab Code Quality, rdjson
 ├── server/     @provenflow/server    Node.js + Express
 │   ├── src/nuxmv-runner.ts             spawns nuXmv (BDD / BMC / IC3), timeouts
 │   ├── src/nurv-runner.ts              runs NuRV, fixes and returns the generated monitors
-│   ├── src/app.ts                      REST API, live channel (SSE), serves the built UI
-│   └── src/cli.ts                      the `pflow` command-line tool
-└── app/        @provenflow/app       Angular UI
+│   ├── src/app.ts  routes/             REST API, live channel (SSE), serves the built UI
+│   ├── src/cli.ts  commands/           the `pflow` command-line tool
+│   └── src/mcp.ts                      MCP server for coding agents
+├── desktop/    @provenflow/desktop   Electron application (macOS, Windows, Linux)
+│   ├── src/main.ts  server.ts  window.ts  the server on a loopback port, a sandboxed window, files to open
+│   ├── src/preload.cts  menu.ts        the bridge to the editor; native menus
+│   └── scripts/stage.mjs  electron-builder.yml  packaging and installers
+└── app/        @provenflow/app       Angular UI (the same in the browser and in the desktop application)
     └── src/app/
         ├── diagram-store.ts            signals store keeping text and diagram in sync
         ├── text-editor/                CodeMirror + Langium diagnostics
         ├── diagram-canvas/             Cytoscape.js editor, trace highlighting
         ├── attribute-table/  inspector/  properties-panel/  trace-panel/  output-panel/
+        ├── document-tabs/              the tabs: diagrams, the code base report, the C4 architecture
+        ├── code-import/                Import code base and its review (a page in its own tab)
+        ├── c4/                         C4 viewer and editor: canvas, properties, project map, exports
+        ├── theme.ts                    the light and dark themes (the switch at the top right)
+        ├── desktop-bridge.ts           native menus, opened files and folder dialogs (desktop only)
         └── nuxmv-api.ts                calls the backend
 ```
 
@@ -604,6 +670,18 @@ Requires Node.js 20.19 or later.
 npm install
 npm run build
 NUXMV_PATH=/path/to/nuXmv npm start      # http://127.0.0.1:3000
+```
+
+### 3. Or as a desktop application
+
+The same editor and server as a desktop application for macOS, Windows and Linux (Electron), with
+native menus, folder dialogs and `.pflow` / `.dsl` file associations
+([docs/desktop.md](docs/desktop.md)):
+
+```sh
+node node_modules/electron/install.js    # Electron's binary, once
+npm run desktop                          # build and run it
+npm run dist:desktop                     # installers for this platform (DMG, NSIS, AppImage, deb...)
 ```
 
 For development with live reload (Angular on :4200, API proxied to :3000):
@@ -719,8 +797,16 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow prob <d.pflow> --reach EXPR [--within K] [--steps EXPR] [--visits EXPR --until EXPR]` | probabilistic analysis |
 | `pflow prism <d.pflow> [-o m.pm]` | PRISM / Storm model and properties |
 | `pflow nurv <d.pflow> [-o dir]` | NuRV full-LTL monitors (`NURV_PATH`) |
-| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--llm p:model] [--llm-fixes N] [--no-analyzers] [--no-confirm]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes (exit 5 on findings) |
-| `pflow review <dir> [--base ref] [--files] [--fix] [--github] [--fail-on …]` | the findings on the lines changed since `ref`; `--github` posts them as a pull-request review with verified suggestions |
+| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--checks ids \| --skip ids] [--llm p:model] [--llm-fixes N] [--no-analyzers] [--no-confirm]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes (exit 5 on findings) |
+| `pflow review <dir> [--base ref] [--files] [--new-only] [--mutate N] [--coverage report] [--fix] [--github] [--check-run] [--fail-on …]` | the findings on the lines changed since `ref` (only those the change adds with `--new-only`); `--github` posts them as a pull-request review with verified suggestions |
+| `pflow baseline <dir> [--update]` | accept today's findings (`provenflow-baseline.json`): only new ones fail; `--update` only removes |
+| `pflow compare <dir> (--base ref \| --before dir) [-o report.md]` | code quality of two versions side by side: duplication, complexity, findings fixed and introduced |
+| `pflow mutate <dir> [--base ref] [--max N]` | mutation testing of the changed lines with the project's tests |
+| `pflow init <dir> [--instructions --llm p:model]` | `provenflow.config.json` proposed from the code and the languages' coding standards (and the checkable rules of AGENTS.md, CLAUDE.md…) |
+| `pflow catalogue [<dir>] [--json] [-o file] [--checks ids \| --skip ids]` | the patterns, principles and anti-patterns the checks verify, explained with examples, and which are selected (`checks` in provenflow.config.json) |
+| `pflow c4 [<dir>] [--scan dirs] [--owner names] [-o file] [--format dsl\|json\|plantuml\|mermaid\|markdown] [--view key] [--merge]` | the projects around the code base with the same owner as a C4 model (Structurizr DSL), how they depend on each other, and where code belongs |
+| `pflow mcp` | MCP server for coding agents: `project_conventions`, `find_existing_code`, `review_changes`, `propose_fix` |
+| `pflow hook <post-edit\|stop>` | Claude Code hooks: the findings of the uncommitted changes go back to the agent |
 
 ## REST API
 
@@ -738,7 +824,10 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | POST   | `/api/fix` | `{ path \| files, name, finding, llm }`: the LLM implements the finding's suggested fix; the change comes back verified or not, with the files before/after and the diff |
 | POST   | `/api/verify-change` | `{ path \| files, name, finding, changed: [{ file, after }] }`: verifies a reviewed version of the files like a proposed change (nothing is written) |
 | GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
-| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay). With `Accept: application/x-ndjson` it streams `{ progress: { phase, message, percent } }` lines while it runs, then `{ result }`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
+| GET    | `/api/catalogue` | the patterns and practices catalogue: `{ entries }`, each explained (problem, solution, when to use it and not, example) with the rules that check it |
+| POST   | `/api/c4/discover` | `{ path, scan?, owners?, depth? }` (by path: localhost only): the projects around the folder as a C4 model, their dependencies, and where code belongs ([docs/c4-architecture.md](docs/c4-architecture.md)) |
+| POST   | `/api/c4/save` | `{ path, file, text }`: writes a model (`.dsl`, `.json`, `.puml`, `.mmd`, `.md`) into a folder mapped or analysed since the server started |
+| POST   | `/api/extract` | `{ path }` (a folder of the server machine, when the server is bound to localhost; `PROVENFLOW_EXTRACT_PATHS=0` disables it) or `{ files: { "src/a.ts": "…" } }` (uploaded sources), plus optional `config`, `checks` (`{ select?, skip? }`: catalogue entries), `quickFixes` (default 20), `llm`, `llmFixes` and `analyzers` (`false` skips the external analysers and the replay). With `Accept: application/x-ndjson` it streams `{ progress: { phase, message, percent } }` lines while it runs, then `{ result }`: findings (with verified code changes), models with their `.pflow` text, patterns, paradigm and the Markdown report |
 
 The response contains the raw `stdout`/`stderr` and the parsed `results` (property, verdict, trace),
 `errors` and `warnings`.
@@ -760,6 +849,19 @@ The extract tests run on three fixtures:
 - `packages/extract/test/fixtures/polyglot`: the same job lifecycle in each of the 13 tree-sitter
   languages, each with a state never set, a switch missing cases and a typical resource bug. With `NUXMV_PATH` set they also check the nuXmv
 counterexamples.
+- `packages/extract/test/fixtures/quality`: one seeded quality problem of each kind (a copied block,
+  a re-implemented helper, a function too complex and too deeply nested, a name off convention,
+  imports of packages that do not exist, an LCOV report). The tests also review a change in a
+  temporary git repository (agent commit, new-only gating), and the server tests drive the MCP
+  server, the hooks and the `baseline`, `compare` and `init` commands.
+- `packages/extract/test/fixtures/practices`: an empty handler (and one with a comment, which is
+  not reported), commented-out code, a train wreck, flag arguments and magic numbers, in TypeScript
+  and Python. The tests check the catalogue itself, the selection and the automatic fixes.
+- `packages/extract/test/fixtures/c4`: a small organisation of projects (an application, a library
+  it uses at an old range, the library's own dependency, a second consumer, a Python worker and the
+  package it needs, and a project of another owner). The tests check discovery, ownership, version
+  ranges and every kind of suggestion; the language tests read, write and draw a Structurizr
+  workspace with every kind of view.
 
 Optional tools turn on more tests, and CI installs the Python packages:
 - `NUXMV_PATH`: every example is run on real nuXmv with all engines.

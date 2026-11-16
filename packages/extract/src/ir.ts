@@ -212,6 +212,19 @@ export interface FunctionFact {
     /** Calls with side effects: I/O, clock, randomness. */
     effects: string[];
     usesThis: boolean;
+    /** Control-flow measures of the body (absent when the front end could not compute them). */
+    complexity?: ComplexityFact;
+}
+
+/**
+ * Cognitive Complexity (SonarSource whitepaper v1.7: +1 per break in linear flow, plus the nesting
+ * level for nested structures), cyclomatic complexity (1 + decision points) and the deepest nesting
+ * of control structures.
+ */
+export interface ComplexityFact {
+    cognitive: number;
+    cyclomatic: number;
+    nesting: number;
 }
 
 export interface ImportFact {

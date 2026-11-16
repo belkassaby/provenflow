@@ -9,7 +9,8 @@
     "packages/language",
     "packages/extract",
     "packages/server",
-    "packages/app"
+    "packages/app",
+    "packages/desktop"
   ],
   "engines": {
     "node": ">=20.19"
@@ -17,9 +18,13 @@
   "scripts": {
     "langium:generate": "npm run langium:generate -w @provenflow/language",
     "build": "npm run build -w @provenflow/language && npm run build -w @provenflow/extract && npm run build -w @provenflow/server && npm run build -w @provenflow/app",
+    "build:web": "npm run build",
+    "build:desktop": "npm run build && npm run build -w @provenflow/desktop",
     "dev": "npm run build -w @provenflow/language && concurrently -n server,app -c blue,magenta \"npm run dev -w @provenflow/server\" \"npm start -w @provenflow/app\"",
     "start": "npm run start -w @provenflow/server",
-    "test": "npm test -w @provenflow/language && npm test -w @provenflow/extract && npm test -w @provenflow/server && npm test -w @provenflow/app -- --watch=false",
+    "desktop": "npm run build:desktop && npm start -w @provenflow/desktop",
+    "dist:desktop": "npm run build && npm run dist -w @provenflow/desktop",
+    "test": "npm test -w @provenflow/language && npm test -w @provenflow/extract && npm test -w @provenflow/server && npm test -w @provenflow/app -- --watch=false && npm test -w @provenflow/desktop",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:code": "node packages/server/out/cli.js extract . --fail-on warning"
   },

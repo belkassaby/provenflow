@@ -1,0 +1,124 @@
+<section class="c4-page" (keydown)="keydown($event)" aria-label="C4 architecture">
+  <header class="page-head c4-toolbar">
+    <h2>C4 architecture</h2>
+    <span class="muted small c4-file" [title]="store.fileName()">{{ store.fileName() }}{{ store.dirty() ? ' •' : '' }}</span>
+    <select class="c4-view-select" [value]="store.view()?.key ?? ''" (change)="store.showView($any($event.target).value)" aria-label="View">
+      @for (v of store.workspace().views; track v.key) {
+        <option [value]="v.key">{{ viewLabels[v.type] }}: {{ v.title ?? v.key }}</option>
+      } @empty {
+        <option value="">No views</option>
+      }
+    </select>
+    <div class="menu">
+      <button type="button" (click)="toggleMenu('add')" [attr.aria-expanded]="menu() === 'add'" [disabled]="addTypes().length === 0">Add ▾</button>
+      @if (menu() === 'add') {
+        <div class="menu-list" role="menu">
+          @for (t of addTypes(); track t) {
+            <button type="button" role="menuitem" (click)="add(t)">{{ typeLabels[t] }}</button>
+          }
+        </div>
+      }
+    </div>
+    <button type="button" [class.active]="connect()" (click)="connect.set(!connect())" title="Drag from one box to another to add a relationship">Connect</button>
+    <button type="button" (click)="store.removeSelected()" [disabled]="!store.selection()" title="Delete the selection (Delete key)">Delete</button>
+    <button type="button" (click)="store.undo()" [disabled]="!store.canUndo()" title="Undo (⌘Z)">↶</button>
+    <button type="button" (click)="store.redo()" [disabled]="!store.canRedo()" title="Redo (⇧⌘Z)">↷</button>
+    <button type="button" (click)="store.relayout()" title="Lay the view out again (forgets where boxes were dragged)">Layout</button>
+    <select class="c4-lines" [value]="store.routing()" (change)="store.setDefaultRouting($any($event.target).value)" aria-label="Lines"
+      title="How relationships are drawn: straight, at right angles, or curved (a relationship can have its own in Properties)">
+      @for (r of routings; track r) { <option [value]="r">Lines: {{ routingLabels[r] }}</option> }
+    </select>
+    <button type="button" (click)="canvas()?.fit()" title="Fit to the window">Fit</button>
+    <button type="button" (click)="openFile()">Open…</button>
+    <div class="menu">
+      <button type="button" (click)="toggleMenu('export')" [attr.aria-expanded]="menu() === 'export'">Export ▾</button>
+      @if (menu() === 'export') {
+        <div class="menu-list end" role="menu">
+          <button type="button" role="menuitem" (click)="exportAs('svg')">This view as SVG</button>
+          <button type="button" role="menuitem" (click)="exportAs('png')">This view as PNG</button>
+          <button type="button" role="menuitem" (click)="exportAs('plantuml')">This view as C4-PlantUML (.puml)</button>
+          <button type="button" role="menuitem" (click)="exportAs('mermaid')">This view as Mermaid C4 (.mmd)</button>
+          <hr />
+          <button type="button" role="menuitem" (click)="exportAs('dsl')">Workspace as Structurizr DSL (.dsl)</button>
+          <button type="button" role="menuitem" (click)="exportAs('json')">Workspace as JSON (keeps the placement)</button>
+        </div>
+      }
+    </div>
+    @if (message()) { <span class="flash small" role="status">{{ message() }}</span> }
+  </header>
+
+  <div class="c4-body">
+    <div class="c4-main">
+      @if (store.workspace().views.length) {
+        <app-c4-canvas [connectMode]="connect()" (notice)="flash($event)" />
+      } @else {
+        <div class="c4-empty muted">
+          <p>Open a Structurizr DSL file (Open…), map the projects around a code base (Map tab), or add a person or a software system.</p>
+        </div>
+      }
+    </div>
+    <aside class="c4-side">
+      <nav class="help-tabs" role="tablist">
+        <button type="button" role="tab" [class.active]="tab() === 'map'" (click)="tab.set('map')">Map</button>
+        <button type="button" role="tab" [class.active]="tab() === 'properties'" (click)="tab.set('properties')">Properties</button>
+        <button type="button" role="tab" [class.active]="tab() === 'suggestions'" (click)="tab.set('suggestions')">Suggestions ({{ discovery.map()?.suggestions?.length ?? 0 }})</button>
+        <button type="button" role="tab" [class.active]="tab() === 'projects'" (click)="tab.set('projects')">Projects</button>
+        <button type="button" role="tab" [class.active]="tab() === 'dsl'" (click)="showDsl()">DSL@if (errors()) { <span class="badge fail">{{ errors() }}</span> }</button>
+      </nav>
+      <div class="c4-panel">
+        @switch (tab()) {
+          @case ('map') {
+            <p class="small">Maps the projects around a code base: the folders next to it with the same owner (git organisation, npm scope or author), how they depend on each other, and what each is made of; then suggests where code belongs.</p>
+            @if (codeImport.pathsAllowed()) {
+              <label class="c4-field">Code base folder
+                <span class="c4-path"><input [value]="path()" (input)="path.set($any($event.target).value)" placeholder="/Users/me/git/org/app" (keydown.enter)="discover()" /><app-folder-browse title="The code base to map" (picked)="path.set($event)" /></span>
+              </label>
+              @if (discovery.recent().length) {
+                <p class="small code-recent">Recent: @for (r of discovery.recent(); track r) { <button type="button" class="link small" (click)="path.set(r)">{{ r }}</button> }</p>
+              }
+              <label class="c4-field">Also look in (folders, comma separated) <input [value]="scan()" (input)="scan.set($any($event.target).value)" placeholder="default: the folder around it" /></label>
+              <label class="c4-field">Also owned by (organisations, @scopes, authors) <input [value]="owners()" (input)="owners.set($any($event.target).value)" placeholder="default: the code base's owner" /></label>
+              <div class="c4-actions">
+                <button type="button" class="primary" (click)="discover()" [disabled]="discovery.running() || !path().trim()">{{ discovery.running() ? 'Mapping…' : 'Map projects' }}</button>
+              </div>
+            } @else {
+              <p class="small muted">This server does not read folders by path (it is not bound to localhost), so it cannot map projects. Open a DSL file instead.</p>
+            }
+            @if (discovery.error(); as e) { <p class="small error-text">{{ e }}</p> }
+            @if (discovery.map(); as m) {
+              <h4>{{ m.projects.length }} projects mapped from <code>{{ m.root }}</code></h4>
+              @if (m.notes.length) {
+                <ul class="small muted c4-notes">
+                  @for (n of m.notes; track $index) { <li>{{ n }}</li> }
+                </ul>
+              }
+              <div class="c4-actions">
+                <button type="button" (click)="discovery.openDiscovered()">Show the discovered model</button>
+                @if (m.existing) { <button type="button" (click)="discovery.openMerged()" [title]="'Its own model, with the discovered projects tagged Discovered'">Open {{ m.existing.file }} + discovered</button> }
+              </div>
+              <label class="c4-field">Save into the code base as <input [value]="saveFile()" (input)="saveFile.set($any($event.target).value)" /></label>
+              <div class="c4-actions"><button type="button" (click)="save()">Save</button></div>
+            }
+          }
+          @case ('properties') { <app-c4-properties /> }
+          @case ('suggestions') { <app-c4-suggestions /> }
+          @case ('projects') { <app-c4-projects /> }
+          @case ('dsl') {
+            <p class="small muted">The workspace in Structurizr DSL. Edit it and apply, or copy it to Structurizr. Comments and hand placement are not kept in the DSL (Export → JSON keeps the placement).</p>
+            <textarea class="c4-dsl" spellcheck="false" [value]="dsl()" (input)="dsl.set($any($event.target).value)" aria-label="Structurizr DSL"></textarea>
+            <div class="c4-actions">
+              <button type="button" class="primary" (click)="applyDsl()">Apply</button>
+              <button type="button" (click)="refreshDsl()">Revert</button>
+            </div>
+            @if (store.diagnostics().length) {
+              <h4>Problems ({{ store.diagnostics().length }})</h4>
+              <ul class="small c4-problems">
+                @for (d of store.diagnostics(); track $index) { <li [class]="d.severity"><strong>line {{ d.line }}</strong> {{ d.message }}</li> }
+              </ul>
+            }
+          }
+        }
+      </div>
+    </aside>
+  </div>
+</section>

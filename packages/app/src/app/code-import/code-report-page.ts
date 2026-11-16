@@ -1,4 +1,4 @@
-import { Component, computed, DestroyRef, ElementRef, inject, output, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, inject, output, signal, viewChild } from '@angular/core';
 import { CodeDiff } from './code-diff';
 import { downloadText } from '../file-io';
 import { HelpService } from '../help-dialog/help.service';
@@ -6,8 +6,14 @@ import { LlmSettings } from '../llm-settings/llm-settings';
 import { ChangeActivity } from './change-activity';
 import { CodeChange } from './code-change';
 import { changeKey, CodeImport, type CodeFinding, type CodeModel } from './code-import';
+import { editsByFile } from './code-edits';
+import { FileEdits } from './file-edits';
+import { FolderBrowse } from '../desktop-bridge';
+import { PracticeCatalogue } from './practice-catalogue';
+import { PracticePicker } from './practice-picker';
+import { PracticeResults } from './practice-results';
 
-type View = 'findings' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm' | 'tools';
+type View = 'findings' | 'edits' | 'changes' | 'change' | 'models' | 'model' | 'modelChange' | 'patterns' | 'paradigm' | 'tools';
 type Severity = CodeFinding['severity'];
 
 const CATEGORY_LABELS: Record<CodeFinding['category'], string> = {
@@ -15,11 +21,17 @@ const CATEGORY_LABELS: Record<CodeFinding['category'], string> = {
     memory: 'Memory safety and arithmetic',
     heap: 'Heap (interprocedural)',
     build: 'Build and tests',
+    dependencies: 'Dependencies',
     'state-machine': 'State machines',
     lifecycle: 'Resource lifecycles',
     pattern: 'Design patterns',
     architecture: 'Architecture',
-    paradigm: 'Paradigm and size'
+    duplication: 'Duplicated code',
+    complexity: 'Complexity',
+    tests: 'Tests and coverage',
+    paradigm: 'Paradigm and size',
+    practice: 'Practices and anti-patterns',
+    naming: 'Naming'
 };
 
 function formatDuration(ms: number): string {
@@ -41,30 +53,34 @@ const SOURCE_LABELS: Partial<Record<CodeFinding['source'], string>> = {
 };
 
 /**
- * File → Import code base…: runs `pflow extract` on a folder (uploaded, or a path of the machine
- * running the server) and shows the findings; every extracted model opens in the editor.
+ * File → Import code base…, in its own tab: runs `pflow extract` on a folder (uploaded, or a path
+ * of the machine running the server) and shows the findings; every extracted model opens in a
+ * diagram tab. The app chooses between a new analysis and the last report (CodeImport.clear/restore).
  */
 @Component({
-    selector: 'app-code-import-dialog',
-    imports: [CodeDiff, ChangeActivity],
-    templateUrl: './code-import-dialog.html'
+    selector: 'app-code-report-page',
+    imports: [CodeDiff, ChangeActivity, PracticePicker, PracticeResults, FileEdits, FolderBrowse],
+    templateUrl: './code-report-page.html',
+    host: { class: 'page' }
 })
-export class CodeImportDialog {
+export class CodeReportPage {
     readonly codeImport = inject(CodeImport);
     readonly help = inject(HelpService);
     /** A model to open in the editor: its .pflow text and a file name. */
     readonly openModel = output<{ text: string; name: string; check: boolean }>();
     /** Asks the app to open Help → LLM settings. */
     readonly llmSettings = output<void>();
+    /** Asks the app to open the C4 map of the projects around a folder. */
+    readonly openC4 = output<string>();
     readonly llm = inject(LlmSettings);
     readonly change = inject(CodeChange);
+    readonly catalogue = inject(PracticeCatalogue);
     /** What the last LLM fix or verification of a finding gave, shown next to it. */
     readonly outcome = signal<{ key: string; ok: boolean; text: string } | null>(null);
     /** The LLM used for "LLM fix": the one chosen for the analysis, else the first configured. */
     readonly llmSpec = computed(() => this.codeImport.llm() || this.llm.choices()[0]?.spec || '');
     readonly changeKey = changeKey;
 
-    private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
     /** The folder path, the last one analysed to start with. */
     readonly path = signal(this.codeImport.recentPaths()[0] ?? '');
     readonly view = signal<View>('findings');
@@ -78,6 +94,8 @@ export class CodeImportDialog {
     readonly elapsed = computed(() => (this.codeImport.running() ? this.duration(this.now() - this.codeImport.startedAt()) : ''));
 
     constructor() {
+        void this.codeImport.refresh();
+        void this.llm.load();
         const timer = setInterval(() => {
             if (this.codeImport.running()) this.now.set(Date.now());
         }, 1000);
@@ -106,6 +124,12 @@ export class CodeImportDialog {
     sourceLabel(f: CodeFinding): string {
         return SOURCE_LABELS[f.source] ?? f.source;
     }
+
+    /** Files with a proposed change to a pattern or practice finding (the Edits by file tab). */
+    readonly editedFiles = computed(() => editsByFile((this.report()?.findings ?? []).filter(f => f.practice)).filter(f => f.changes.length > 0).length);
+
+    /** Catalogue entries with findings: patterns broken, principles not followed, anti-patterns found. */
+    readonly practicesToFix = computed(() => new Set((this.report()?.findings ?? []).map(f => f.practice).filter(Boolean)).size);
 
     /** Findings with a proposed code change. */
     readonly changes = computed(() => (this.report()?.findings ?? []).filter(f => f.suggestedPatch?.files?.length));
@@ -163,7 +187,6 @@ export class CodeImportDialog {
         const c = this.modelChange()?.change;
         if (c?.after) {
             this.openModel.emit({ text: c.after, name: `${c.id}-after-change.pflow`, check: true });
-            this.close();
         }
     }
 
@@ -237,9 +260,9 @@ export class CodeImportDialog {
         this.applyMessage.set(null);
         const result = await this.change.verify(f, changed);
         if (result.finding) {
-            this.reviewing.set(result.finding);
-            this.fileIndex.set(Math.min(index, (result.finding.suggestedPatch?.files?.length ?? 1) - 1));
             const p = result.finding.suggestedPatch!;
+            this.reviewing.set(result.finding);
+            this.fileIndex.set(Math.min(index, (p.files?.length ?? 1) - 1));
             this.applyMessage.set({ ok: p.verified, text: `${p.verified ? '✓ Verified' : '✗ Not verified'}: ${p.note}` });
         } else this.applyMessage.set({ ok: false, text: result.error ?? 'Nothing was checked.' });
     }
@@ -282,30 +305,6 @@ export class CodeImportDialog {
         }
     }
 
-    /** `fresh`: start a new analysis; otherwise show the last report (kept across reloads). */
-    open(fresh = false): void {
-        void this.codeImport.refresh();
-        void this.llm.load();
-        if (!this.codeImport.running()) {
-            if (fresh) this.codeImport.clear();
-            else this.codeImport.restore();
-        }
-        const dialog = this.dialog().nativeElement;
-        if (!dialog.open) dialog.showModal();
-    }
-
-    close(): void {
-        this.dialog().nativeElement.close();
-    }
-
-    /**
-     * Closes when the backdrop (the dialog element itself) is clicked. Returns nothing: an Angular
-     * handler returning false cancels the event, which would stop file pickers and links inside.
-     */
-    backdropClick(event: MouseEvent): void {
-        if (event.target === this.dialog().nativeElement) this.close();
-    }
-
     toggle(severity: Severity): void {
         const next = new Set(this.shown());
         if (next.has(severity)) next.delete(severity);
@@ -331,7 +330,6 @@ export class CodeImportDialog {
     /** Opens a model in the editor; from a finding, also checks it so the counterexample is one click away. */
     show(model: CodeModel, check = model.failed.length > 0): void {
         this.openModel.emit({ text: model.pflow, name: `${model.id}.pflow`, check });
-        this.close();
     }
 
     where(loc: { file: string; line: number } | undefined): string {
@@ -344,13 +342,11 @@ export class CodeImportDialog {
     }
 
     openLlmSettings(): void {
-        this.close();
         this.llmSettings.emit();
     }
 
     /** Help → a walkthrough: the Code base review, or how to install the analysers ('analyzers'). */
     walkthrough(id = 'code'): void {
-        this.close();
         this.help.walkthrough(id);
     }
 }

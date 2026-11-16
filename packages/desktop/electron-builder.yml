@@ -1,0 +1,60 @@
+# Packages the staged application (scripts/stage.mjs) for macOS, Windows and Linux.
+#   npm run dist:desktop            this machine's platform
+#   npm run dist:mac | dist:win | dist:linux -w @provenflow/desktop
+appId: org.provenflow.desktop
+productName: ProvenFlow
+copyright: MIT License
+directories:
+  app: stage
+  output: release
+  buildResources: build
+# The analysers run Python scripts and read tree-sitter grammars from the packages' folders: they
+# stay plain files (no asar archive). No native modules: nothing to rebuild per platform.
+asar: false
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+files:
+  - '**/*'
+  - '!**/*.map'
+  - '!**/*.d.ts'
+  - '!**/{test,tests,__tests__,docs,example,examples}/**'
+fileAssociations:
+  - ext: pflow
+    name: ProvenFlow diagram
+    role: Editor
+  - ext: dsl
+    name: Structurizr DSL workspace
+    role: Editor
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Unsigned unless a signing identity is configured (CSC_LINK / CSC_NAME, see docs/desktop.md).
+  identity: null
+  hardenedRuntime: false
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+linux:
+  category: Development
+  maintainer: ProvenFlow
+  synopsis: Design and verify state machines, and review code
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64]
+publish: null

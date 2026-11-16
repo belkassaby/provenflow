@@ -35,44 +35,44 @@
   --shadow: 0 8px 24px rgb(20 30 45 / 14%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --bg: #0f141a;
-    --surface: #161c23;
-    --canvas-bg: #12171d;
-    --border: #2a333d;
-    --hover: #212a34;
-    --text: #e3e9ef;
-    --muted: #93a3b3;
-    --accent: #6ea2ff;
-    --accent-bg: #1c2b45;
-    --success: #69db7c;
-    --success-bg: #173222;
-    --error: #ff8787;
-    --error-bg: #3a1c1c;
-    --warning: #ffc078;
-    --warning-bg: #3a2c16;
-    --node-bg: #1f3148;
-    --node-border: #6ea2ff;
-    --node-text: #e3e9ef;
-    --edge: #7f8fa0;
-    --trace-current: #f59f00;
-    --trace-border: #ffd8a8;
-    --trace-visited: #4a3a1c;
-    --syntax-comment: #7d8c9b;
-    --syntax-keyword: #c3a6ff;
-    --syntax-section: #ff8787;
-    --syntax-temporal: #66d9e8;
-    --syntax-constant: #ffa94d;
-    --syntax-string: #8ce99a;
-    --syntax-operator: #93a3b3;
-    --shadow: 0 8px 24px rgb(0 0 0 / 45%);
-  }
+/* Dark theme: set by the toggle in the top bar, or the system's when none was chosen (theme.ts, index.html). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f141a;
+  --surface: #161c23;
+  --canvas-bg: #12171d;
+  --border: #2a333d;
+  --hover: #212a34;
+  --text: #e3e9ef;
+  --muted: #93a3b3;
+  --accent: #6ea2ff;
+  --accent-bg: #1c2b45;
+  --success: #69db7c;
+  --success-bg: #173222;
+  --error: #ff8787;
+  --error-bg: #3a1c1c;
+  --warning: #ffc078;
+  --warning-bg: #3a2c16;
+  --node-bg: #1f3148;
+  --node-border: #6ea2ff;
+  --node-text: #e3e9ef;
+  --edge: #7f8fa0;
+  --trace-current: #f59f00;
+  --trace-border: #ffd8a8;
+  --trace-visited: #4a3a1c;
+  --syntax-comment: #7d8c9b;
+  --syntax-keyword: #c3a6ff;
+  --syntax-section: #ff8787;
+  --syntax-temporal: #66d9e8;
+  --syntax-constant: #ffa94d;
+  --syntax-string: #8ce99a;
+  --syntax-operator: #93a3b3;
+  --shadow: 0 8px 24px rgb(0 0 0 / 45%);
 }
 
 /* -------------------------------------------------------------------- base */
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--text); font: 14px/1.4 var(--sans); }
 h4 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
@@ -221,10 +221,19 @@ table.trace td.issue-col { box-shadow: inset 0 -3px 0 var(--error); }
 .walkthrough pre.code { margin: 6px 0; white-space: pre-wrap; }
 .walkthrough > .primary { margin-left: 38px; }
 
+/* Pages: the code base report and the C4 architecture, each in its own tab */
+.page { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); color: var(--text); }
+.page > section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.page-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.page-head h2 { margin: 0; font-size: 17px; }
+.page h3 { font-size: 14px; margin: 16px 0 6px; }
+.page a { color: var(--accent); }
+
 /* File → Import code base… */
-dialog.code-import { width: min(1000px, calc(100vw - 32px)); }
-dialog.code-import header { gap: 12px; }
-dialog.code-import header h2 { flex: 1; }
+.page > section.code-import { display: block; overflow: auto; }
+.code-import > .page-head { position: sticky; top: 0; z-index: 5; }
+.code-import > .page-head h2 { flex: 1; }
+.code-import > :not(.page-head) { width: 100%; max-width: 1280px; margin-inline: auto; }
 .code-root { font-family: var(--mono, ui-monospace, monospace); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-source { border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px 12px; margin: 12px 0; }
 .code-path { display: flex; gap: 8px; }
@@ -284,6 +293,7 @@ dialog.code-import header h2 { flex: 1; }
 .code-review-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .code-diff-heads { display: grid; grid-template-columns: 1fr 1fr; font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 4px; }
 .code-diff { border: 1px solid var(--border); border-radius: 6px; height: min(56vh, 560px); overflow: auto; font-family: var(--mono, ui-monospace, monospace); font-size: 12.5px; background: var(--bg); }
+.code-diff.compact { height: auto; max-height: 320px; }
 .code-diff .cm-mergeView { height: 100%; }
 .code-diff .cm-mergeViewEditors { min-height: 100%; }
 .code-diff .cm-editor { height: auto; }
@@ -330,3 +340,87 @@ dialog.llm-settings { width: min(720px, calc(100vw - 32px)); }
 .llm-provider label { display: grid; grid-template-columns: 150px 1fr; gap: 8px; align-items: center; font-size: 13px; }
 .llm-provider label.llm-remember { display: flex; }
 .llm-test { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* Patterns and practices: the catalogue before an analysis, its results, and the edits by file */
+.practice-picker > summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; padding: 8px 0 4px; }
+.practice-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.practice-tools input { flex: 1; min-width: 160px; max-width: 300px; }
+.practice-group h4 { margin: 12px 0 4px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.practice-list { list-style: none; padding: 0; margin: 0; }
+.practice-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.practice-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; cursor: pointer; }
+.practice-line { flex-basis: 100%; padding-left: 22px; }
+.practice-badges { display: flex; gap: 6px; align-items: center; align-self: start; }
+.practice-item app-practice-detail { grid-column: 1 / -1; }
+.practice-detail { font-size: 13px; padding: 4px 0 4px 22px; display: flex; flex-direction: column; gap: 4px; }
+.practice-detail p { margin: 2px 0; }
+.practice-badge { background: var(--accent-bg); color: var(--accent); }
+.practice-table .practice-open > td { background: var(--hover); }
+.practice-table .practice-open .practice-detail { padding-left: 0; }
+.file-edits-top { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; }
+.file-edits { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 12px; margin-top: 8px; }
+.file-list { display: flex; flex-direction: column; gap: 2px; max-height: 72vh; overflow: auto; border-right: 1px solid var(--border); padding-right: 8px; }
+.file-list button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 6px; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; cursor: pointer; color: inherit; }
+.file-list button:hover { background: var(--hover); }
+.file-list button.active { background: var(--accent-bg); border-color: var(--accent); }
+.file-list .file-dir { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-counts { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 4px; align-items: center; }
+.file-edit { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.file-edit h4 { margin: 10px 0 2px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .file-edits { grid-template-columns: minmax(0, 1fr); }
+  .file-list { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 8px; }
+}
+
+/* File → C4 architecture… */
+section.c4-page { overflow: hidden; }
+.c4-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: relative; z-index: 5; }
+.c4-toolbar h2 { margin-right: 4px; }
+.c4-file { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c4-view-select { max-width: 320px; }
+.c4-toolbar .flash { font-size: 12px; background: var(--accent-bg); color: var(--accent); padding: 3px 8px; border-radius: 6px; }
+.c4-page .menu { position: relative; }
+.c4-page .menu-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; }
+.c4-page .menu-list.end { left: auto; right: 0; }
+.c4-page .menu-list button { text-align: left; border: 0; background: none; padding: 7px 10px; }
+.c4-page .menu-list button:hover { background: var(--hover); }
+.c4-page .menu-list hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; width: 100%; }
+.c4-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+.c4-main { position: relative; min-width: 0; min-height: 0; background: var(--canvas-bg); border-right: 1px solid var(--border); }
+.c4-main app-c4-canvas, .c4-canvas { display: block; position: absolute; inset: 0; }
+.c4-canvas:focus { outline: none; }
+/* The ends of the selected relationship, and the connection points of the boxes (c4-canvas.ts) */
+.c4-end { position: absolute; z-index: 3; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #f59e0b; border: 2px solid var(--surface); box-shadow: 0 0 0 1px #b45309; cursor: grab; touch-action: none; }
+.c4-end:active { cursor: grabbing; }
+.c4-port { position: absolute; z-index: 2; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); pointer-events: none; }
+.c4-port.near { width: 16px; height: 16px; margin: -8px 0 0 -8px; background: var(--accent); }
+.c4-drag-line { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.c4-drag-line line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; }
+.c4-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+.c4-empty { padding: 32px; max-width: 520px; }
+.c4-side { display: flex; flex-direction: column; min-height: 0; }
+.c4-side .help-tabs { flex: 0 0 auto; padding: 4px 8px 0; border-bottom: 1px solid var(--border); }
+.c4-panel { flex: 1; overflow: auto; padding: 8px 12px 16px; }
+.c4-panel h3 { margin: 8px 0; font-size: 14px; }
+.c4-panel h4 { margin: 14px 0 6px; font-size: 13px; }
+.c4-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); margin: 8px 0; }
+.c4-field input, .c4-field textarea, .c4-field select { color: var(--text); font: 13px var(--sans); }
+.c4-field textarea { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; resize: vertical; }
+.c4-path { display: flex; gap: 6px; }
+.c4-path input { flex: 1; min-width: 0; }
+.c4-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.c4-filter { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
+.c4-suggestions { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.c4-suggestions > li { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 4px 8px; }
+.c4-suggestions > li.warning { border-left-color: var(--warning); }
+.c4-suggestions > li.error { border-left-color: var(--error); }
+.c4-suggestion-head { display: flex; gap: 6px; align-items: baseline; width: 100%; text-align: left; border: 0; background: none; padding: 2px 0; font-size: 13px; }
+.c4-files, .c4-links, .c4-problems, .c4-notes { padding-left: 18px; margin: 4px 0; }
+.c4-files code, .c4-links code { word-break: break-all; }
+.c4-problems li.error { color: var(--error); }
+tr.c4-focus td { font-weight: 600; }
+.c4-dsl { width: 100%; min-height: 50vh; font: 12px/1.45 var(--mono); background: var(--canvas-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; white-space: pre; }
+@media (max-width: 760px) {
+  .c4-body { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 1fr) minmax(200px, 45%); }
+  .c4-main { border-right: 0; border-bottom: 1px solid var(--border); }
+}

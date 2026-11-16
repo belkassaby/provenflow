@@ -11,11 +11,13 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      # ProvenFlow reviews its own pull requests: findings on the changed lines, verified fixes as suggestions.
+      # ProvenFlow reviews its own pull requests: the findings a pull request adds on its changed lines
+      # (new-only), verified fixes as suggestions; the lines coding agents wrote fail on warnings.
       - uses: ./
         with:
           fail-on: warning
+          new-only: 'true'
           cbmc: 'true'

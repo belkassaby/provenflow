@@ -8,7 +8,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { ProvenflowConfig } from './config.js';
+import type { LayerConfig, ProvenflowConfig } from './config.js';
 import { formatLocation, type Facts, type ImportFact, type Location } from './ir.js';
 import { ModelBuilder, type ExtractedModel, type Finding } from './models.js';
 import { partition } from './paradigm.js';
@@ -22,123 +22,129 @@ export interface ArchitectureResult {
     facades: PatternInstance[];
 }
 
+type Edge = { from: string; to: string; count: number; example: Location; typeOnly: boolean; imports: Array<ImportFact & { file: string }> };
+
 export function analyseArchitecture(facts: Facts, config: ProvenflowConfig): ArchitectureResult {
-    const findings: Finding[] = [];
     const parts = partition(facts, config.layers);
     const layerOf = new Map<string, string>();
     for (const [name, part] of parts) for (const f of part.files) layerOf.set(f, name);
-    const layers = new Map((config.layers ?? []).map(l => [l.name, l]));
+    const edges = layerEdges(facts, layerOf);
+    const names = [...parts.keys()].filter(n => n !== '(no layer)');
+    const packages = packageRoots(facts);
+    const facades: PatternInstance[] = [...packages.entries].map(([root, entry]) => ({ pattern: 'facade', subject: root || '.', loc: { file: entry, line: 1 }, evidence: `entry module ${entry}` }));
+    const findings = [
+        ...layerViolations(edges, new Map((config.layers ?? []).map(l => [l.name, l]))),
+        ...(config.packageEntries !== false ? facadeBypasses(facts, layerOf, packages) : []),
+        ...fileCycles(facts, layerOf).map(importCycle)
+    ];
+    return { models: names.length > 1 ? [layerModel(names, edges)] : [], findings, edges: edges.map(({ imports: _imports, ...e }) => e), facades };
+}
 
-    // ---- layer edges
-    const edgeMap = new Map<string, { from: string; to: string; count: number; example: Location; typeOnly: boolean; imports: Array<ImportFact & { file: string }> }>();
+/** Layer -> layer imports (tests left out), with every offending import. */
+function layerEdges(facts: Facts, layerOf: Map<string, string>): Edge[] {
+    const edgeMap = new Map<string, Edge>();
     for (const m of facts.modules) {
-        if (m.isTest) continue;
         const from = layerOf.get(m.file);
-        if (!from) continue;
+        if (m.isTest || !from) continue;
         for (const imp of m.imports) {
             const target = imp.resolved && sourceOf(imp.resolved, layerOf);
             const to = target ? layerOf.get(target) : undefined;
             if (!to || to === from) continue;
-            const key = `${from}->${to}`;
-            const edge = edgeMap.get(key) ?? { from, to, count: 0, example: imp.loc, typeOnly: true, imports: [] };
+            const edge = edgeMap.get(`${from}->${to}`) ?? { from, to, count: 0, example: imp.loc, typeOnly: true, imports: [] };
             edge.count++;
             edge.typeOnly &&= imp.typeOnly;
             edge.imports.push({ ...imp, file: m.file });
-            edgeMap.set(key, edge);
+            edgeMap.set(`${from}->${to}`, edge);
         }
     }
-    const edges = [...edgeMap.values()];
+    return [...edgeMap.values()];
+}
 
-    // ---- model of the layer graph
-    const models: ExtractedModel[] = [];
-    const names = [...parts.keys()].filter(n => n !== '(no layer)');
-    if (names.length > 1) {
-        const b = new ModelBuilder('architecture', 'architecture', 'layer dependencies');
-        for (const n of names) b.state(n, true);
-        b.state('end');
-        for (const n of names) b.transition(n, 'end', { event: 'no further import' });
-        for (const e of edges.filter(e => names.includes(e.from) && names.includes(e.to))) {
-            b.transition(e.from, e.to, { event: `${e.count} import(s)${e.typeOnly ? ', types only' : ''}`, loc: e.example, text: e.imports[0]?.specifier });
-        }
-        // Direct rules are checked on the import graph below (with the offending imports);
-        // the model checks what only shows transitively: a layer reaching itself again.
-        for (const n of names) {
-            const id = b.idOf(n)!;
-            const example = edges.find(e => e.from === n)?.example;
-            b.spec('CTLSPEC', `no_cycle_${id}`, `AG (state = ${id} -> AX !(EF state = ${id}))`, {
-                rule: 'layer-cycle',
-                category: 'architecture',
-                severity: 'error',
-                message: `${n} depends on itself through other layers: the counterexample lists the import chain.`,
-                fix: 'Break the cycle: move the shared code into a lower layer both can import, or invert the dependency with an interface owned by the lower layer.',
-                loc: example,
-                fallback: 'no-return',
-                states: [n]
-            });
-        }
-        models.push(b.build());
+/**
+ * The layer graph as a model. Direct rules are checked on the import graph (with the offending
+ * imports); the model checks what only shows transitively: a layer reaching itself again.
+ */
+function layerModel(names: string[], edges: Edge[]): ExtractedModel {
+    const b = new ModelBuilder('architecture', 'architecture', 'layer dependencies');
+    for (const n of names) b.state(n, true);
+    b.state('end');
+    for (const n of names) b.transition(n, 'end', { event: 'no further import' });
+    for (const e of edges.filter(e => names.includes(e.from) && names.includes(e.to))) {
+        b.transition(e.from, e.to, { event: `${e.count} import(s)${e.typeOnly ? ', types only' : ''}`, loc: e.example, text: e.imports[0]?.specifier });
     }
-
-    // ---- direct layer violations, with the offending imports
-    for (const e of edges) {
-        const allowed = layers.get(e.from)?.mayImport;
-        if (!allowed || allowed.includes(e.to)) continue;
-        findings.push({
-            rule: 'layer-violation',
+    for (const n of names) {
+        const id = b.idOf(n)!;
+        b.spec('CTLSPEC', `no_cycle_${id}`, `AG (state = ${id} -> AX !(EF state = ${id}))`, {
+            rule: 'layer-cycle',
             category: 'architecture',
-            severity: e.typeOnly ? 'warning' : 'error',
-            subject: `${e.from} -> ${e.to}`,
-            message: `${e.from} imports ${e.to}${e.typeOnly ? ' (types only)' : ''} in ${e.count} place(s), but may only import ${allowed.join(', ') || 'nothing'}: ${e.imports.slice(0, 3).map(i => `${i.specifier} (${formatLocation(i.loc)})`).join(', ')}.`,
-            fix: `Remove these imports, or move what ${e.from} needs into ${allowed[0] ?? 'its own layer'}${e.typeOnly ? '; for types, define them in the lower layer' : ''}.`,
-            loc: e.example,
-            related: e.imports.slice(1, 6).map(i => i.loc),
-            model: 'architecture',
-            source: 'graph'
+            severity: 'error',
+            message: `${n} depends on itself through other layers: the counterexample lists the import chain.`,
+            fix: 'Break the cycle: move the shared code into a lower layer both can import, or invert the dependency with an interface owned by the lower layer.',
+            loc: edges.find(e => e.from === n)?.example,
+            fallback: 'no-return',
+            states: [n]
         });
     }
+    return b.build();
+}
 
-    // ---- facades: other packages are used through their entry module
-    const facades: PatternInstance[] = [];
-    const packageOf = packageRoots(facts);
-    for (const [root, entry] of packageOf.entries) facades.push({ pattern: 'facade', subject: root || '.', loc: { file: entry, line: 1 }, evidence: `entry module ${entry}` });
-    if (config.packageEntries !== false) {
-        for (const m of facts.modules) {
-            const own = packageOf.of(m.file);
-            for (const imp of m.imports) {
-                if (!imp.resolved) continue;
-                const target = sourceOf(imp.resolved, layerOf) ?? imp.resolved;
-                const other = packageOf.of(target);
-                if (other === undefined || other === own) continue;
-                const entry = packageOf.entries.get(other);
-                if (!entry || sameModule(target, entry) || /(^|\/)index\.[^/]+$|__init__\.py$/.test(target)) continue;
-                findings.push({
+/** Direct layer violations, with the offending imports. */
+function layerViolations(edges: Edge[], layers: Map<string, LayerConfig>): Finding[] {
+    return edges.flatMap(e => {
+        const allowed = layers.get(e.from)?.mayImport;
+        if (!allowed || allowed.includes(e.to)) return [];
+        return [
+            {
+                rule: 'layer-violation',
+                category: 'architecture' as const,
+                severity: e.typeOnly ? ('warning' as const) : ('error' as const),
+                subject: `${e.from} -> ${e.to}`,
+                message: `${e.from} imports ${e.to}${e.typeOnly ? ' (types only)' : ''} in ${e.count} place(s), but may only import ${allowed.join(', ') || 'nothing'}: ${e.imports.slice(0, 3).map(i => `${i.specifier} (${formatLocation(i.loc)})`).join(', ')}.`,
+                fix: `Remove these imports, or move what ${e.from} needs into ${allowed[0] ?? 'its own layer'}${e.typeOnly ? '; for types, define them in the lower layer' : ''}.`,
+                loc: e.example,
+                related: e.imports.slice(1, 6).map(i => i.loc),
+                model: 'architecture',
+                source: 'graph' as const
+            }
+        ];
+    });
+}
+
+/** Facades: other packages are used through their entry module. */
+function facadeBypasses(facts: Facts, layerOf: Map<string, string>, packages: ReturnType<typeof packageRoots>): Finding[] {
+    return facts.modules.flatMap(m =>
+        m.imports.flatMap(imp => {
+            const target = imp.resolved ? (sourceOf(imp.resolved, layerOf) ?? imp.resolved) : undefined;
+            const other = target ? packages.of(target) : undefined;
+            const entry = other === undefined ? undefined : packages.entries.get(other);
+            if (!target || other === undefined || other === packages.of(m.file) || !entry || sameModule(target, entry) || /(^|\/)index\.[^/]+$|__init__\.py$/.test(target)) return [];
+            return [
+                {
                     rule: 'facade-bypassed',
-                    category: 'architecture',
-                    severity: 'warning',
+                    category: 'architecture' as const,
+                    severity: 'warning' as const,
                     subject: `${m.file} -> ${other}`,
                     message: `${m.file} reaches into ${other} (${imp.specifier}) instead of importing its entry module ${entry}.`,
                     fix: `Import from the package entry (${entry}); if the symbol is not exported there, export it from the entry.`,
                     loc: imp.loc,
-                    source: 'graph'
-                });
-            }
-        }
-    }
+                    source: 'graph' as const
+                }
+            ];
+        })
+    );
+}
 
-    // ---- file-level import cycles
-    for (const cycle of fileCycles(facts, layerOf)) {
-        findings.push({
-            rule: 'import-cycle',
-            category: 'architecture',
-            severity: 'warning',
-            subject: cycle[0],
-            message: `Import cycle between ${cycle.length} files: ${cycle.join(' -> ')} -> ${cycle[0]}.`,
-            fix: 'Move what the files share into a new module both import, or make one of the imports type-only.',
-            loc: { file: cycle[0], line: 1 },
-            source: 'graph'
-        });
-    }
-    return { models, findings, edges: edges.map(({ imports: _imports, ...e }) => e), facades };
+function importCycle(cycle: string[]): Finding {
+    return {
+        rule: 'import-cycle',
+        category: 'architecture',
+        severity: 'warning',
+        subject: cycle[0],
+        message: `Import cycle between ${cycle.length} files: ${cycle.join(' -> ')} -> ${cycle[0]}.`,
+        fix: 'Move what the files share into a new module both import, or make one of the imports type-only.',
+        loc: { file: cycle[0], line: 1 },
+        source: 'graph'
+    };
 }
 
 /** Compiled output (out/x.d.ts, dist/x.js) maps back to the source file it came from. */

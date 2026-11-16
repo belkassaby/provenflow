@@ -1,7 +1,9 @@
 {
   "exclude": [
     "**/test/fixtures/**",
-    "examples/**"
+    "examples/**",
+    "packages/desktop/stage/**",
+    "packages/desktop/release/**"
   ],
   "layers": [
     {
@@ -40,6 +42,17 @@
       ],
       "mayImport": [
         "language"
+      ],
+      "style": "object-oriented"
+    },
+    {
+      "name": "desktop",
+      "paths": [
+        "packages/desktop/src/**"
+      ],
+      "mayImport": [
+        "server",
+        "extract"
       ],
       "style": "object-oriented"
     }
@@ -88,6 +101,49 @@
       ]
     }
   },
+  "languages": {
+    "typescript": {
+      "limits": {
+        "functionLines": 50,
+        "functionParams": 7
+      },
+      "complexity": {
+        "cognitive": 15,
+        "nesting": 4
+      },
+      "naming": {
+        "class": "PascalCase",
+        "function": "camelCase",
+        "method": "camelCase",
+        "field": "camelCase",
+        "constant": "SCREAMING_SNAKE_CASE"
+      }
+    },
+    "python": {
+      "limits": {
+        "functionLines": 50,
+        "functionParams": 5
+      },
+      "complexity": {
+        "cognitive": 15,
+        "nesting": 5
+      },
+      "naming": {
+        "class": "PascalCase",
+        "function": "snake_case",
+        "method": "snake_case",
+        "field": "snake_case",
+        "constant": "SCREAMING_SNAKE_CASE"
+      }
+    }
+  },
+  "duplication": {
+    "minTokens": 100,
+    "minLines": 10,
+    "tests": false,
+    "similarity": 0.8,
+    "minFunctionTokens": 50
+  },
   "ignore": [
     {
       "rule": "fp-mutable-global",
@@ -113,11 +169,21 @@
       "rule": "oop-mutates-foreign-object",
       "subject": "token",
       "reason": "CodeMirror's StreamParser contract: token() advances the stream and updates the parser state it is given."
+    },
+    {
+      "rule": "naming-convention",
+      "file": "packages/language/src/state-diagram-module.ts",
+      "reason": "Langium's dependency-injection modules name each service factory after the service class (ScopeComputation, StateDiagramValidator)."
     }
   ],
   "limits": {
     "classMethods": 30,
     "classLines": 600,
     "functionLines": 80
+  },
+  "baseline": "provenflow-baseline.json",
+  "agents": {
+    "failOn": "warning",
+    "requireTests": true
   }
 }

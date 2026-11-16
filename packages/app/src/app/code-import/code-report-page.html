@@ -1,11 +1,13 @@
-<dialog #dialog class="help code-import" (click)="backdropClick($event)" [attr.aria-label]="report() ? 'Code base review' : 'Import code base'">
-  <header>
+<section class="code-import" [attr.aria-label]="report() ? 'Code base review' : 'Import code base'">
+  <header class="page-head">
     <h2>{{ report() && !codeImport.running() ? 'Code base review' : 'Import code base' }}</h2>
     @if (report(); as r) {
       <span class="muted small code-root" title="Analysed folder">{{ r.root }}</span>
+      @if (r.applicable) {
+        <button type="button" class="small" (click)="openC4.emit(r.root)" title="The projects around this code base with the same owner, as a C4 model, and where code belongs">System map (C4)</button>
+      }
     }
     <button type="button" class="link small" (click)="walkthrough()">how does it work?</button>
-    <button type="button" class="icon" (click)="close()" aria-label="Close">×</button>
   </header>
 
   @if (codeImport.running()) {
@@ -26,7 +28,7 @@
           @for (s of codeImport.steps(); track $index) { <li><span class="ok-text">✓</span> {{ s.label }} <span class="muted mono">{{ duration(s.ms) }}</span></li> }
         </ul>
       }
-      <p class="muted small">Extracting the state machines, resource lifecycles, design-pattern contracts and layers, then checking every model{{ codeImport.analyzers() ? ', running the installed analysers and replaying findings on the code' : '' }}{{ codeImport.quickFixes() ? '; each proposed change is re-checked and built, which takes the longest' : '' }}. You can close this window: the analysis goes on, and File → Import code base… shows it again.</p>
+      <p class="muted small">Extracting the state machines, resource lifecycles, design-pattern contracts and layers, then checking every model{{ codeImport.analyzers() ? ', running the installed analysers and replaying findings on the code' : '' }}{{ codeImport.quickFixes() ? '; each proposed change is re-checked and built, which takes the longest' : '' }}. You can switch to another tab, or close this one: the analysis goes on, and File → Import code base… shows it again.</p>
     </div>
   } @else if (!report()) {
     <div class="help-body">
@@ -34,6 +36,9 @@
         ProvenFlow reads a project in TypeScript/JavaScript (with Angular templates), Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rust, Swift, Ruby, PHP or R, builds models of it and checks them with nuXmv
         (<code>pflow extract</code>). Each problem comes with the code path that shows it and a fix; every model opens here as a diagram.
       </p>
+      <section class="code-source">
+        <app-practice-picker />
+      </section>
       <section class="code-source">
         <h3>A folder on this computer</h3>
         @if (codeImport.canPickWritable) {
@@ -54,6 +59,7 @@
             <datalist id="code-recent-paths">
               @for (p of codeImport.recentPaths(); track p) { <option [value]="p"></option> }
             </datalist>
+            <app-folder-browse title="The code base to analyse" (picked)="path.set($event)" />
             <button type="button" class="primary" (click)="analysePath()" [disabled]="!path().trim()">Analyse</button>
           </div>
           @if (codeImport.recentPaths().length > 0) {
@@ -254,9 +260,10 @@
     </p>
     <nav class="help-tabs code-tabs" role="tablist">
       <button type="button" role="tab" [class.active]="view() === 'findings'" (click)="view.set('findings')">Findings</button>
+      <button type="button" role="tab" [class.active]="view() === 'edits'" (click)="view.set('edits')">Edits by file ({{ editedFiles() }})</button>
       <button type="button" role="tab" [class.active]="view() === 'changes'" (click)="view.set('changes')">Code changes ({{ changes().length }})</button>
       <button type="button" role="tab" [class.active]="view() === 'models'" (click)="view.set('models')">Models ({{ r.models.length }})</button>
-      <button type="button" role="tab" [class.active]="view() === 'patterns'" (click)="view.set('patterns')">Patterns ({{ r.patterns.length }})</button>
+      <button type="button" role="tab" [class.active]="view() === 'patterns'" (click)="view.set('patterns')">Patterns &amp; practices ({{ practicesToFix() }})</button>
       <button type="button" role="tab" [class.active]="view() === 'paradigm'" (click)="view.set('paradigm')">Paradigm</button>
       <button type="button" role="tab" [class.active]="view() === 'tools'" (click)="view.set('tools')">Tools &amp; proofs ({{ proofs().length }})</button>
     </nav>
@@ -276,6 +283,7 @@
                   <div class="code-finding-head">
                     <span class="badge" [class.fail]="f.severity === 'error'" [class.warn]="f.severity === 'warning'">{{ f.severity }}</span>
                     <strong>{{ f.rule }}</strong>
+                    @if (catalogue.entry(f.practice); as p) { <span class="badge practice-badge" [title]="p.summary">{{ p.name }}</span> }
                     <span class="muted">{{ f.subject }}</span>
                     @if (f.loc) { <code class="small">{{ where(f.loc) }}</code> }
                     @if (sourceLabel(f) !== f.source || f.source === 'build') { <span class="badge" title="Found by this analyser">{{ sourceLabel(f) }}</span> }
@@ -382,22 +390,10 @@
           </table>
         }
         @case ('patterns') {
-          <table class="code-table">
-            <thead><tr><th>pattern</th><th>subject</th><th>evidence</th><th>recognised</th><th></th></tr></thead>
-            <tbody>
-              @for (p of r.patterns; track $index) {
-                <tr>
-                  <td>{{ p.pattern }}</td>
-                  <td>{{ p.subject }}<br /><code class="small muted">{{ where(p.loc) }}</code></td>
-                  <td class="small">{{ p.evidence }}</td>
-                  <td class="small">@if (p.confidence; as c) { <span class="badge" [class.ok]="c !== 'heuristic'" [class.warn]="c === 'heuristic'" [title]="c === 'heuristic' ? 'From names and shapes only: its findings are notes. Add @pattern ' + p.pattern + ' above the class, or list it in provenflow.config.json, to make them warnings.' : c === 'declared' ? 'Declared in the code (@pattern) or in provenflow.config.json' : 'From types and language constructs'">{{ c }}</span> }</td>
-                  <td>@if (modelOf(p.model); as m) { <button type="button" class="small" (click)="show(m)">Contract</button> }</td>
-                </tr>
-              } @empty {
-                <tr><td colspan="5" class="muted">No design pattern recognised.</td></tr>
-              }
-            </tbody>
-          </table>
+          <app-practice-results (showModel)="modelOf($event) && showModel(modelOf($event)!)" (showEdits)="view.set('edits')" />
+        }
+        @case ('edits') {
+          <app-file-edits [llmSpec]="llmSpec()" />
         }
         @case ('paradigm') {
           <table class="code-table">
@@ -459,4 +455,4 @@
       }
     </div>
   }
-</dialog>
+</section>

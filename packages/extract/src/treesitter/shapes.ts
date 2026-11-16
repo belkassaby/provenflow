@@ -1,6 +1,7 @@
 /** Code shape of the tree-sitter languages: class, interface, function, module and instantiation facts. */
 import type { ClassFact, FieldFact, FunctionFact, InstantiationFact, InterfaceFact, MethodFact, ModuleFact } from '../ir.js';
 import type { ClassRec, FileRec } from './records.js';
+import { complexityOf } from './complexity.js';
 import { ancestorOf, descendants, escape, header, IMPLICIT_THIS, importSpec, lastLine, locOf, nameOf, walk } from './syntax.js';
 
 
@@ -108,7 +109,8 @@ export function functionFacts(r: FileRec): FunctionFact[] {
                 mutatesParams: [...new Set(mutates)],
                 writesOuter: [...new Set(outer)],
                 effects,
-                usesThis: new RegExp(selfTok).test(body) || (!!m.receiver && new RegExp(`\\b${m.receiver}\\.`).test(body))
+                usesThis: new RegExp(selfTok).test(body) || (!!m.receiver && new RegExp(`\\b${m.receiver}\\.`).test(body)),
+                complexity: complexityOf(m.node, m.name)
             };
         });
 }

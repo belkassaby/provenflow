@@ -1,0 +1,7 @@
+[project]
+name = "acme-core"
+version = "0.9.0"
+description = "Shared Python code"
+
+[project.urls]
+Repository = "https://github.com/acme/pycore"

@@ -282,6 +282,20 @@ describe('POST /api/extract (code base models)', () => {
         expect(body.findings.map((f: { rule: string }) => f.rule)).toContain('resource-leak');
     });
 
+    it('lists the patterns and practices catalogue, and checks only the entries selected', async () => {
+        const url = await start(false);
+        const { entries } = (await (await fetch(`${url}/api/catalogue`)).json()) as { entries: Array<{ id: string; kind: string; rules: string[]; example: { before: string } }> };
+        expect(entries.map(e => e.id)).toEqual(expect.arrayContaining(['singleton', 'dry', 'law-of-demeter', 'magic-number']));
+        expect(entries.find(e => e.id === 'dead-programs-tell-no-lies')).toMatchObject({ kind: 'principle', rules: ['empty-catch'] });
+        const files = { 'src/load.ts': 'export function load(text: string): unknown {\n    try {\n        return JSON.parse(text);\n    } catch {}\n    return undefined;\n}\n\nexport function late(started: number): boolean {\n    return Date.now() - started > 86400;\n}\n' };
+        const rules = async (checks: unknown) => ((await (await extract(url, { analyzers: false, files, quickFixes: 0, checks })).json()).findings as Array<{ rule: string; practice?: string }>).map(f => `${f.rule}:${f.practice}`);
+        expect(await rules(undefined)).toContain('empty-catch:dead-programs-tell-no-lies');
+        expect(await rules(undefined)).not.toContain('magic-number:magic-number');
+        expect(await rules({ select: ['magic-number'] })).toEqual(['magic-number:magic-number']);
+        expect(await rules({ skip: ['dead-programs-tell-no-lies'] })).not.toContain('empty-catch:dead-programs-tell-no-lies');
+        expect((await extract(url, { files, checks: { select: 'dry' } })).status).toBe(400);
+    });
+
     it('streams the progress, then the report, when asked for NDJSON', async () => {
         const url = await start(true);
         const res = await fetch(`${url}/api/extract`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify({ analyzers: false, path: SHOP, quickFixes: 3 }) });
@@ -586,5 +600,43 @@ describe('LLM settings (Help → LLM settings)', () => {
         expect(existsSync(file)).toBe(false);
         const cleared = await (await call('PUT', '/api/llm-settings', { anthropic: { clearKey: true } })).json();
         expect(cleared.anthropic.key).toBeUndefined();
+    });
+});
+
+describe('C4: the projects around a code base (POST /api/c4/discover, /api/c4/save)', () => {
+    const FIXTURE = fileURLToPath(new URL('../../extract/test/fixtures/c4', import.meta.url));
+    const runner: RunnerConfig = { executable: '/nonexistent/nuXmv', timeoutMs: 10_000, maxOutputBytes: 1_000_000 };
+    const servers: Server[] = [];
+    afterAll(() => servers.forEach(s => s.close()));
+    const start = (allowLocalPaths: boolean) =>
+        new Promise<string>(resolve => {
+            const server = createApp({ runner, allowLocalPaths }).listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`));
+            servers.push(server);
+        });
+    const post = (url: string, path: string, body: unknown) => fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+    it('maps the projects of a folder read by path, and writes a model into it', async () => {
+        const url = await start(true);
+        const res = await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app') });
+        expect(res.status).toBe(200);
+        const map = await res.json();
+        expect(map.projects.map((p: { name: string }) => p.name)).toContain('@acme/viz');
+        expect(map.workspace.views[0].key).toBe('projects');
+        expect(map.suggestions.some((s: { kind: string }) => s.kind === 'duplicate-across-projects')).toBe(true);
+        expect((await post(url, '/api/c4/save', { path: map.root, file: '../escape.dsl', text: 'x' })).status).toBe(400);
+        expect((await post(url, '/api/c4/save', { path: map.root, file: 'notes.sh', text: 'x' })).status).toBe(400);
+        const dir = mkdtempSync(join(tmpdir(), 'pflow-c4-'));
+        try {
+            // A folder this server has not mapped or analysed cannot be written to.
+            expect((await post(url, '/api/c4/save', { path: dir, file: 'workspace.dsl', text: 'x' })).status).toBe(403);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+        expect((await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app'), scan: ['relative/dir'] })).status).toBe(400);
+    });
+
+    it('does not read folders by path when the server is not bound to localhost', async () => {
+        const url = await start(false);
+        expect((await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app') })).status).toBe(403);
     });
 });

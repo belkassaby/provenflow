@@ -1,4 +1,4 @@
-import { Component, computed, effect, HostListener, inject, OnInit, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, effect, HostListener, inject, Injector, OnInit, signal, viewChild } from '@angular/core';
 import { EXAMPLES, importGraph, serializeDiagram } from '@provenflow/language';
 import { AttributeTable } from './attribute-table/attribute-table';
 import { CodeExport } from './code-export';
@@ -6,7 +6,9 @@ import { DiagramCanvas } from './diagram-canvas/diagram-canvas';
 import { DiagramStore } from './diagram-store';
 import { downloadText, pickFile } from './file-io';
 import { CodeImport } from './code-import/code-import';
-import { CodeImportDialog } from './code-import/code-import-dialog';
+import { C4Page } from './c4/c4-page';
+import { DesktopBridge, type DesktopFile } from './desktop-bridge';
+import { CodeReportPage } from './code-import/code-report-page';
 import { DocumentTabs } from './document-tabs/document-tabs';
 import { LlmSettingsDialog } from './llm-settings/llm-settings-dialog';
 import { DocumentTabsBar } from './document-tabs/document-tabs-bar';
@@ -19,6 +21,7 @@ import { PropertiesPanel } from './properties-panel/properties-panel';
 import { Splitter } from './splitter/splitter';
 import { TextEditor } from './text-editor/text-editor';
 import { TracePanel } from './trace-panel/trace-panel';
+import { ThemeService } from './theme';
 
 type Tab = 'attributes' | 'properties' | 'trace' | 'model' | 'python' | 'console';
 
@@ -37,7 +40,7 @@ function loadSizes(): typeof DEFAULT_SIZES {
 
 @Component({
     selector: 'app-root',
-    imports: [AttributeTable, CodeImportDialog, DiagramCanvas, DocumentTabsBar, LlmSettingsDialog, HelpDialog, Inspector, OutputPanel, ProblemsList, PropertiesPanel, Splitter, TextEditor, TracePanel],
+    imports: [AttributeTable, C4Page, CodeReportPage, DiagramCanvas, DocumentTabsBar, LlmSettingsDialog, HelpDialog, Inspector, OutputPanel, ProblemsList, PropertiesPanel, Splitter, TextEditor, TracePanel],
     templateUrl: './app.html',
     styleUrl: './app.css'
 })
@@ -47,6 +50,8 @@ export class App implements OnInit {
     readonly documents = inject(DocumentTabs);
     readonly codeReport = inject(CodeImport);
     readonly codeExport = inject(CodeExport);
+    readonly theme = inject(ThemeService);
+    private readonly injector = inject(Injector);
     readonly exampleGroups = [...new Set(EXAMPLES.map(e => e.group))].map(name => ({ name, examples: EXAMPLES.filter(e => e.group === name) }));
     readonly tab = signal<Tab>('properties');
     readonly openMenu = signal<string | null>(null);
@@ -61,7 +66,7 @@ export class App implements OnInit {
     private readonly editor = viewChild(TextEditor);
     private readonly canvas = viewChild(DiagramCanvas);
     private readonly help = viewChild.required(HelpDialog);
-    private readonly codeImport = viewChild.required(CodeImportDialog);
+    private readonly c4 = viewChild(C4Page);
     private readonly llmSettings = viewChild.required(LlmSettingsDialog);
 
     readonly tabs = computed(() => {
@@ -84,6 +89,30 @@ export class App implements OnInit {
         effect(() => {
             if (active()) this.tab.set('trace');
         });
+        // In the desktop application: its native menus, and the files opened with it.
+        const desktop = inject(DesktopBridge);
+        afterNextRender(() =>
+            desktop.connect(
+                {
+                    'new-diagram': () => this.newDiagram(),
+                    save: () => this.save(),
+                    'import-code': () => this.importCodeBase(),
+                    c4: () => this.openC4(),
+                    'export-png': () => this.exportPng(),
+                    'export-svg': () => this.exportSvg(),
+                    'export-smv': () => this.exportSmv(),
+                    'export-python': () => this.codeExport.downloadPython(),
+                    'export-notebook': () => this.codeExport.downloadNotebook(),
+                    check: () => void this.check(),
+                    simulate: () => this.simulate(),
+                    'llm-settings': () => this.openLlmSettings(),
+                    'help-guide': () => this.openHelp('guide'),
+                    'help-walkthroughs': () => this.openHelp('walkthroughs'),
+                    'toggle-theme': () => this.theme.toggle()
+                },
+                file => (file.kind === 'c4' ? this.openC4(file) : this.documents.open(file.text, file.name, 'file'))
+            )
+        );
     }
 
     ngOnInit(): void {
@@ -133,6 +162,9 @@ export class App implements OnInit {
 
     @HostListener('document:keydown', ['$event'])
     onKey(event: KeyboardEvent): void {
+        if (event.key === 'Escape') this.openMenu.set(null);
+        // A page (the code base report, C4) has its own keys: these act on the diagram.
+        if (this.documents.page()) return;
         const target = event.target as HTMLElement;
         const typing = target.closest('input, textarea, select, .cm-editor, [contenteditable]');
         if ((event.key === 'Delete' || event.key === 'Backspace') && !typing && this.store.selection()) {
@@ -144,7 +176,6 @@ export class App implements OnInit {
             this.save();
         }
         if (event.key === 'Escape') {
-            this.openMenu.set(null);
             if (this.canvasMax() && !target.closest('dialog')) this.canvasMax.set(false);
             if (!typing) this.store.selection.set(null);
         }
@@ -167,19 +198,46 @@ export class App implements OnInit {
         if (file) this.documents.open(file.text, file.name.replace(/\.nxd$/, '.pflow'), 'file');
     }
 
-    /** File → Import code base…: extracts and verifies models of a project (pflow extract). */
+    /** File → Import code base…, in its tab: extracts and verifies models of a project (pflow extract). */
     importCodeBase(): void {
-        this.codeImport().open(true);
+        if (!this.codeReport.running()) this.codeReport.clear();
+        this.documents.openPage('report');
+    }
+
+    /** The last code-base report, in its tab: its findings and every model found, without importing again. */
+    showCodeReport(): void {
+        if (!this.codeReport.running()) this.codeReport.restore();
+        this.documents.openPage('report');
+    }
+
+    /**
+     * File → C4 architecture…, in its tab. With a folder (the code base report's System map), maps
+     * its projects; with a workspace opened with the desktop application, shows it.
+     */
+    openC4(what?: string | DesktopFile): void {
+        this.openMenu.set(null);
+        this.documents.openPage('c4');
+        if (typeof what === 'string') this.withC4(page => page.mapFolder(what));
+        else if (what) this.withC4(page => page.openText(what.text, what.name));
+    }
+
+    /** Runs once the C4 page is there (it is created with its tab). */
+    private withC4(action: (page: C4Page) => void): void {
+        const page = this.c4();
+        if (page) action(page);
+        else
+            afterNextRender(
+                () => {
+                    const created = this.c4();
+                    if (created) action(created);
+                },
+                { injector: this.injector }
+            );
     }
 
     /** Help → LLM settings: API keys and models for the LLM fixes of Import code base. */
     openLlmSettings(): void {
         void this.llmSettings().open();
-    }
-
-    /** The last code-base report: its findings and every model found, without importing again. */
-    showCodeReport(): void {
-        this.codeImport().open(false);
     }
 
     /** Opens a model extracted from a code base in its own tab; checks it when it has false properties. */
@@ -238,10 +296,6 @@ export class App implements OnInit {
             // The check took a while: only move to the console if the user is still on the results.
             if (this.tab() === 'properties') this.tab.set('console');
         } else if (firstTrace >= 0) this.flash('Some properties are false: open a counterexample to replay it on the diagram.');
-    }
-
-    showTrace(): void {
-        this.tab.set('trace');
     }
 
     simulate(): void {

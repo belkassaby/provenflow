@@ -1,5 +1,6 @@
-import { computed, Injectable, signal } from '@angular/core';
-import { isApplied } from './already-applied';
+import { computed, inject, Injectable, signal } from '@angular/core';
+import { isApplied } from '@provenflow/language';
+import { PracticeCatalogue } from './practice-catalogue';
 import { directoryPicker, ensureWritable, listFiles, loadFolder, readText, saveFolder, writeText } from './folder-access';
 
 /** A place in the analysed code base. */
@@ -10,7 +11,7 @@ export interface CodeLocation {
 
 export interface CodeFinding {
     rule: string;
-    category: 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build';
+    category: 'state-machine' | 'lifecycle' | 'pattern' | 'paradigm' | 'architecture' | 'security' | 'memory' | 'heap' | 'build' | 'duplication' | 'complexity' | 'naming' | 'tests' | 'dependencies' | 'practice';
     severity: 'error' | 'warning' | 'info';
     subject: string;
     message: string;
@@ -25,6 +26,8 @@ export interface CodeFinding {
     related?: CodeLocation[];
     suggestedPatch?: SuggestedChange;
     states?: string[];
+    /** The patterns and practices catalogue entry the finding is about (see PracticeCatalogue). */
+    practice?: string;
 }
 
 /** A proposed code change: every changed file whole, before and after. */
@@ -100,6 +103,8 @@ export interface CodeReport {
     architecture: { edges: Array<{ from: string; to: string; count: number; typeOnly: boolean }> };
     notes: string[];
     markdown: string;
+    /** The config the analysis used; `checks` holds the catalogue entries it checked. */
+    config?: { checks?: { select?: string[]; skip?: string[] } };
 }
 
 /** What the analysis reads: sources, Angular templates, and the files that describe the project. */
@@ -142,6 +147,7 @@ const MAX_FILE_BYTES = 1_000_000;
 /** Sends a code base to the server (`pflow extract`) and keeps its report. */
 @Injectable({ providedIn: 'root' })
 export class CodeImport {
+    private readonly catalogue = inject(PracticeCatalogue);
     readonly running = signal(false);
     readonly progress = signal<AnalysisProgress>({ phase: '', message: '', percent: null });
     /** Steps of the running analysis already finished. */
@@ -247,7 +253,8 @@ export class CodeImport {
     }
 
     private fixOptions(): Record<string, unknown> {
-        return { quickFixes: this.quickFixes() ? 20 : 0, analyzers: this.analyzers(), ...(this.llm().trim() ? { llm: this.llm().trim(), llmFixes: this.llmFixes() } : {}) };
+        const checks = this.catalogue.checks();
+        return { quickFixes: this.quickFixes() ? 20 : 0, analyzers: this.analyzers(), ...(checks ? { checks } : {}), ...(this.llm().trim() ? { llm: this.llm().trim(), llmFixes: this.llmFixes() } : {}) };
     }
 
     /** Writes a reviewed change into the analysed folder (refused if the file changed since the analysis). */

@@ -17,10 +17,12 @@
  *     one, and add a dispose method that releases it.
  */
 import { readFileSync } from 'node:fs';
+import { isApplied } from '@provenflow/language';
 import { join } from 'node:path';
 import { CONFIG_FILE, type ProvenflowConfig } from './config.js';
 import type { Facts, ResourceKind } from './ir.js';
 import { modelToPflow, type ExtractedModel, type Finding, type ModelChange, type PatchFile } from './models.js';
+import { deleteLinesEdit, rethrowEdit } from './quality/practices.js';
 import type { SpecVerdict } from './verify.js';
 
 export interface Edit {
@@ -66,55 +68,9 @@ export interface Baseline {
 
 const key = (f: Finding) => `${f.rule}|${f.subject}|${f.loc?.file ?? ''}`;
 
+export { isApplied };
+
 /** Applies each proposal in memory, re-runs every check, and attaches the verified (or not) patch to its finding. */
-/**
- * Whether an edit is already in a text, so that applying it would only add the same lines again:
- * - the text already holds the replacement of an edit that inserts next to its anchor; or
- * - the searched text is there, and the edit only inserts blocks of lines, each right next to an
- *   identical copy of itself (a fix proposed again on code where it was already applied).
- */
-export function isApplied(text: string | undefined, edit: Edit): boolean {
-    if (text === undefined || edit.search === '' || edit.replace === edit.search) return false;
-    if (edit.replace.includes(edit.search) && text.includes(edit.replace)) return true;
-    return text.includes(edit.search) && onlyDuplicates(edit.search.split('\n'), edit.replace.split('\n'));
-}
-
-/** Whether `after` is `before` with only inserted blocks of lines, each a copy of the lines just above or below it. */
-function onlyDuplicates(before: string[], after: string[]): boolean {
-    const a = before.map(l => l.trim());
-    const b = after.map(l => l.trim());
-    let head = 0;
-    while (head < a.length && head < b.length && a[head] === b[head]) head++;
-    let tail = 0;
-    while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
-    const x = a.slice(head, a.length - tail);
-    const y = b.slice(head, b.length - tail);
-    if (y.length === 0 || x.length * y.length > 4_000_000) return false;
-    // Longest common subsequence of the middle parts: every line of `before` must be kept.
-    const lcs = Array.from({ length: x.length + 1 }, () => new Uint32Array(y.length + 1));
-    for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) lcs[i][j] = x[i] === y[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
-    if (lcs[0][0] !== x.filter(l => l !== '').length && lcs[0][0] !== x.length) return false;
-    const inserted: number[] = [];
-    for (let i = 0, j = 0; j < y.length; ) {
-        if (i < x.length && x[i] === y[j]) {
-            i++;
-            j++;
-        } else if (i < x.length && lcs[i + 1][j] >= lcs[i][j + 1]) {
-            if (x[i] !== '') return false; // a line of `before` removed
-            i++;
-        } else inserted.push(head + j++);
-    }
-    // Group the inserted lines into blocks; each must repeat the lines right above or below it.
-    const blocks: Array<[number, number]> = [];
-    for (const k of inserted) {
-        const last = blocks[blocks.length - 1];
-        if (last && last[1] === k) last[1] = k + 1;
-        else blocks.push([k, k + 1]);
-    }
-    const same = (from: number, to: number, at: number) => at >= 0 && at + (to - from) <= b.length && b.slice(from, to).join('\n') === b.slice(at, at + (to - from)).join('\n');
-    return blocks.every(([from, to]) => b.slice(from, to).every(l => l === '') || same(from, to, from - (to - from)) || same(from, to, to));
-}
-
 export async function verifyProposals(
     findings: Finding[],
     proposals: Proposal[],
@@ -206,25 +162,52 @@ function modelChanges(before: Baseline, after: RerunResult): ModelChange[] {
 
 // ------------------------------------------------------------------ quick fixes
 
+/** What a quick fix can look at: the facts, the models, the project's files and config. */
+interface FixContext {
+    facts: Facts;
+    models: ExtractedModel[];
+    read: (file: string) => string | undefined;
+    config: ProvenflowConfig;
+}
+
+/** A quick fix of the code: given the text of the finding's file. */
+const inFile =
+    (fix: (f: Finding, text: string, ctx: FixContext) => Proposal | undefined) =>
+    (f: Finding, ctx: FixContext): Proposal | undefined => {
+        const text = ctx.read(f.loc!.file);
+        return text === undefined ? undefined : fix(f, text, ctx);
+    };
+
+/** The quick fix of each rule (`category:rule` when the rule name is shared between categories). */
+const QUICK_FIXES: Record<string, (f: Finding, ctx: FixContext) => Proposal | undefined> = {
+    'state-machine:stuck-state': (f, ctx) => declareTerminal(f, ctx.models, ctx.read, ctx.config),
+    'state-machine:cannot-settle': (f, ctx) => declareTerminal(f, ctx.models, ctx.read, ctx.config),
+    'state-machine:unreachable-state': (f, ctx) => removeUnusedValue(f, ctx.facts, ctx.models, ctx.read),
+    'unhandled-state': inFile((f, text, ctx) => missingCases(f, ctx.facts, text)),
+    'non-exhaustive-dispatch': inFile((f, text, ctx) => missingCases(f, ctx.facts, text)),
+    'stale-write-after-await': inFile((f, text, ctx) => recheckAfterAwait(f, ctx.facts, text)),
+    'resource-leak': inFile((f, text, ctx) => releaseResource(f, ctx.facts, ctx.models, text)),
+    'empty-catch': inFile(practiceFix),
+    'commented-out-code': inFile(practiceFix)
+};
+
 export function quickFixes(findings: Finding[], facts: Facts, models: ExtractedModel[], read: (file: string) => string | undefined, config: ProvenflowConfig = {}): Proposal[] {
-    const proposals: Proposal[] = [];
-    for (const f of findings) {
-        if (f.suggestedPatch || !f.loc) continue;
-        let p: Proposal | undefined;
-        if (f.category === 'state-machine' && (f.rule === 'stuck-state' || f.rule === 'cannot-settle')) {
-            p = declareTerminal(f, models, read, config);
-        } else if (f.category === 'state-machine' && f.rule === 'unreachable-state') {
-            p = removeUnusedValue(f, facts, models, read);
-        } else {
-            const text = read(f.loc.file);
-            if (text === undefined) continue;
-            if (f.rule === 'unhandled-state' || f.rule === 'non-exhaustive-dispatch') p = missingCases(f, facts, text);
-            else if (f.rule === 'stale-write-after-await') p = recheckAfterAwait(f, facts, text);
-            else if (f.rule === 'resource-leak') p = releaseResource(f, facts, models, text);
-        }
-        if (p) proposals.push(p);
-    }
-    return proposals;
+    const ctx: FixContext = { facts, models, read, config };
+    return findings
+        .filter(f => !f.suggestedPatch && f.loc)
+        .map(f => (QUICK_FIXES[`${f.category}:${f.rule}`] ?? QUICK_FIXES[f.rule])?.(f, ctx))
+        .filter((p): p is Proposal => !!p);
+}
+
+/** Commented-out code is deleted; an empty handler rethrows, so the program stops where the problem is. */
+function practiceFix(f: Finding, text: string): Proposal | undefined {
+    const removing = f.rule === 'commented-out-code';
+    const edit = removing ? deleteLinesEdit(f, text) : rethrowEdit(f, text);
+    if (!edit || !f.loc) return undefined;
+    const explanation = removing
+        ? 'Deletes the commented-out lines: version control keeps the old code (The Pragmatic Programmer, Topic 3: Software Entropy).'
+        : 'Rethrows the caught error instead of dropping it: crash early, where the problem is (The Pragmatic Programmer, Topic 24: Dead Programs Tell No Lies). If the error is expected here, handle it instead, or keep the block and say why in a comment.';
+    return { finding: f, edits: [{ file: f.loc.file, ...edit }], explanation, by: 'quick fix' };
 }
 
 /** Declares the state(s) the machine cannot leave as final in provenflow.config.json (keeping the other final states). */

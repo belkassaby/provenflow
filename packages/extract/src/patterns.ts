@@ -455,6 +455,7 @@ export function checkExpectations(config: ProvenflowConfig, instances: PatternIn
             findings.push({
                 rule: 'pattern-expected',
                 category: 'pattern',
+                practice: expected.pattern,
                 severity: 'error',
                 subject: expected.subject,
                 message: `${inCode.includes(expected) ? 'An @pattern comment' : 'provenflow.config.json'} declares ${expected.subject} as a ${expected.pattern}, but the code does not implement it as one.`,

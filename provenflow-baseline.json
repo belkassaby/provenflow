@@ -1,0 +1,1510 @@
+{
+  "tool": "provenflow",
+  "version": 1,
+  "entries": [
+    {
+      "rule": "unreachable-state",
+      "subject": "App.tab",
+      "file": "packages/app/src/app/app.ts",
+      "count": 1,
+      "message": "'python' is a declared value of App.tab but no code path sets it."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "setVariable",
+      "file": "packages/app/src/app/attribute-table/attribute-table.ts",
+      "count": 1,
+      "measure": 33,
+      "message": "setVariable has a Cognitive Complexity of 33 (limit 15; cyclomatic 16, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "constructor",
+      "file": "packages/app/src/app/code-export.ts",
+      "count": 1,
+      "measure": 16,
+      "message": "constructor has a Cognitive Complexity of 16 (limit 15; cyclomatic 6, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "read",
+      "file": "packages/app/src/app/code-import/code-change.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "read has a Cognitive Complexity of 17 (limit 15; cyclomatic 13, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "current",
+      "file": "packages/app/src/app/code-import/code-diff.ts",
+      "count": 1,
+      "message": "current reaches through 3 objects in `this.view.b.state.doc.toString()` (b → state → doc): it depends on the structure of objects it does not own, so a change in any of them breaks it."
+    },
+    {
+      "rule": "stuck-state",
+      "subject": "CodeReportPage.back",
+      "file": "packages/app/src/app/code-import/code-report-page.ts",
+      "count": 1,
+      "message": "Once CodeReportPage.back is 'findings' no code changes it again, and 'findings' does not look like a final state. (Unless a computed write, e.g. packages/app/src/app/code-import/code-report-page.ts"
+    },
+    {
+      "rule": "unreachable-state",
+      "subject": "CodeReportPage.back",
+      "file": "packages/app/src/app/code-import/code-report-page.ts",
+      "count": 2,
+      "message": "'edits' is a declared value of CodeReportPage.back but no code path sets it."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "applyAll",
+      "file": "packages/app/src/app/code-import/code-import.ts",
+      "count": 1,
+      "measure": 57,
+      "message": "applyAll has a Cognitive Complexity of 57 (limit 15; cyclomatic 32, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "readStream",
+      "file": "packages/app/src/app/code-import/code-import.ts",
+      "count": 1,
+      "measure": 25,
+      "message": "readStream has a Cognitive Complexity of 25 (limit 15; cyclomatic 18, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "applyAll",
+      "file": "packages/app/src/app/code-import/code-import.ts",
+      "count": 1,
+      "message": "applyAll is 75 lines long (limit 50)."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "applyAll",
+      "file": "packages/app/src/app/code-import/code-import.ts",
+      "count": 1,
+      "message": "applyAll reaches through 3 objects in `b.suggestedPatch.touches.removes.length` (suggestedPatch → touches → removes), and 1 more chain(s) like it: it depends on the structure of objects it does not ow"
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "fileHandle",
+      "file": "packages/app/src/app/code-import/folder-access.ts",
+      "count": 1,
+      "message": "fileHandle takes the boolean flag `create`: a call like fileHandle(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "applyHighlight",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "measure": 21,
+      "message": "applyHighlight has a Cognitive Complexity of 21 (limit 15; cyclomatic 13, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "init",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "measure": 18,
+      "message": "init has a Cognitive Complexity of 18 (limit 15; cyclomatic 10, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "sync",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "measure": 56,
+      "message": "sync has a Cognitive Complexity of 56 (limit 15; cyclomatic 30, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "autoLayout",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "message": "autoLayout takes the boolean flag `save`: a call like autoLayout(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "long-function",
+      "subject": "init",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "message": "init is 57 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "sync",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "message": "sync is 72 lines long (limit 50)."
+    },
+    {
+      "rule": "unreachable-state",
+      "subject": "DiagramCanvas.layoutKind",
+      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
+      "count": 1,
+      "message": "'vertical' is a declared value of DiagramCanvas.layoutKind but no code path sets it."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "scoreParts",
+      "file": "packages/app/src/app/diagram-canvas/layouts.ts",
+      "count": 1,
+      "measure": 31,
+      "message": "scoreParts has a Cognitive Complexity of 31 (limit 15; cyclomatic 21, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "scoreParts",
+      "file": "packages/app/src/app/diagram-canvas/layouts.ts",
+      "count": 1,
+      "message": "scoreParts is 52 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "renameState",
+      "file": "packages/app/src/app/diagram-store.ts",
+      "count": 1,
+      "measure": 22,
+      "message": "renameState has a Cognitive Complexity of 22 (limit 15; cyclomatic 13, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "showRecorded",
+      "file": "packages/app/src/app/diagram-store.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "showRecorded has a Cognitive Complexity of 17 (limit 15; cyclomatic 8, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "parse",
+      "file": "packages/app/src/app/diagram-store.ts",
+      "count": 1,
+      "message": "parse takes the boolean flag `updateModel`: a call like parse(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "stuck-state",
+      "subject": "NuxmvApi.engine",
+      "file": "packages/app/src/app/nuxmv-api.ts",
+      "count": 1,
+      "message": "Once NuxmvApi.engine is 'bdd' no code changes it again, and 'bdd' does not look like a final state. (Unless a computed write, e.g. packages/app/src/app/properties-panel/properties-panel.ts:95, does.)"
+    },
+    {
+      "rule": "unreachable-state",
+      "subject": "NuxmvApi.engine",
+      "file": "packages/app/src/app/nuxmv-api.ts",
+      "count": 1,
+      "message": "'bmc' is a declared value of NuxmvApi.engine but no code path sets it."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "token",
+      "file": "packages/app/src/app/text-editor/pflow-language.ts",
+      "count": 1,
+      "measure": 20,
+      "message": "token has a Cognitive Complexity of 20 (limit 15; cyclomatic 15, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "bmc",
+      "file": "packages/extract/src/analyzers/bmc.ts",
+      "count": 1,
+      "measure": 21,
+      "message": "bmc has a Cognitive Complexity of 21 (limit 15; cyclomatic 20, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "failureFinding",
+      "file": "packages/extract/src/analyzers/bmc.ts",
+      "count": 1,
+      "measure": 35,
+      "message": "failureFinding has a Cognitive Complexity of 35 (limit 15; cyclomatic 14, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "failureFinding",
+      "file": "packages/extract/src/analyzers/bmc.ts",
+      "count": 1,
+      "measure": 5,
+      "message": "failureFinding nests control structures 5 deep (limit 4)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "infer",
+      "file": "packages/extract/src/analyzers/infer.ts",
+      "count": 1,
+      "measure": 20,
+      "message": "infer has a Cognitive Complexity of 20 (limit 15; cyclomatic 17, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "sarifToFindings",
+      "file": "packages/extract/src/analyzers/sarif.ts",
+      "count": 1,
+      "measure": 19,
+      "message": "sarifToFindings has a Cognitive Complexity of 19 (limit 15; cyclomatic 26, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "semgrep",
+      "file": "packages/extract/src/analyzers/semgrep.ts",
+      "count": 1,
+      "measure": 42,
+      "message": "semgrep has a Cognitive Complexity of 42 (limit 15; cyclomatic 38, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "semgrep",
+      "file": "packages/extract/src/analyzers/semgrep.ts",
+      "count": 1,
+      "message": "semgrep is 60 lines long (limit 50)."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "option",
+      "file": "packages/extract/src/analyzers/types.ts",
+      "count": 1,
+      "message": "option takes the boolean flags `value`, `defaultOn`: a call like option(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "packageRoots",
+      "file": "packages/extract/src/architecture.ts",
+      "count": 1,
+      "measure": 18,
+      "message": "packageRoots has a Cognitive Complexity of 18 (limit 15; cyclomatic 12, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "change",
+      "file": "packages/extract/src/compare.ts",
+      "count": 1,
+      "message": "change takes the boolean flag `lowerIsBetter`: a call like change(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "lineDiff",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 25,
+      "message": "lineDiff has a Cognitive Complexity of 25 (limit 15; cyclomatic 19, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "matching",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 28,
+      "message": "matching has a Cognitive Complexity of 28 (limit 15; cyclomatic 17, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "missingCases",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 39,
+      "message": "missingCases has a Cognitive Complexity of 39 (limit 15; cyclomatic 28, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "recheckAfterAwait",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 16,
+      "message": "recheckAfterAwait has a Cognitive Complexity of 16 (limit 15; cyclomatic 15, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "releaseResource",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 42,
+      "message": "releaseResource has a Cognitive Complexity of 42 (limit 15; cyclomatic 33, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "removeFromDeclaration",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 29,
+      "message": "removeFromDeclaration has a Cognitive Complexity of 29 (limit 15; cyclomatic 16, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "removeUnusedValue",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 21,
+      "message": "removeUnusedValue has a Cognitive Complexity of 21 (limit 15; cyclomatic 16, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "verifyProposals",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 53,
+      "message": "verifyProposals has a Cognitive Complexity of 53 (limit 15; cyclomatic 28, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "verifyProposals",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "measure": 5,
+      "message": "verifyProposals nests control structures 5 deep (limit 4)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "missingCases",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "message": "missingCases is 63 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "releaseResource",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "message": "releaseResource is 56 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "verifyProposals",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "message": "verifyProposals is 72 lines long (limit 50)."
+    },
+    {
+      "rule": "many-parameters",
+      "subject": "verifyProposals",
+      "file": "packages/extract/src/fixes.ts",
+      "count": 1,
+      "message": "verifyProposals takes 8 parameters (limit 7)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "buildLifecycles",
+      "file": "packages/extract/src/lifecycles.ts",
+      "count": 1,
+      "measure": 37,
+      "message": "buildLifecycles has a Cognitive Complexity of 37 (limit 15; cyclomatic 23, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "lifecycleModel",
+      "file": "packages/extract/src/lifecycles.ts",
+      "count": 1,
+      "measure": 31,
+      "message": "lifecycleModel has a Cognitive Complexity of 31 (limit 15; cyclomatic 29, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "buildLifecycles",
+      "file": "packages/extract/src/lifecycles.ts",
+      "count": 1,
+      "measure": 5,
+      "message": "buildLifecycles nests control structures 5 deep (limit 4)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "lifecycleModel",
+      "file": "packages/extract/src/lifecycles.ts",
+      "count": 1,
+      "message": "lifecycleModel is 83 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "complete",
+      "file": "packages/extract/src/llm-providers.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "complete has a Cognitive Complexity of 17 (limit 15; cyclomatic 10, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "readAnthropic",
+      "file": "packages/extract/src/llm-providers.ts",
+      "count": 1,
+      "measure": 21,
+      "message": "readAnthropic has a Cognitive Complexity of 21 (limit 15; cyclomatic 19, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "sendTolerant",
+      "file": "packages/extract/src/llm-providers.ts",
+      "count": 1,
+      "measure": 18,
+      "message": "sendTolerant has a Cognitive Complexity of 18 (limit 15; cyclomatic 10, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "providerFromSpec",
+      "file": "packages/extract/src/llm-providers.ts",
+      "count": 1,
+      "message": "providerFromSpec is 65 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "resolveDynamicWrites",
+      "file": "packages/extract/src/llm.ts",
+      "count": 1,
+      "measure": 19,
+      "message": "resolveDynamicWrites has a Cognitive Complexity of 19 (limit 15; cyclomatic 18, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "suggestProperties",
+      "file": "packages/extract/src/llm.ts",
+      "count": 1,
+      "measure": 21,
+      "message": "suggestProperties has a Cognitive Complexity of 21 (limit 15; cyclomatic 16, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "many-parameters",
+      "subject": "suggestFixes",
+      "file": "packages/extract/src/llm.ts",
+      "count": 1,
+      "message": "suggestFixes takes 8 parameters (limit 7)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "addStandardSpecs",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "measure": 18,
+      "message": "addStandardSpecs has a Cognitive Complexity of 18 (limit 15; cyclomatic 13, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "buildStateMachines",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "measure": 27,
+      "message": "buildStateMachines has a Cognitive Complexity of 27 (limit 15; cyclomatic 18, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "machineOf",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "measure": 42,
+      "message": "machineOf has a Cognitive Complexity of 42 (limit 15; cyclomatic 35, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "addStandardSpecs",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "message": "addStandardSpecs takes the boolean flag `hasDynamicWrites`: a call like addStandardSpecs(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "long-function",
+      "subject": "addStandardSpecs",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "message": "addStandardSpecs is 54 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "machineOf",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "message": "machineOf is 97 lines long (limit 50)."
+    },
+    {
+      "rule": "many-parameters",
+      "subject": "addStandardSpecs",
+      "file": "packages/extract/src/machines.ts",
+      "count": 1,
+      "message": "addStandardSpecs takes 9 parameters (limit 7)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "factories",
+      "file": "packages/extract/src/patterns.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "factories has a Cognitive Complexity of 17 (limit 15; cyclomatic 12, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "observers",
+      "file": "packages/extract/src/patterns.ts",
+      "count": 1,
+      "measure": 19,
+      "message": "observers has a Cognitive Complexity of 19 (limit 15; cyclomatic 9, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "singletons",
+      "file": "packages/extract/src/patterns.ts",
+      "count": 1,
+      "measure": 38,
+      "message": "singletons has a Cognitive Complexity of 38 (limit 15; cyclomatic 34, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "statePattern",
+      "file": "packages/extract/src/patterns.ts",
+      "count": 1,
+      "measure": 16,
+      "message": "statePattern has a Cognitive Complexity of 16 (limit 15; cyclomatic 11, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "wrappers",
+      "file": "packages/extract/src/patterns.ts",
+      "count": 1,
+      "measure": 20,
+      "message": "wrappers has a Cognitive Complexity of 20 (limit 15; cyclomatic 13, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "call_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 41,
+      "message": "call_fact has a Cognitive Complexity of 41 (limit 15; cyclomatic 39, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "class_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 48,
+      "message": "class_fact has a Cognitive Complexity of 48 (limit 15; cyclomatic 30, nesting 6): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "comparison",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 21,
+      "message": "comparison has a Cognitive Complexity of 21 (limit 15; cyclomatic 13, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "find_state_vars",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 17,
+      "message": "find_state_vars has a Cognitive Complexity of 17 (limit 15; cyclomatic 9, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "function_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 53,
+      "message": "function_fact has a Cognitive Complexity of 53 (limit 15; cyclomatic 31, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "literal_annotation",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 22,
+      "message": "literal_annotation has a Cognitive Complexity of 22 (limit 15; cyclomatic 16, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "method_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 93,
+      "message": "method_fact has a Cognitive Complexity of 93 (limit 15; cyclomatic 54, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "module_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 92,
+      "message": "module_fact has a Cognitive Complexity of 92 (limit 15; cyclomatic 52, nesting 6): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "parse",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 49,
+      "message": "parse has a Cognitive Complexity of 49 (limit 15; cyclomatic 24, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "run",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 86,
+      "message": "run has a Cognitive Complexity of 86 (limit 15; cyclomatic 35, nesting 7): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "sources_of",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 68,
+      "message": "sources_of has a Cognitive Complexity of 68 (limit 15; cyclomatic 32, nesting 7): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "state_var_of",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 26,
+      "message": "state_var_of has a Cognitive Complexity of 26 (limit 15; cyclomatic 12, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "transitions_machine",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 32,
+      "message": "transitions_machine has a Cognitive Complexity of 32 (limit 15; cyclomatic 17, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "class_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 6,
+      "message": "class_fact nests control structures 6 deep (limit 5)."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "module_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 6,
+      "message": "module_fact nests control structures 6 deep (limit 5)."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "run",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 7,
+      "message": "run nests control structures 7 deep (limit 5)."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "sources_of",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "measure": 7,
+      "message": "sources_of nests control structures 7 deep (limit 5)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "method_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "message": "method_fact is 59 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "module_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "message": "module_fact is 52 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "run",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "message": "run is 55 lines long (limit 50)."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "module_fact",
+      "file": "packages/extract/src/python_facts.py",
+      "count": 1,
+      "message": "module_fact reaches through 3 objects in `s.func.value.value.id` (func → value → value): it depends on the structure of objects it does not own, so a change in any of them breaks it."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "planFor",
+      "file": "packages/extract/src/replay.ts",
+      "count": 1,
+      "measure": 24,
+      "message": "planFor has a Cognitive Complexity of 24 (limit 15; cyclomatic 37, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "copy",
+      "file": "packages/extract/src/tools/workspace.ts",
+      "count": 1,
+      "measure": 20,
+      "message": "copy has a Cognitive Complexity of 20 (limit 15; cyclomatic 10, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "collectEnums",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "measure": 44,
+      "message": "collectEnums has a Cognitive Complexity of 44 (limit 15; cyclomatic 23, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "collectRClasses",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "measure": 34,
+      "message": "collectRClasses has a Cognitive Complexity of 34 (limit 15; cyclomatic 19, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "fieldsOf",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "measure": 23,
+      "message": "fieldsOf has a Cognitive Complexity of 23 (limit 15; cyclomatic 26, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "methodOf",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "measure": 27,
+      "message": "methodOf has a Cognitive Complexity of 27 (limit 15; cyclomatic 29, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "ownerOf",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "measure": 19,
+      "message": "ownerOf has a Cognitive Complexity of 19 (limit 15; cyclomatic 20, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "collectRFunctions",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "message": "collectRFunctions reaches through 3 objects in `f.node.parent.childForFieldName().text` (node → parent → childForFieldName): it depends on the structure of objects it does not own, so a change in any "
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "methodOf",
+      "file": "packages/extract/src/treesitter/declarations.ts",
+      "count": 1,
+      "message": "methodOf reaches through 3 objects in `fn.childForFieldName().namedChildren.find().childForFieldName().text` (childForFieldName → namedChildren → childForFieldName): it depends on the structure of obj"
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "assignment",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 45,
+      "message": "assignment has a Cognitive Complexity of 45 (limit 15; cyclomatic 47, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "comparison",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 26,
+      "message": "comparison has a Cognitive Complexity of 26 (limit 15; cyclomatic 20, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "constraint",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "constraint has a Cognitive Complexity of 17 (limit 15; cyclomatic 13, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "findStateVariables",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 42,
+      "message": "findStateVariables has a Cognitive Complexity of 42 (limit 15; cyclomatic 28, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "sourcesOf",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 60,
+      "message": "sourcesOf has a Cognitive Complexity of 60 (limit 15; cyclomatic 31, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "switchFact",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 36,
+      "message": "switchFact has a Cognitive Complexity of 36 (limit 15; cyclomatic 23, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "varOf",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 25,
+      "message": "varOf has a Cognitive Complexity of 25 (limit 15; cyclomatic 26, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "visitBodies",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "measure": 47,
+      "message": "visitBodies has a Cognitive Complexity of 47 (limit 15; cyclomatic 34, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "comparison",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "comparison takes the boolean flag `record`: a call like comparison(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "constraint",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "constraint takes the boolean flag `positive`: a call like constraint(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "read",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "read takes the boolean flags `negated`, `record`: a call like read(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "long-function",
+      "subject": "assignment",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "assignment is 51 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "sourcesOf",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "sourcesOf is 57 lines long (limit 50)."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "definiteWrite",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "definiteWrite reaches through 3 objects in `ctx.rec.profile.assignments.includes()` (rec → profile → assignments), and 1 more chain(s) like it: it depends on the structure of objects it does not own, "
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "writesIn",
+      "file": "packages/extract/src/treesitter/frontend.ts",
+      "count": 1,
+      "message": "writesIn reaches through 3 objects in `ctx.rec.profile.assignments.includes()` (rec → profile → assignments): it depends on the structure of objects it does not own, so a change in any of them breaks "
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "resourceOp",
+      "file": "packages/extract/src/treesitter/resources.ts",
+      "count": 1,
+      "measure": 74,
+      "message": "resourceOp has a Cognitive Complexity of 74 (limit 15; cyclomatic 56, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "resourceOp",
+      "file": "packages/extract/src/treesitter/resources.ts",
+      "count": 1,
+      "measure": 5,
+      "message": "resourceOp nests control structures 5 deep (limit 4)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "resourceOp",
+      "file": "packages/extract/src/treesitter/resources.ts",
+      "count": 1,
+      "message": "resourceOp is 60 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "classFact",
+      "file": "packages/extract/src/treesitter/shapes.ts",
+      "count": 1,
+      "measure": 42,
+      "message": "classFact has a Cognitive Complexity of 42 (limit 15; cyclomatic 36, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "moduleFact",
+      "file": "packages/extract/src/treesitter/shapes.ts",
+      "count": 1,
+      "measure": 29,
+      "message": "moduleFact has a Cognitive Complexity of 29 (limit 15; cyclomatic 27, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "classFact",
+      "file": "packages/extract/src/treesitter/shapes.ts",
+      "count": 1,
+      "message": "classFact is 61 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "cppAccess",
+      "file": "packages/extract/src/treesitter/syntax.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "cppAccess has a Cognitive Complexity of 17 (limit 15; cyclomatic 10, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "comparison",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "measure": 28,
+      "message": "comparison has a Cognitive Complexity of 28 (limit 15; cyclomatic 19, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "constraint",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "measure": 16,
+      "message": "constraint has a Cognitive Complexity of 16 (limit 15; cyclomatic 11, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "resolveParameters",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "measure": 22,
+      "message": "resolveParameters has a Cognitive Complexity of 22 (limit 15; cyclomatic 12, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "sourcesOf",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "measure": 60,
+      "message": "sourcesOf has a Cognitive Complexity of 60 (limit 15; cyclomatic 33, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "stateFacts",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "measure": 29,
+      "message": "stateFacts has a Cognitive Complexity of 29 (limit 15; cyclomatic 17, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "writeTarget",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "measure": 26,
+      "message": "writeTarget has a Cognitive Complexity of 26 (limit 15; cyclomatic 18, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "constraint",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "message": "constraint takes the boolean flag `positive`: a call like constraint(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "long-function",
+      "subject": "sourcesOf",
+      "file": "packages/extract/src/typescript-frontend.ts",
+      "count": 1,
+      "message": "sourcesOf is 57 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "visit",
+      "file": "packages/extract/src/typescript-resources.ts",
+      "count": 1,
+      "measure": 80,
+      "message": "visit has a Cognitive Complexity of 80 (limit 15; cyclomatic 79, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "visit",
+      "file": "packages/extract/src/typescript-resources.ts",
+      "count": 1,
+      "message": "visit is 75 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "classFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "measure": 52,
+      "message": "classFact has a Cognitive Complexity of 52 (limit 15; cyclomatic 27, nesting 6): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "methodFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "measure": 26,
+      "message": "methodFact has a Cognitive Complexity of 26 (limit 15; cyclomatic 17, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "moduleFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "measure": 16,
+      "message": "moduleFact has a Cognitive Complexity of 16 (limit 15; cyclomatic 14, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "visit",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 3,
+      "measure": 49,
+      "message": "visit has a Cognitive Complexity of 49 (limit 15; cyclomatic 41, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "classFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "measure": 6,
+      "message": "classFact nests control structures 6 deep (limit 4)."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "addImport",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "addImport takes the boolean flag `typeOnly`: a call like addImport(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "methodFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "methodFact takes the boolean flags `isStatic`, `abstract`: a call like methodFact(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "long-function",
+      "subject": "functionFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "functionFact is 67 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "methodFact",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "methodFact is 82 lines long (limit 50)."
+    },
+    {
+      "rule": "train-wreck",
+      "subject": "visit",
+      "file": "packages/extract/src/typescript-shapes.ts",
+      "count": 1,
+      "message": "visit reaches through 3 objects in `n.initializer.declarations.name.getText()` (initializer → declarations → name), and 1 more chain(s) like it: it depends on the structure of objects it does not own,"
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "synthesizeTemplates",
+      "file": "packages/extract/src/typescript-templates.ts",
+      "count": 1,
+      "measure": 62,
+      "message": "synthesizeTemplates has a Cognitive Complexity of 62 (limit 15; cyclomatic 30, nesting 5): it is hard to read and to test."
+    },
+    {
+      "rule": "deep-nesting",
+      "subject": "synthesizeTemplates",
+      "file": "packages/extract/src/typescript-templates.ts",
+      "count": 1,
+      "measure": 5,
+      "message": "synthesizeTemplates nests control structures 5 deep (limit 4)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "synthesizeTemplates",
+      "file": "packages/extract/src/typescript-templates.ts",
+      "count": 1,
+      "message": "synthesizeTemplates is 52 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "explicitCheck",
+      "file": "packages/extract/src/verify.ts",
+      "count": 1,
+      "measure": 26,
+      "message": "explicitCheck has a Cognitive Complexity of 26 (limit 15; cyclomatic 23, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "verifyModels",
+      "file": "packages/extract/src/verify.ts",
+      "count": 1,
+      "measure": 38,
+      "message": "verifyModels has a Cognitive Complexity of 38 (limit 15; cyclomatic 20, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "astToModel",
+      "file": "packages/language/src/ast-to-model.ts",
+      "count": 1,
+      "measure": 26,
+      "message": "astToModel has a Cognitive Complexity of 26 (limit 15; cyclomatic 22, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "astToModel",
+      "file": "packages/language/src/ast-to-model.ts",
+      "count": 1,
+      "message": "astToModel is 60 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "checkConformance",
+      "file": "packages/language/src/conformance.ts",
+      "count": 1,
+      "measure": 66,
+      "message": "checkConformance has a Cognitive Complexity of 66 (limit 15; cyclomatic 30, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "otelSpans",
+      "file": "packages/language/src/conformance.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "otelSpans has a Cognitive Complexity of 17 (limit 15; cyclomatic 13, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "parseTrace",
+      "file": "packages/language/src/conformance.ts",
+      "count": 1,
+      "measure": 22,
+      "message": "parseTrace has a Cognitive Complexity of 22 (limit 15; cyclomatic 15, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "checkConformance",
+      "file": "packages/language/src/conformance.ts",
+      "count": 1,
+      "message": "checkConformance is 75 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "exportXState",
+      "file": "packages/language/src/framework-export.ts",
+      "count": 1,
+      "measure": 28,
+      "message": "exportXState has a Cognitive Complexity of 28 (limit 15; cyclomatic 20, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "js",
+      "file": "packages/language/src/framework-export.ts",
+      "count": 1,
+      "measure": 20,
+      "message": "js has a Cognitive Complexity of 20 (limit 15; cyclomatic 25, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "burr",
+      "file": "packages/language/src/framework-export.ts",
+      "count": 1,
+      "message": "burr is 53 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "exportXState",
+      "file": "packages/language/src/framework-export.ts",
+      "count": 1,
+      "message": "exportXState is 82 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "langGraph",
+      "file": "packages/language/src/framework-export.ts",
+      "count": 1,
+      "message": "langGraph is 66 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "temporal",
+      "file": "packages/language/src/framework-export.ts",
+      "count": 1,
+      "message": "temporal is 65 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "fromCrewAIPython",
+      "file": "packages/language/src/importers.ts",
+      "count": 1,
+      "measure": 29,
+      "message": "fromCrewAIPython has a Cognitive Complexity of 29 (limit 15; cyclomatic 16, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "fromMermaid",
+      "file": "packages/language/src/importers.ts",
+      "count": 1,
+      "measure": 41,
+      "message": "fromMermaid has a Cognitive Complexity of 41 (limit 15; cyclomatic 22, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "targetsOf",
+      "file": "packages/language/src/importers.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "targetsOf has a Cognitive Complexity of 17 (limit 15; cyclomatic 10, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "toModel",
+      "file": "packages/language/src/importers.ts",
+      "count": 1,
+      "measure": 28,
+      "message": "toModel has a Cognitive Complexity of 28 (limit 15; cyclomatic 21, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "walk",
+      "file": "packages/language/src/importers.ts",
+      "count": 1,
+      "measure": 27,
+      "message": "walk has a Cognitive Complexity of 27 (limit 15; cyclomatic 13, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "demoPath",
+      "file": "packages/language/src/notebook-generator.ts",
+      "count": 1,
+      "measure": 16,
+      "message": "demoPath has a Cognitive Complexity of 16 (limit 15; cyclomatic 15, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "demoPathWithData",
+      "file": "packages/language/src/notebook-generator.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "demoPathWithData has a Cognitive Complexity of 17 (limit 15; cyclomatic 10, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "generateNotebook",
+      "file": "packages/language/src/notebook-generator.ts",
+      "count": 1,
+      "message": "generateNotebook is 136 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "parseNuxmvOutput",
+      "file": "packages/language/src/nuxmv-output.ts",
+      "count": 1,
+      "measure": 58,
+      "message": "parseNuxmvOutput has a Cognitive Complexity of 58 (limit 15; cyclomatic 35, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "parseNuxmvOutput",
+      "file": "packages/language/src/nuxmv-output.ts",
+      "count": 1,
+      "message": "parseNuxmvOutput is 105 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "analyse",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "measure": 21,
+      "message": "analyse has a Cognitive Complexity of 21 (limit 15; cyclomatic 10, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "buildDtmc",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "measure": 22,
+      "message": "buildDtmc has a Cognitive Complexity of 22 (limit 15; cyclomatic 14, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "expected",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "measure": 19,
+      "message": "expected has a Cognitive Complexity of 19 (limit 15; cyclomatic 10, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "exportPrism",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "measure": 38,
+      "message": "exportPrism has a Cognitive Complexity of 38 (limit 15; cyclomatic 23, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "reachability",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "measure": 22,
+      "message": "reachability has a Cognitive Complexity of 22 (limit 15; cyclomatic 13, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "bounded",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "message": "bounded takes the boolean flag `target`: a call like bounded(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "expected",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "message": "expected takes the boolean flag `target`: a call like expected(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "reachability",
+      "file": "packages/language/src/probabilistic.ts",
+      "count": 1,
+      "message": "reachability takes the boolean flag `target`: a call like reachability(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "long-function",
+      "subject": "generatePythonTests",
+      "file": "packages/language/src/pytest-generator.ts",
+      "count": 1,
+      "message": "generatePythonTests is 94 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "compile",
+      "file": "packages/language/src/python-generator.ts",
+      "count": 1,
+      "measure": 34,
+      "message": "compile has a Cognitive Complexity of 34 (limit 15; cyclomatic 38, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "generatePython",
+      "file": "packages/language/src/python-generator.ts",
+      "count": 1,
+      "measure": 48,
+      "message": "generatePython has a Cognitive Complexity of 48 (limit 15; cyclomatic 41, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "slot",
+      "file": "packages/language/src/python-generator.ts",
+      "count": 1,
+      "message": "slot takes the boolean flag `init`: a call like slot(…, true) does not say what true means, and the function does two things."
+    },
+    {
+      "rule": "long-function",
+      "subject": "compile",
+      "file": "packages/language/src/python-generator.ts",
+      "count": 1,
+      "message": "compile is 61 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "compileExpression",
+      "file": "packages/language/src/python-generator.ts",
+      "count": 1,
+      "message": "compileExpression is 74 lines long (limit 50)."
+    },
+    {
+      "rule": "long-function",
+      "subject": "generatePython",
+      "file": "packages/language/src/python-generator.ts",
+      "count": 1,
+      "message": "generatePython is 185 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "compile",
+      "file": "packages/language/src/semantics.ts",
+      "count": 1,
+      "measure": 36,
+      "message": "compile has a Cognitive Complexity of 36 (limit 15; cyclomatic 26, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "evaluate",
+      "file": "packages/language/src/semantics.ts",
+      "count": 1,
+      "measure": 17,
+      "message": "evaluate has a Cognitive Complexity of 17 (limit 15; cyclomatic 11, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "serializeDiagram",
+      "file": "packages/language/src/serializer.ts",
+      "count": 1,
+      "measure": 36,
+      "message": "serializeDiagram has a Cognitive Complexity of 36 (limit 15; cyclomatic 21, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "generateSmv",
+      "file": "packages/language/src/smv-generator.ts",
+      "count": 1,
+      "measure": 40,
+      "message": "generateSmv has a Cognitive Complexity of 40 (limit 15; cyclomatic 25, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "generateSmv",
+      "file": "packages/language/src/smv-generator.ts",
+      "count": 1,
+      "message": "generateSmv is 95 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "checkDiagram",
+      "file": "packages/language/src/state-diagram-validator.ts",
+      "count": 1,
+      "measure": 42,
+      "message": "checkDiagram has a Cognitive Complexity of 42 (limit 15; cyclomatic 30, nesting 4): it is hard to read and to test."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "checkState",
+      "file": "packages/language/src/state-diagram-validator.ts",
+      "count": 1,
+      "measure": 24,
+      "message": "checkState has a Cognitive Complexity of 24 (limit 15; cyclomatic 15, nesting 3): it is hard to read and to test."
+    },
+    {
+      "rule": "long-function",
+      "subject": "checkDiagram",
+      "file": "packages/language/src/state-diagram-validator.ts",
+      "count": 1,
+      "message": "checkDiagram is 85 lines long (limit 50)."
+    },
+    {
+      "rule": "cognitive-complexity",
+      "subject": "update",
+      "file": "packages/server/src/llm-settings.ts",
+      "count": 1,
+      "measure": 26,
+      "message": "update has a Cognitive Complexity of 26 (limit 15; cyclomatic 26, nesting 2): it is hard to read and to test."
+    },
+    {
+      "rule": "fp-class",
+      "subject": "LlmSettingsStore",
+      "file": "packages/server/src/llm-settings.ts",
+      "count": 1,
+      "message": "server is declared functional, but LlmSettingsStore is a class with 8 method(s) and mutable fields settings."
+    }
+  ]
+}

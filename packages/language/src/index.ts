@@ -17,3 +17,6 @@ export * from './conformance.js';
 export { astToModel } from './ast-to-model.js';
 export { createStateDiagramServices, type StateDiagramServices } from './state-diagram-module.js';
 export * as ast from './generated/ast.js';
+export { isApplied, type TextEdit } from './text-edits.js';
+export { PRACTICE_KIND_TITLES, type Practice, type PracticeKind } from './practice.js';
+export * from './c4/index.js';

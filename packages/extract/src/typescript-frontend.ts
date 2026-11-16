@@ -42,6 +42,11 @@ export function extractTypeScript(root: string, files: string[], overrides?: Map
             const text = replaced.get(resolve(fileName));
             return text !== undefined ? ts.createSourceFile(fileName, text, language, true) : getSourceFile(fileName, language, onError, create);
         };
+        // Files that exist only as overrides (restored from another revision) resolve as imports too.
+        const fileExists = host.fileExists.bind(host);
+        const readFile = host.readFile.bind(host);
+        host.fileExists = fileName => replaced.has(resolve(fileName)) || fileExists(fileName);
+        host.readFile = fileName => replaced.get(resolve(fileName)) ?? readFile(fileName);
     }
     const program = ts.createProgram(absolute, COMPILER_OPTIONS, host);
     const checker = program.getTypeChecker();
