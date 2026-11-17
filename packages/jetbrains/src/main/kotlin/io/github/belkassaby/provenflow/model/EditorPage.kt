@@ -48,8 +48,11 @@ window.addEventListener('message', event => {
     fun toEditorScript(message: Map<String, Any?>): String = "window.provenflowToEditor && window.provenflowToEditor(${Gson().toJson(message)});"
 }
 
-/** What an editor tab opens: its identity, its title, and the message that opens it (none: an empty editor). */
-data class EditorDocument(val key: String, val title: String, val message: Map<String, Any?>? = null)
+/**
+ * What an editor tab opens: its identity, its title, the message that opens it (none: an empty
+ * editor), and the file it shows, when it shows a file of the project (Save writes it).
+ */
+data class EditorDocument(val key: String, val title: String, val message: Map<String, Any?>? = null, val path: String? = null)
 
 object EditorDocuments {
     /** The kind of editor document a file is, or null when the editor does not open it. */
@@ -77,7 +80,7 @@ object EditorDocuments {
     fun file(path: String, text: String): EditorDocument? {
         val kind = kindOf(path) ?: return null
         val name = File(path).name
-        return EditorDocument("file:$path", name, openFile(fileOf(name, path, text, kind)))
+        return EditorDocument("file:$path", name, openFile(fileOf(name, path, text, kind)), path)
     }
 
     /** An editor with nothing opened: a new diagram, or File → Import code base. */

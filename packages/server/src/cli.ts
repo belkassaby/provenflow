@@ -38,6 +38,7 @@ Code bases (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rus
                 [--checks id,id... | --skip id,id...]
                 [--llm anthropic:<model>|openai:<model>|ollama:<model>] [--llm-fixes N]
                 [--coverage report]... [--baseline file | --no-baseline] [--no-analyzers] [--no-confirm]
+                [--progress-json]  (each step as a "pflow-progress {json}" line on stderr, for IDEs)
                                                  verified models (state machines, resource lifecycles,
                                                  design patterns, architecture), code quality (duplicated
                                                  code, complexity, naming, dependencies, coverage), the

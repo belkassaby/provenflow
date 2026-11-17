@@ -46,8 +46,37 @@ A tab opens for each document:
 - a `.pflow`, `.nxd`, `.dsl` or `.c4.json` file, from **Open in the ProvenFlow editor**. That button
   is in the editor's title bar and the explorer's context menu.
 
-Opening the same document again shows its tab. The tabs follow VS Code's light or dark theme.
-**Browse…** next to a folder path opens VS Code's folder dialog.
+Opening the same document again shows its tab. A tab shows only its document (the diagram with
+its text, inspector and panels, the C4 architecture, or the code base report), without the editor's
+own menu bar and tabs. The tabs follow VS Code's light or dark theme. **Browse…** next to a folder
+path opens VS Code's folder dialog. The editor's messages, such as "Opened …" or "Could not
+import …", show in the status bar.
+
+### The ProvenFlow menu
+
+The editor's menus are VS Code's. The **ProvenFlow** button in the title bar of a ProvenFlow tab, and
+at the top of the Findings view, opens the ProvenFlow menu. Every item is also in the Command Palette
+as **ProvenFlow: …**. VS Code does not let extensions add menus to its menu bar, so the menu is
+there rather than in Run.
+
+| Submenu | Items |
+| --- | --- |
+| File | New Diagram, Open .pflow…, Import Agent Graph…, Import Code Base…, Code Base Report, C4 Architecture, Save .pflow, Export nuXmv Model (.smv), Export Diagram (.png, .svg), Export Python Implementation (.py), Export Jupyter Notebook (.ipynb) |
+| Examples | Open Example…: a list of the editor's examples, each opened in a new tab |
+| Attributes | Edit Attribute Table |
+| nuXmv | Show Generated Model, Check Properties, Simulate the Diagram, Show nuXmv Output, Re-detect nuXmv |
+| Help | Using the Editor, Walkthroughs, Logic Symbols, Glossary of Logic Terms, References, LLM Settings (API Keys)… |
+
+It also has Analyse Workspace, Open Report, Open Model in the Editor and Measure Older Commits.
+
+- The items that act on a diagram (Save, Export, Attributes, nuXmv) act on the ProvenFlow tab last
+  in front.
+- New Diagram, Import Agent Graph and the examples open a new tab.
+- Open .pflow… uses VS Code's file dialog.
+
+**Saving.** Save .pflow writes over the file a tab shows, when the tab shows a file of the
+workspace. Otherwise, and for every export, VS Code's save dialog asks where the file goes, starting
+next to that file or in the folder.
 
 The editor runs on a local server, which `pflow serve` starts the first time a tab opens. It listens
 on a free port of 127.0.0.1 only, and stops with VS Code. The editor needs a built
@@ -93,13 +122,19 @@ When none is found, an error offers two buttons:
   `.provenflow/`, `.git/` and `node_modules/` don't count.
 - With **ProvenFlow: Analyse workspace** from the Command Palette.
 
-Only one analysis of a folder runs at a time: a new one stops the one still running. The status bar
-shows a spinner while it runs, then the number of errors and warnings. Click it to open the report.
+Only one analysis of a folder runs at a time: a new one stops the one still running.
+
+While it runs, its progress shows with the steps pflow reports, such as "Checking model 3/12…":
+- **Analyse workspace** shows a notification with a progress bar, the current step and **Cancel**.
+- An analysis started by a save shows a progress bar on the Findings view instead, so saving doesn't
+  open a notification each time.
+- The status bar shows the percentage, with the step in its tooltip. When the analysis ends, it shows
+  the number of errors and warnings. Click it to open the report.
 
 The command is:
 
 ```sh
-pflow extract <folder> -o <folder>/.provenflow/vscode --quiet --fail-on none --no-analyzers --no-confirm --fix
+pflow extract <folder> -o <folder>/.provenflow/vscode --quiet --fail-on none --no-history --progress-json --no-analyzers --no-confirm --fix
 ```
 
 pflow's own messages go to the **ProvenFlow** output channel.
@@ -162,9 +197,11 @@ page passes messages between the extension and the editor, each one `{ provenflo
 | extension | `open-file` | Opens a diagram, a model to check (`check: true`) or a C4 workspace. |
 | extension | `map-c4` | Maps a folder in the C4 tab. |
 | extension | `theme` | Sets the light or dark theme. |
-| extension | `command` | Runs a menu command, as the desktop application's menus do. |
+| extension | `command` | Runs a menu command (`name` or `name:argument`, such as `example:door` or `help:symbols`), as the desktop application's menus do. |
 | extension | `folder` | Answers `pick-folder`. |
-| editor | `ready` | Says the editor listens. Messages wait until then. |
+| editor | `ready` | Says the editor listens, with the examples its Examples menu lists. Messages wait until then. |
+| editor | `save-file` | A file it saves or exports (`name`, `content`, `encoding`: text or base64), for the extension to write. |
+| editor | `notify` | A message to show (the status bar). |
 | editor | `pick-folder` | Asks for VS Code's folder dialog. |
 
 The editor's side is `packages/app/src/app/host-frame.ts`. The page allows only its own script and

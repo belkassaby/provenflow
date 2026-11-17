@@ -1,5 +1,6 @@
 /** The status bar item: a spinner while pflow runs, then the counts; a click opens the report. */
 import * as vscode from 'vscode';
+import type { AnalysisProgress } from './cli';
 import { countsText, type Severity } from './report';
 
 export class AnalysisStatus implements vscode.Disposable {
@@ -12,9 +13,15 @@ export class AnalysisStatus implements vscode.Disposable {
         this.item.show();
     }
 
-    running(folder: string): void {
-        this.item.text = '$(sync~spin) ProvenFlow';
-        this.item.tooltip = `ProvenFlow is analysing ${folder}…`;
+    /** While pflow runs: how far it is, and what it is doing. */
+    running(folder: string, step?: AnalysisProgress): void {
+        this.item.text = `$(sync~spin) ProvenFlow${step ? ` ${step.percent}%` : ''}`;
+        this.item.tooltip = `ProvenFlow is analysing ${folder}${step ? `: ${step.message}` : '…'}`;
+    }
+
+    stopped(folder: string): void {
+        this.item.text = 'ProvenFlow';
+        this.item.tooltip = `The analysis of ${folder} was stopped.`;
     }
 
     done(folder: string, summary: Record<Severity, number>): void {

@@ -64,6 +64,16 @@
             <action id="ProvenFlow.BackfillTrends" class="io.github.belkassaby.provenflow.ide.BackfillTrendsAction"
                     text="Measure Older Commits" description="Measure 12 older commits from git (pflow trends --backfill)" icon="AllIcons.Vcs.History"/>
         </group>
+        <group id="ProvenFlow.RunMenu" text="ProvenFlow" popup="true" icon="/icons/provenflow.svg"
+               description="The ProvenFlow editor's menus and the analysis of the project">
+            <add-to-group group-id="RunMenu" anchor="last"/>
+            <group id="ProvenFlow.EditorMenus" class="io.github.belkassaby.provenflow.ide.EditorMenusGroup"/>
+            <separator/>
+            <reference ref="ProvenFlow.Analyse"/>
+            <reference ref="ProvenFlow.OpenReport"/>
+            <reference ref="ProvenFlow.OpenModel"/>
+            <reference ref="ProvenFlow.BackfillTrends"/>
+        </group>
         <action id="ProvenFlow.OpenInEditor" class="io.github.belkassaby.provenflow.ide.OpenInEditorAction"
                 text="Open in the ProvenFlow Editor" description="Open this diagram or C4 workspace in a ProvenFlow editor tab"
                 icon="/icons/provenflow.svg">

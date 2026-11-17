@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AnalysisProcess } from '../src/analysis-process';
-import { extractArguments, findCli, startsAnalysis, spawnPlan, trendsArguments } from '../src/cli';
+import { AnalysisProcess, LineReader } from '../src/analysis-process';
+import { extractArguments, findCli, progressOf, startsAnalysis, spawnPlan, trendsArguments } from '../src/cli';
 import { countsText, offeredFixes, parseReport, problemsByFile, type ReportFinding } from '../src/report';
 
 const leak: ReportFinding = {
@@ -54,8 +54,8 @@ describe('the report as problems in the editor', () => {
 
 describe('running pflow', () => {
     it('asks for the report only, never failing on findings, quick by default', () => {
-        expect(extractArguments('/w', '/w/.provenflow/vscode', { full: false, fixes: true })).toEqual(['extract', '/w', '-o', '/w/.provenflow/vscode', '--quiet', '--fail-on', 'none', '--no-history', '--no-analyzers', '--no-confirm', '--fix']);
-        expect(extractArguments('/w', '/o', { full: true, fixes: false })).toEqual(['extract', '/w', '-o', '/o', '--quiet', '--fail-on', 'none', '--no-history']);
+        expect(extractArguments('/w', '/w/.provenflow/vscode', { full: false, fixes: true })).toEqual(['extract', '/w', '-o', '/w/.provenflow/vscode', '--quiet', '--fail-on', 'none', '--no-history', '--progress-json', '--no-analyzers', '--no-confirm', '--fix']);
+        expect(extractArguments('/w', '/o', { full: true, fixes: false })).toEqual(['extract', '/w', '-o', '/o', '--quiet', '--fail-on', 'none', '--no-history', '--progress-json']);
         expect(trendsArguments('/w')).toEqual(['trends', '/w', '--json']);
         expect(trendsArguments('/w', 12)).toEqual(['trends', '/w', '--json', '--backfill', '12', '--quiet']);
     });
@@ -80,6 +80,20 @@ describe('running pflow', () => {
     });
 });
 
+describe('the progress of an analysis', () => {
+    it('reads the steps pflow reports on stderr, whole lines only, and keeps the other lines', async () => {
+        expect(progressOf('pflow-progress {"phase":"verify","message":"Checking model 1/2","percent":25}')).toEqual({ phase: 'verify', message: 'Checking model 1/2', percent: 25 });
+        expect(progressOf('note: OSV could not be reached')).toBeUndefined();
+        expect(progressOf('pflow-progress {broken')).toBeUndefined();
+        const lines: string[] = [];
+        const reader = new LineReader(line => lines.push(line));
+        reader.read('pflow-progress {"message":"a",');
+        reader.read('"percent":5}\r\nnote: x\nlast');
+        reader.end();
+        expect(lines).toEqual(['pflow-progress {"message":"a","percent":5}', 'note: x', 'last']);
+    });
+});
+
 describe('one run at a time', () => {
     let dir: string | undefined;
     afterEach(() => dir && rmSync(dir, { recursive: true, force: true }));
@@ -87,13 +101,16 @@ describe('one run at a time', () => {
     it('stops the run still going when a new one starts', async () => {
         dir = mkdtempSync(join(tmpdir(), 'provenflow-vscode-'));
         const script = join(dir, 'fake-pflow.js');
-        writeFileSync(script, "if (process.argv[2] === 'slow') setTimeout(() => {}, 60000); else { process.stderr.write('note: done'); process.exit(0); }");
+        const step = JSON.stringify(`pflow-progress ${JSON.stringify({ message: 'Reading', percent: 40 })}\nnote: done`);
+        writeFileSync(script, `if (process.argv[2] === 'slow') setTimeout(() => {}, 60000); else { process.stderr.write(${step}); process.exit(0); }`);
         const runner = new AnalysisProcess();
         const slow = runner.start(script, ['slow'], dir);
         expect(runner.running).toBe(true);
-        const quick = await runner.start(script, ['quick'], dir);
+        const steps: number[] = [];
+        const quick = await runner.start(script, ['quick'], dir, p => steps.push(p.percent));
+        expect(steps).toEqual([40]);
         expect(await slow).toMatchObject({ stopped: true });
-        expect(quick).toMatchObject({ code: 0, stopped: false, stderr: 'note: done' });
+        expect(quick).toMatchObject({ code: 0, stopped: false, stderr: 'note: done\n' });
         expect(runner.running).toBe(false);
     });
 });

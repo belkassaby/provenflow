@@ -3,6 +3,10 @@ package io.github.belkassaby.provenflow.ide
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.configurations.PathEnvironmentVariableUtil
 import com.intellij.execution.process.CapturingProcessHandler
+import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessListener
+import com.intellij.execution.process.ProcessOutputTypes
+import com.intellij.openapi.util.Key
 import com.intellij.execution.process.ProcessOutput
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -87,7 +91,7 @@ class AnalysisService(private val project: Project) : Disposable {
                 val result = run(cli, args, root, indicator)
                 if (result.isCancelled) return
                 val report = if (result.exitCode == 0) readReport(output) else null
-                if (report == null) notify("pflow extract failed (exit ${result.exitCode}). ${result.stderr.trim().lines().lastOrNull() ?: ""}", NotificationType.ERROR)
+                if (report == null) notify("pflow extract failed (exit ${result.exitCode}). ${Pflow.notesOf(result.stderr).lastOrNull() ?: ""}", NotificationType.ERROR)
                 else publish(report)
             }
         }.queue()
@@ -174,13 +178,30 @@ class AnalysisService(private val project: Project) : Disposable {
     companion object {
         fun of(project: Project): AnalysisService = project.service()
 
-        /** Runs pflow with the login shell's environment (the IDE may have been started from the Dock). */
+        /**
+         * Runs pflow with the login shell's environment (the IDE may have been started from the Dock).
+         * The steps it reports (--progress-json) move the indicator's bar and text.
+         */
         fun run(cli: String, args: List<String>, cwd: String, indicator: ProgressIndicator): ProcessOutput {
             val node = PathEnvironmentVariableUtil.findInPath("node")?.path ?: "node"
             val command = GeneralCommandLine(Pflow.commandLine(cli, args, node)).withWorkDirectory(cwd).withParentEnvironmentType(GeneralCommandLine.ParentEnvironmentType.CONSOLE)
-            return CapturingProcessHandler(command).runProcessWithProgressIndicator(indicator)
+            val handler = CapturingProcessHandler(command)
+            handler.addProcessListener(ProgressListener(indicator))
+            return handler.runProcessWithProgressIndicator(indicator)
         }
 
         fun readReport(output: String): Report? = File(output, "report.json").takeIf { it.isFile }?.let { Report.parse(it.readText()) }
+    }
+}
+
+/** Shows the steps pflow reports on stderr on a progress indicator. */
+private class ProgressListener(private val indicator: ProgressIndicator) : ProcessListener {
+    override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
+        if (outputType != ProcessOutputTypes.STDERR) return
+        Pflow.lastProgressIn(event.text)?.let { step ->
+            indicator.isIndeterminate = false
+            indicator.fraction = (step.percent ?: 0.0) / 100
+            indicator.text2 = step.message
+        }
     }
 }

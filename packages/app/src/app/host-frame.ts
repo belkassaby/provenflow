@@ -1,11 +1,13 @@
-import type { DesktopApi, DesktopFile } from './desktop-bridge';
+import type { DesktopApi, DesktopFile, EditorInfo } from './desktop-bridge';
+import type { SavedFile } from './file-io';
 
 /**
  * The editor inside an IDE tab: the VS Code extension shows it in a frame of a webview, the
  * JetBrains plugin in a frame of a JCEF browser; the page around the frame passes messages between
  * the IDE and the editor. The IDE sends menu-like commands, models and C4 workspaces to open,
- * folders to map and its theme; the editor says when it listens and asks for a folder (the IDE's
- * dialog). Each message is `{ provenflow: <type>, ... }`;
+ * folders to map and its theme; the editor says when it listens (with the examples its menu
+ * offers), asks for a folder (the IDE's dialog), and hands the IDE its messages and the files it saves
+ * or exports. Each message is `{ provenflow: <type>, ... }`;
  * the IDEs' side is packages/vscode/src/editor-page.ts and packages/jetbrains/.../EditorPage.kt.
  */
 type HostMessage =
@@ -59,8 +61,16 @@ export class ParentFrameHost implements DesktopApi {
         return this.on(m => m.provenflow === 'theme' && callback(m.theme));
     }
 
-    ready(): void {
-        this.parent.postMessage({ provenflow: 'ready' }, '*');
+    ready(info?: EditorInfo): void {
+        this.parent.postMessage({ provenflow: 'ready', ...info }, '*');
+    }
+
+    notify(text: string): void {
+        this.parent.postMessage({ provenflow: 'notify', text }, '*');
+    }
+
+    saveFile(file: SavedFile): void {
+        this.parent.postMessage({ provenflow: 'save-file', file }, '*');
     }
 
     pickFolder(title?: string): Promise<string | null> {

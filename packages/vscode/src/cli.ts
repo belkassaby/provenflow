@@ -26,9 +26,32 @@ export function extractArguments(folder: string, output: string, settings: Analy
         'none',
         // Saves measure uncommitted work: the trends keep measures of commits only (pflow extract, --backfill).
         '--no-history',
+        // Each step as a line on stderr, for the progress bar.
+        '--progress-json',
         ...(settings.full ? [] : ['--no-analyzers', '--no-confirm']),
         ...(settings.fixes ? ['--fix'] : [])
     ];
+}
+
+/** A step of the analysis, as `pflow extract --progress-json` reports it. */
+export interface AnalysisProgress {
+    phase: string;
+    message: string;
+    /** 0 to 100, over the whole analysis. */
+    percent: number;
+}
+
+const PROGRESS_PREFIX = 'pflow-progress ';
+
+/** The step a line of pflow's stderr reports; undefined when it is another line (a note, an error). */
+export function progressOf(line: string): AnalysisProgress | undefined {
+    if (!line.startsWith(PROGRESS_PREFIX)) return undefined;
+    try {
+        const p = JSON.parse(line.slice(PROGRESS_PREFIX.length)) as Partial<AnalysisProgress>;
+        return typeof p.message === 'string' && typeof p.percent === 'number' ? { phase: p.phase ?? '', message: p.message, percent: p.percent } : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 /** `pflow trends` for a folder, as JSON; with `backfill`, first measures that many older commits. */

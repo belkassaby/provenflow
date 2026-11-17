@@ -134,12 +134,13 @@ developments" and removes the limitations listed in its evaluation chapter.
 - **VS Code.** An extension runs `pflow` when a file is saved. A ProvenFlow sidebar lists the
   findings with their counterexample steps, the models, the hotspots and the trends. The Problems
   panel shows the findings, and verified fixes apply as quick fixes. The ProvenFlow editor opens
-  models with their counterexamples, the C4 architecture and `.pflow` files in VS Code tabs
+  models with their counterexamples, the C4 architecture and `.pflow` files in VS Code tabs. Each
+  tab shows only its document, and the editor's menus are in a ProvenFlow menu
   ([docs/vscode.md](docs/vscode.md)).
 - **JetBrains IDEs.** A plugin for IntelliJ IDEA, WebStorm, PyCharm and the other IntelliJ Platform
   IDEs does the same. It adds a ProvenFlow tool window, highlights the findings with gutter icons,
-  applies verified fixes on Alt+Enter, and shows the ProvenFlow editor in IDE tabs
-  ([docs/jetbrains.md](docs/jetbrains.md)).
+  applies verified fixes on Alt+Enter, and shows the ProvenFlow editor in IDE tabs, with its menus
+  in Run | ProvenFlow ([docs/jetbrains.md](docs/jetbrains.md)).
 
 ### Limitations of the original tool, now removed
 
@@ -840,7 +841,7 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow prob <d.pflow> --reach EXPR [--within K] [--steps EXPR] [--visits EXPR --until EXPR]` | probabilistic analysis |
 | `pflow prism <d.pflow> [-o m.pm]` | PRISM / Storm model and properties |
 | `pflow nurv <d.pflow> [-o dir]` | NuRV full-LTL monitors (`NURV_PATH`) |
-| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--checks ids \| --skip ids] [--llm p:model] [--llm-fixes N] [--osv] [--no-analyzers] [--no-confirm] [--history file \| --no-history]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes, regression tests from the counterexamples (exit 5 on findings); `--osv` adds the known vulnerabilities of the locked dependencies; each run is added to the code base's history |
+| `pflow extract <dir> [-o out] [--config f] [--fail-on error\|warning\|none] [--fix] [--checks ids \| --skip ids] [--llm p:model] [--llm-fixes N] [--osv] [--no-analyzers] [--no-confirm] [--history file \| --no-history] [--progress-json]` | verified models of a code base, findings of the installed analysers, proofs about the code, findings with fixes and verified code changes, regression tests from the counterexamples (exit 5 on findings); `--osv` adds the known vulnerabilities of the locked dependencies; each run is added to the code base's history; `--progress-json` writes each step as a `pflow-progress {json}` line on stderr, for IDEs |
 | `pflow review <dir> [--base ref] [--files] [--new-only] [--mutate N] [--coverage report] [--fix] [--fix-pr] [--github] [--check-run] [--fail-on …]` | the findings on the lines changed since `ref` (only those the change adds with `--new-only`); `--github` posts them as a pull-request review with verified suggestions; `--fix-pr` opens one pull request with every verified fix |
 | `pflow fix-pr <dir> [--base ref] [--branch name] [--dry-run] [--llm p:model]` | every verified fix as one commit on a branch (the working tree is not touched), pushed, with a pull request opened or updated |
 | `pflow trends [<dir>...] [--projects] [--backfill N] [--last N] [--json] [-o file]` | how errors, warnings, duplication, complexity, false properties and coverage moved over the runs; `--projects` adds the owner's other projects, `--backfill` measures N older commits |

@@ -41,7 +41,14 @@ describe('ParentFrameHost (the editor in an IDE tab)', () => {
         const host = new ParentFrameHost(parent, window);
         host.ready();
         const picked = host.pickFolder('Code base');
-        expect(sent).toEqual([{ provenflow: 'ready' }, { provenflow: 'pick-folder', id: 1, title: 'Code base' }]);
+        host.notify('Saved a.pflow');
+        host.saveFile({ name: 'a.smv', content: 'MODULE main', encoding: 'text', type: 'text/plain' });
+        expect(sent).toEqual([
+            { provenflow: 'ready' },
+            { provenflow: 'pick-folder', id: 1, title: 'Code base' },
+            { provenflow: 'notify', text: 'Saved a.pflow' },
+            { provenflow: 'save-file', file: { name: 'a.smv', content: 'MODULE main', encoding: 'text', type: 'text/plain' } }
+        ]);
         fromParent({ provenflow: 'folder', id: 1, path: '/w/app' });
         expect(await picked).toBe('/w/app');
     });

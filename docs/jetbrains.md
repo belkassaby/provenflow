@@ -64,10 +64,12 @@ settings and analyses the project.
   `.provenflow/`, `.git/`, `.idea/`, `node_modules/`, `build/` and `out/` don't count.
 - With **Tools | ProvenFlow | Analyse Project**, or the ▶ button of the Findings tab.
 
-One analysis runs at a time: a new one cancels the one still running. The command is:
+One analysis runs at a time: a new one cancels the one still running. Its progress bar, in the status
+bar and the Background Tasks window, follows the steps pflow reports, such as "Checking model 3/12…".
+It can be cancelled there. The command is:
 
 ```sh
-pflow extract <project> -o <project>/.provenflow/jetbrains --quiet --fail-on none --no-history --no-analyzers --no-confirm --fix
+pflow extract <project> -o <project>/.provenflow/jetbrains --quiet --fail-on none --no-history --progress-json --no-analyzers --no-confirm --fix
 ```
 
 Analyses on save don't add to the trends, because they measure uncommitted work. Each
@@ -95,6 +97,31 @@ Settings | Tools | ProvenFlow:
 | Full analysis | off | Also run the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and replay counterexamples on the code. Slower. |
 | Propose automatic fixes | on | `--fix`: each fix is verified by re-running the analysis and the build. |
 | Also offer fixes that could not be verified | off | |
+
+## The ProvenFlow menu
+
+A tab shows only its document (the diagram with its text, inspector and panels, the C4 architecture,
+or the code base report), without the editor's own menu bar and tabs. The editor's menus are in
+**Run | ProvenFlow**, with its submenus:
+
+| Submenu | Items |
+| --- | --- |
+| File | New Diagram, Open .pflow…, Import Agent Graph…, Import Code Base…, Code Base Report, C4 Architecture, Save .pflow, Export nuXmv Model (.smv), Export Diagram (.png, .svg), Export Python Implementation (.py), Export Jupyter Notebook (.ipynb) |
+| Examples | Open Example…: a list of the editor's examples, each opened in a new tab |
+| Attributes | Edit Attribute Table |
+| nuXmv | Show Generated Model, Check Properties, Simulate the Diagram, Show nuXmv Output, Re-detect nuXmv |
+| Help | Using the Editor, Walkthroughs, Logic Symbols, Glossary of Logic Terms, References, LLM Settings (API Keys)… |
+
+Below them come Analyse Project, Open Report, Open Model in the Editor… and Measure Older Commits.
+
+- The items that act on a diagram (Save, Export, Attributes, nuXmv) act on the selected ProvenFlow
+  tab.
+- New Diagram, Import Agent Graph and the examples open a new tab.
+- Open .pflow… uses the IDE's file dialog.
+
+Save .pflow writes over the file a tab shows, when the tab shows a file of the project. Otherwise,
+and for every export, the IDE's save dialog asks where the file goes. The editor's messages show in
+the status bar.
 
 ## Actions
 

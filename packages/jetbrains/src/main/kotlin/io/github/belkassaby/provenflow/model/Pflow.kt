@@ -1,5 +1,7 @@
 package io.github.belkassaby.provenflow.model
 
+import com.google.gson.Gson
+import com.google.gson.JsonParseException
 import java.io.File
 
 /** What an analysis runs: the installed analysers and the replay too (slower), and automatic fixes, each verified. */
@@ -7,6 +9,9 @@ data class AnalysisSettings(val full: Boolean, val fixes: Boolean)
 
 /** Where pflow is looked for: the PATH, and whether npm's Windows shims apply. */
 data class Environment(val path: String, val windows: Boolean)
+
+/** A step of the analysis, as `pflow extract --progress-json` reports it; `percent` is over the whole analysis. */
+data class AnalysisProgress(val phase: String? = null, val message: String? = null, val percent: Double? = null)
 
 /** How the plugin runs pflow: which command, with which arguments. No IDE classes here. */
 object Pflow {
@@ -21,7 +26,7 @@ object Pflow {
 
     /** `pflow extract` for a folder: the report only, never a failing exit code for findings; saves measure no trends. */
     fun extractArguments(folder: String, output: String, settings: AnalysisSettings): List<String> =
-        listOf("extract", folder, "-o", output, "--quiet", "--fail-on", "none", "--no-history") +
+        listOf("extract", folder, "-o", output, "--quiet", "--fail-on", "none", "--no-history", "--progress-json") +
             (if (settings.full) emptyList() else listOf("--no-analyzers", "--no-confirm")) +
             (if (settings.fixes) listOf("--fix") else emptyList())
 
@@ -30,6 +35,26 @@ object Pflow {
         listOf("trends", folder, "--json") + (if (backfill > 0) listOf("--backfill", backfill.toString(), "--quiet") else emptyList())
 
     fun serveArguments(): List<String> = listOf("serve", "--until-stdin-closes")
+
+    private const val PROGRESS_PREFIX = "pflow-progress "
+
+    /** The step a line of pflow's stderr reports; null when it is another line (a note, an error). */
+    fun progressOf(line: String): AnalysisProgress? {
+        if (!line.startsWith(PROGRESS_PREFIX)) return null
+        val step =
+            try {
+                Gson().fromJson(line.removePrefix(PROGRESS_PREFIX).trim(), AnalysisProgress::class.java)
+            } catch (_: JsonParseException) {
+                null
+            }
+        return step?.takeIf { it.message != null && it.percent != null }
+    }
+
+    /** The last step a chunk of pflow's stderr reports, if any. */
+    fun lastProgressIn(text: String): AnalysisProgress? = text.lines().mapNotNull(::progressOf).lastOrNull()
+
+    /** What pflow wrote on stderr besides its progress: its notes and errors. */
+    fun notesOf(stderr: String): List<String> = stderr.lines().filter { it.isNotBlank() && progressOf(it) == null }
 
     /** The editor's address in what `pflow serve` printed so far, once it is there. */
     fun editorUrlOf(output: String): String? = serveBanner.find(output)?.groupValues?.get(1)

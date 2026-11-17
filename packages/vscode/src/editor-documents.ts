@@ -4,7 +4,7 @@
  * No `vscode` import here.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { OUTPUT_FOLDER } from './cli';
 import type { EditorDocument } from './editor-panels';
 import type { Report } from './report';
@@ -34,7 +34,22 @@ export function c4Document(root: string): EditorDocument {
 export function fileDocument(path: string, text: string): EditorDocument | undefined {
     const kind = editorKindOf(path);
     if (!kind) return undefined;
-    return { key: `file:${path}`, title: basename(path), message: { provenflow: 'open-file', file: { name: basename(path), path, text, kind } } };
+    return { key: `file:${path}`, title: basename(path), path, message: { provenflow: 'open-file', file: { name: basename(path), path, text, kind } } };
+}
+
+/** A tab that runs one of the editor's commands when it opens (a new diagram, an example, the code base report). */
+export function commandDocument(key: string, title: string, command: string): EditorDocument {
+    return { key, title, message: { provenflow: 'command', command } };
+}
+
+/**
+ * Where a file the editor saves goes: over the file the tab shows, when it saves that file (Save of
+ * a .pflow opened from the workspace); otherwise wherever the user says, starting next to that file
+ * or in the folder.
+ */
+export function savePlan(document: EditorDocument, name: string, folder: string): { write: string } | { ask: string } {
+    if (document.path && basename(document.path) === name) return { write: document.path };
+    return { ask: join(document.path ? dirname(document.path) : folder, name) };
 }
 
 /** An editor with nothing opened: a new diagram, or File → Import code base. */

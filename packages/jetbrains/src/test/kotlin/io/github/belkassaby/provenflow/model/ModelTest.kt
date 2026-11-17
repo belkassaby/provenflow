@@ -69,10 +69,14 @@ class ModelTest {
     @Test
     fun `runs pflow with the right arguments, and finds it`() {
         assertEquals(
-            listOf("extract", "/w", "-o", "/w/.provenflow/jetbrains", "--quiet", "--fail-on", "none", "--no-history", "--no-analyzers", "--no-confirm", "--fix"),
+            listOf("extract", "/w", "-o", "/w/.provenflow/jetbrains", "--quiet", "--fail-on", "none", "--no-history", "--progress-json", "--no-analyzers", "--no-confirm", "--fix"),
             Pflow.extractArguments("/w", "/w/.provenflow/jetbrains", AnalysisSettings(full = false, fixes = true)),
         )
         assertEquals(listOf("trends", "/w", "--json", "--backfill", "12", "--quiet"), Pflow.trendsArguments("/w", 12))
+        assertEquals(AnalysisProgress("verify", "Checking model 1/2", 25.0), Pflow.progressOf("""pflow-progress {"phase":"verify","message":"Checking model 1/2","percent":25}"""))
+        assertNull(Pflow.progressOf("note: OSV could not be reached"))
+        assertNull(Pflow.progressOf("pflow-progress {broken"))
+        assertEquals(listOf("note: x"), Pflow.notesOf("pflow-progress {\"message\":\"a\",\"percent\":5}\nnote: x\n"))
         val there = { paths: List<String> -> { p: String -> p in paths } }
         assertEquals("/w/node_modules/.bin/pflow", Pflow.findCli("/w", "", Environment("/usr/bin:/opt/bin", windows = false), there(listOf("/w/node_modules/.bin/pflow", "/opt/bin/pflow"))))
         assertEquals("/opt/bin/pflow", Pflow.findCli("/w", "", Environment("/usr/bin:/opt/bin", windows = false), there(listOf("/opt/bin/pflow"))))
@@ -104,5 +108,16 @@ class ModelTest {
         }
         assertEquals(listOf("diagram", "diagram", "c4", "c4", null), listOf("a.pflow", "b.NXD", "w.dsl", "w.c4.json", "x.json").map(EditorDocuments::kindOf))
         assertNull(EditorDocuments.file("/w/a.ts", ""))
+    }
+
+    @Test
+    fun `lists the editor's menus, and saves over a tab's file only when it saves that file`() {
+        assertEquals(EditorMenu.submenus.toSet(), EditorMenu.items.map { it.submenu }.toSet())
+        assertEquals(25, EditorMenu.items.size)
+        assertEquals(mapOf("provenflow" to "command", "command" to "example:door"), EditorMenu.commandDocument("example:door", "Door", "example:door").message)
+        val file = EditorDocuments.file("/w/d/door.pflow", "diagram Door\n")!!
+        assertEquals(SavePlan(write = "/w/d/door.pflow"), Saving.plan(file, "door.pflow", "/w"))
+        assertEquals(SavePlan(ask = "/w/d/door.smv"), Saving.plan(file, "door.smv", "/w"))
+        assertEquals(SavePlan(ask = "/w/w.dsl"), Saving.plan(EditorDocuments.c4("/w"), "w.dsl", "/w"))
     }
 }

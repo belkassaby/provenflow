@@ -12,13 +12,14 @@ import { AnalysisProcess } from './analysis-process';
 import { AnalysisStatus } from './analysis-status';
 import { extractArguments, findCli, missingCliMessage, OUTPUT_FOLDER, startsAnalysis, trendsArguments, type AnalysisSettings } from './cli';
 import { c4Document, EMPTY_EDITOR, fileDocument, modelDocument } from './editor-documents';
+import { EditorMenu } from './editor-menu-commands';
 import { EditorPanels } from './editor-panels';
 import { EditorServerProcess } from './editor-server';
 import { APPLY_FIX, applyFix, FixActions } from './fix-actions';
 import { ProblemView } from './problem-view';
 import { parseReport, problemOf, problemsByFile, type Report } from './report';
 import type { TreeNode } from './sidebar';
-import { SidebarViews } from './sidebar-views';
+import { SidebarViews, VIEWS } from './sidebar-views';
 import { OPEN_MODEL_IN_EDITOR, REVEAL, reveal } from './tree-view';
 import { runsOf } from './trends';
 
@@ -55,13 +56,20 @@ export class ProvenflowExtension implements vscode.Disposable {
     private readonly log = vscode.window.createOutputChannel('ProvenFlow');
     private readonly sidebar = new SidebarViews();
     private readonly editors: EditorPanels;
+    private readonly menu: EditorMenu;
     /** One pflow run per workspace folder: a new one stops the one still running. */
     private readonly runs = new Map<string, AnalysisProcess>();
     private readonly registrations: vscode.Disposable[];
     private saveTimer?: ReturnType<typeof setTimeout>;
 
     constructor(icon: vscode.Uri) {
-        this.editors = new EditorPanels(new EditorServerProcess(), () => this.serverLaunch(), icon);
+        this.menu = new EditorMenu({
+            folder: () => this.sidebar.folder ?? vscode.workspace.workspaceFolders?.[0]?.uri,
+            openC4: () => this.openC4(),
+            openFile: uri => this.openInEditor(uri)
+        });
+        this.editors = new EditorPanels(new EditorServerProcess(), () => this.serverLaunch(), icon, this.menu);
+        this.menu.attach(this.editors);
         const command = (id: string, run: (...args: never[]) => unknown) => vscode.commands.registerCommand(id, run);
         this.registrations = [
             command(COMMANDS.analyse, () => this.analyseChosen()),
@@ -83,15 +91,29 @@ export class ProvenflowExtension implements vscode.Disposable {
         this.showLastReport();
     }
 
-    /** Runs pflow on a folder and shows its report. */
-    async analyse(folder: vscode.WorkspaceFolder): Promise<void> {
+    /**
+     * Runs pflow on a folder and shows its report. Its steps show with a progress bar `where` it is
+     * asked for: in a notification (Analyse workspace, with Cancel), or on the Findings view (saves),
+     * and always in the status bar.
+     */
+    async analyse(folder: vscode.WorkspaceFolder, where: vscode.ProgressLocation | { viewId: string } = { viewId: VIEWS.findings }): Promise<void> {
         const root = folder.uri.fsPath;
         const cli = await this.cliFor(root);
         if (!cli) return;
         const output = join(root, OUTPUT_FOLDER);
         this.status.running(folder.name);
-        const outcome = await this.runFor(root).start(cli, extractArguments(root, output, this.settings()), root);
-        if (outcome.stopped) return;
+        const run = this.runFor(root);
+        const title = `ProvenFlow: analysing ${folder.name}`;
+        const outcome = await vscode.window.withProgress({ location: where, title, cancellable: where === vscode.ProgressLocation.Notification }, (progress, cancel) => {
+            cancel.onCancellationRequested(() => run.dispose());
+            let done = 0;
+            return run.start(cli, extractArguments(root, output, this.settings()), root, step => {
+                progress.report({ increment: Math.max(0, step.percent - done), message: step.message });
+                done = Math.max(done, step.percent);
+                this.status.running(folder.name, step);
+            });
+        });
+        if (outcome.stopped) return this.status.stopped(folder.name);
         if (outcome.stderr) this.log.append(outcome.stderr);
         const report = outcome.code === 0 ? readReport(output) : undefined;
         if (!report) return this.failed(`ProvenFlow: pflow extract failed (exit ${outcome.code ?? '-'}). See the ProvenFlow output.`);
@@ -105,7 +127,7 @@ export class ProvenflowExtension implements vscode.Disposable {
         for (const run of this.runs.values()) run.dispose();
         this.runs.clear();
         this.registrations.forEach(r => r.dispose());
-        [this.problems, this.status, this.log, this.sidebar, this.editors].forEach(d => d.dispose());
+        [this.problems, this.status, this.log, this.sidebar, this.editors, this.menu].forEach(d => d.dispose());
     }
 
     private settings(): Settings {
@@ -171,7 +193,7 @@ export class ProvenflowExtension implements vscode.Disposable {
 
     private async analyseChosen(): Promise<void> {
         const folder = await chooseFolder();
-        if (folder) await this.analyse(folder);
+        if (folder) await this.analyse(folder, vscode.ProgressLocation.Notification);
     }
 
     private async openReport(): Promise<void> {

@@ -27,6 +27,7 @@ import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import io.github.belkassaby.provenflow.model.EditorDocument
 import io.github.belkassaby.provenflow.model.EditorDocuments
+import io.github.belkassaby.provenflow.model.EditorExample
 import io.github.belkassaby.provenflow.model.EditorPage
 import java.awt.BorderLayout
 import java.beans.PropertyChangeListener
@@ -92,7 +93,10 @@ class ProvenflowEditor(private val project: Project, private val file: VirtualFi
                 listening = true
                 sendTheme()
                 waiting.toList().also { waiting.clear() }.forEach(::send)
+                EditorTabs.examplesListed(EditorHost.examplesOf(message["examples"]))
             }
+            "save-file" -> (message["file"] as? Map<*, *>)?.let { EditorHost.save(project, document, it) }
+            "notify" -> (message["text"] as? String)?.let { EditorHost.notify(project, it) }
             "pick-folder" -> {
                 val folder = FileChooser.chooseFile(FileChooserDescriptorFactory.createSingleFolderDescriptor().withTitle(message["title"] as? String ?: "Choose a Folder"), project, null)
                 send(mapOf("provenflow" to "folder", "id" to message["id"], "path" to folder?.path))
@@ -140,13 +144,38 @@ class ProvenflowDocumentFile(val document: EditorDocument) : LightVirtualFile(do
     }
 }
 
-/** Opens editor documents in tabs: the same document shows the same tab. */
+/**
+ * Opens editor documents in tabs: the same document shows the same tab (and gets the document's
+ * message again). Knows the ProvenFlow tab in front, which the menu's commands act on, and the
+ * examples the editor lists.
+ */
 object EditorTabs {
     private val files = mutableMapOf<String, ProvenflowDocumentFile>()
+    private var examples: List<EditorExample> = emptyList()
+    private val waitingForExamples = mutableListOf<(List<EditorExample>) -> Unit>()
 
     fun open(project: Project, document: EditorDocument) {
-        val file = files.getOrPut("${project.locationHash}:${document.key}") { ProvenflowDocumentFile(document) }
-        FileEditorManager.getInstance(project).openFile(file, true)
+        val key = "${project.locationHash}:${document.key}"
+        val reused = files.containsKey(key)
+        val file = files.getOrPut(key) { ProvenflowDocumentFile(document) }
+        val editors = FileEditorManager.getInstance(project).openFile(file, true)
+        if (reused) document.message?.let { message -> editors.filterIsInstance<ProvenflowEditor>().forEach { it.send(message) } }
+    }
+
+    /** The ProvenFlow tab in front, if the selected editor is one. */
+    fun front(project: Project): ProvenflowEditor? = FileEditorManager.getInstance(project).selectedEditor as? ProvenflowEditor
+
+    /** Runs `use` with the editor's examples: at once when an editor listed them, else once an empty editor opened for it does. */
+    fun withExamples(project: Project, use: (List<EditorExample>) -> Unit) {
+        if (examples.isNotEmpty()) return use(examples)
+        waitingForExamples.add(use)
+        open(project, EditorDocuments.empty)
+    }
+
+    fun examplesListed(listed: List<EditorExample>) {
+        if (listed.isEmpty()) return
+        examples = listed
+        waitingForExamples.toList().also { waitingForExamples.clear() }.forEach { it(listed) }
     }
 }
 

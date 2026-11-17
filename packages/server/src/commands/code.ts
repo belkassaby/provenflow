@@ -45,7 +45,7 @@ import {
     type ReviewRun
 } from '@provenflow/extract';
 import { proposeFixes } from './fix-pr.js';
-import { checksOf, clearProgress, failOnLevel, githubBase, nuxmvChecker, terminalProgress, type Values } from './shared.js';
+import { checksOf, clearProgress, failOnLevel, githubBase, nuxmvChecker, progressOutput, type Values } from './shared.js';
 
 /** Options of the analysis shared by the code commands. */
 export async function analysisOptions(values: Values, defaults: { analyzers: boolean } = { analyzers: true }): Promise<ExtractOptions & { nuxmv: boolean }> {
@@ -62,7 +62,7 @@ export async function analysisOptions(values: Values, defaults: { analyzers: boo
         confirm: !values['no-confirm'],
         coverage: values.coverage,
         osv: values.osv,
-        onProgress: values.quiet ? undefined : terminalProgress()
+        onProgress: progressOutput(values)
     };
 }
 
