@@ -4,4 +4,4 @@ export type { C4Diagnostic } from './dsl-lex.js';
 export { writeC4Dsl } from './dsl-write.js';
 export { viewContents, type C4ViewContents, type C4ViewEdge, type C4ViewNode } from './views.js';
 export { c4ViewToText, type C4TextFormat } from './exporters.js';
-export { DISCOVERED_TAG, matchName, mergeC4Workspaces } from './merge.js';
+export { c4Drift, DISCOVERED_TAG, matchName, mergeC4Workspaces, type C4Drift } from './merge.js';

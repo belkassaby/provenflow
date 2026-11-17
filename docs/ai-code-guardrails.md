@@ -311,7 +311,7 @@ November 2026.
 | 7 | Quality | Clones of a module's internals outside it | facades | partly: a clone's fix says to move the code to a layer both may import; no separate rule |
 | 8 | Tests | Note when changed source has no changed or covering test | `ModuleFact.isTest` | done (`change-without-test`) |
 | 9 | Tests | Read LCOV/Cobertura/JaCoCo; uncovered changed lines | changed lines | done (`uncovered-change`, `untested-complex-function`) |
-| 10 | Tests | Write confirmed replays as runnable regression tests | `replay.ts` | not done: scenarios are still skeletons |
+| 10 | Tests | Write confirmed replays as runnable regression tests | `replay.ts` | done for leaks, lost writes and "never reaches" properties (`scenarios.ts`); "can settle" properties stay skeletons |
 | 11 | Tests | Diff-scoped mutation testing | `buildcheck.ts`, workspaces | done (`pflow mutate`, `--mutate`) |
 | 12 | Agents | MCP server; Claude Code hook and `copilot-setup-steps` recipes; AGENTS.md section | `single-change.ts` | done (`pflow mcp`, `pflow hook`, `examples/ci/`) |
 | 13 | Conventions | `pflow init`: config proposed with evidence | paradigm profile, pattern confidence | done |
@@ -322,6 +322,13 @@ November 2026.
 | 18 | Agents | Stricter policy for agent-written lines (trailers, Git AI notes) | item 2 | done; Agent Trace records are not read yet |
 | 19 | Feedback | Per-rule acceptance in the review summary | review markers | done |
 | 20 | Conventions | A catalogue of the patterns, principles (*The Pragmatic Programmer*) and anti-patterns checked, each explained in Fowler's pattern form with an example, selectable per project (`checks`) and in the editor; edits shown file by file, before/after | pattern recognition, quality rules, quick fixes | done (`catalogue/`, `quality/practices.ts`, [patterns-and-practices.md](patterns-and-practices.md)) |
+| 21 | Feedback | How often counterexamples are real, per rule, every counterexample replayed | `replay.ts` | done (`pflow bench`); no published numbers yet |
+| 22 | Best practice | Known vulnerabilities of the locked dependency versions (OSV), private names never sent | lockfiles | done (`advisories/`, `--osv`) |
+| 23 | Quality | Hotspots: complexity weighed by git churn | complexity measures | done (file-level churn) |
+| 24 | Architecture | The code base's C4 model compared with its code, in every analysis | the project map | done (`c4/drift.ts`, `pflow c4 --check`) |
+| 25 | Platforms | VS Code extension: findings on save, verified fixes as quick fixes | the CLI | done (`packages/vscode`), not published to the Marketplace |
+| 26 | Platforms | Every verified fix of a run as one pull request | quick fixes, LLM fixes | done (`pflow fix-pr`, Action `fix-pr`) |
+| 27 | Feedback | Quality trends across runs and across an owner's projects | measures of each run | done (`pflow trends`, report.md) |
 
 The per-language standards behind items 6 and 14 are in [coding-standards.md](coding-standards.md).
 

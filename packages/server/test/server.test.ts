@@ -9,6 +9,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeF
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/app.js';
+import { startEditorServer } from '../src/serve.js';
 import { nuxmvInfo, runNuxmv, type RunnerConfig } from '../src/nuxmv-runner.js';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-nuxmv.mjs', import.meta.url));
@@ -638,5 +639,36 @@ describe('C4: the projects around a code base (POST /api/c4/discover, /api/c4/sa
     it('does not read folders by path when the server is not bound to localhost', async () => {
         const url = await start(false);
         expect((await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app') })).status).toBe(403);
+    });
+});
+
+describe('the editor on a loopback port (desktop application, pflow serve)', () => {
+    const editor = mkdtempSync(join(tmpdir(), 'provenflow-editor-'));
+    writeFileSync(join(editor, 'index.html'), '<!doctype html><title>editor under test</title>');
+    afterAll(() => rmSync(editor, { recursive: true, force: true }));
+
+    it('serves the built editor on a free port of 127.0.0.1, and stops', async () => {
+        const server = await startEditorServer({ staticDir: editor });
+        try {
+            expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+            expect(await (await fetch(server.url)).text()).toContain('editor under test');
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('says when the editor is not built', async () => {
+        await expect(startEditorServer({ staticDir: join(editor, 'missing') })).rejects.toThrow(/not built/);
+    });
+
+    const CLI = fileURLToPath(new URL('../out/cli.js', import.meta.url));
+    it.skipIf(!existsSync(CLI))('pflow serve prints its address first, and ends when its stdin closes', async () => {
+        const child = spawn(process.execPath, [CLI, 'serve', '--until-stdin-closes'], { env: { ...process.env, STATIC_DIR: editor } });
+        const first = await new Promise<string>(resolve => child.stdout.once('data', chunk => resolve(String(chunk))));
+        const url = /^ProvenFlow editor at (\S+)/.exec(first)?.[1];
+        expect(await (await fetch(url!)).text()).toContain('editor under test');
+        const exit = new Promise<number | null>(resolve => child.once('exit', resolve));
+        child.stdin.end();
+        expect(await exit).toBe(0);
     });
 });

@@ -149,6 +149,15 @@ export interface ChecksConfig {
     skip?: string[];
 }
 
+export interface AdvisoriesConfig {
+    /** Ask osv.dev about the dependencies' versions. */
+    osv?: boolean;
+    /** Package names never sent (private packages), as globs: "@acme/*". Local and workspace packages are never sent. */
+    private?: string[];
+    /** The OSV API (default https://api.osv.dev). */
+    url?: string;
+}
+
 export interface ProvenflowConfig {
     include?: string[];
     exclude?: string[];
@@ -170,6 +179,14 @@ export interface ProvenflowConfig {
     /** `false` turns off the check that imported packages are declared and exist. */
     dependencies?: boolean;
     coverage?: CoverageConfig;
+    /** Hotspots: complexity weighed by the commits of the last `months` (default 12). `false` leaves git history out. */
+    hotspots?: { months?: number } | false;
+    /** Known vulnerabilities of the dependencies, from the OSV database (off by default: it sends package names and versions to osv.dev). */
+    advisories?: AdvisoriesConfig;
+    /** The code base's C4 model to compare with its code (default: docs/c4/workspace.dsl and the like); `false` turns the comparison off. */
+    c4?: { model?: string } | false;
+    /** Where each run's measures are kept for `pflow trends` (default .provenflow/history.jsonl); `false` keeps none. */
+    history?: string | false;
     mutation?: MutationConfig;
     /** File of accepted findings (default provenflow-baseline.json when it exists): only findings not in it fail. */
     baseline?: string;

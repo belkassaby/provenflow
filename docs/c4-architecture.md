@@ -108,9 +108,10 @@ Give it a code base's folder. ProvenFlow then does the following.
      modules its manifest declares.
    - The top folders of each container's sources are its components.
    - Dependencies become relationships between containers, tagged `Dev dependency`,
-     `Peer dependency`, `Optional dependency` and `Outdated`.
-   - Imports between folders, and towards other projects, become relationships between components.
-     They are labelled with the names imported.
+     `Peer dependency`, `Optional dependency` and `Outdated`. So do dependencies between the
+     modules of one project (a workspace package on another), tagged `Module dependency`.
+   - Imports between folders, towards the project's other modules, and towards other projects,
+     become relationships between components. They are labelled with the names imported.
    - The libraries several projects use become external systems.
    - Views: the landscape of all the projects, plus the context, containers and components of the
      code base.
@@ -123,6 +124,23 @@ with the discovered projects merged in:
 - An element with the same name (case, npm scope and punctuation aside) is the same element.
 - The others are added, tagged `Discovered` and drawn dashed.
 - What the hand-written model says is never changed.
+
+### When the model no longer matches the code
+
+Every analysis of a code base that has its own model (`pflow extract`, `pflow review`, the
+editor's Import code base) compares it with what the code has, and so does `pflow c4 --check`.
+Only the code base is mapped for this, not the projects around it, so the result depends only on
+what is checked out (the same in CI as on a laptop).
+
+| rule | severity | when |
+| --- | --- | --- |
+| `c4-undocumented-part` | warning | The code has a container or component the model does not show, inside an element the model already breaks down. Below the level the model stops at (components of a container drawn without any), parts are detail and not reported. |
+| `c4-undocumented-dependency` | warning | The code has a dependency (an import, or a declared dependency) between two elements the model shows, and the model has no relationship between them, or between their parents or parts. |
+| `c4-unbacked-relationship` | info | The model has a relationship between two elements the code has, and no import or dependency backs it. A call over HTTP or a queue is expected to show here; otherwise the model is out of date. |
+
+Each finding points at the line of the model it is about. `pflow c4 --merge` adds what the code has,
+tagged `Discovered`. In the config, `"c4": { "model": "path/to/workspace.dsl" }` names another
+model, and `"c4": false` turns the comparison off.
 
 ### Suggestions
 
@@ -149,6 +167,8 @@ pflow c4 ../my-app --format plantuml --view context  # one view as C4-PlantUML (
 pflow c4 ../my-app --json                            # everything, as JSON
 pflow c4 ../my-app --merge -o docs/c4/workspace.dsl  # the code base's own workspace.dsl with the projects added
 pflow c4 ../my-app --scan ~/git/org,~/git/other --owner my-org,@my-scope --depth 3
+pflow c4 ../my-app --check --fail-on warning         # where workspace.dsl and the code disagree (exit 5 on warnings)
+pflow trends ../my-app --projects                    # the quality trends of the owner's projects
 ```
 
 ## REST API

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 import { hookCommand } from './commands/agents.js';
 import { c4Command } from './commands/c4.js';
+import { trendsCommand } from './commands/trends.js';
+import { benchCommand } from './commands/bench.js';
+import { serveCommand } from './commands/serve.js';
 import { catalogueCommand } from './commands/catalogue.js';
-import { baselineCommand, compareCommand, extractCommand, initCommand, mutateCommand, postReviewCommand, reviewCommand } from './commands/code.js';
+import { baselineCommand, compareCommand, extractCommand, fixPrCommand, initCommand, mutateCommand, postReviewCommand, reviewCommand } from './commands/code.js';
 import { diagramCommand, isDiagramCommand } from './commands/diagram.js';
 import { parse, type Values } from './commands/shared.js';
 import { serveMcp } from './mcp.js';
@@ -35,6 +38,7 @@ Code bases (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rus
                 [--checks id,id... | --skip id,id...]
                 [--llm anthropic:<model>|openai:<model>|ollama:<model>] [--llm-fixes N]
                 [--coverage report]... [--baseline file | --no-baseline] [--no-analyzers] [--no-confirm]
+                [--progress-json]  (each step as a "pflow-progress {json}" line on stderr, for IDEs)
                                                  verified models (state machines, resource lifecycles,
                                                  design patterns, architecture), code quality (duplicated
                                                  code, complexity, naming, dependencies, coverage), the
@@ -67,6 +71,11 @@ Code bases (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rus
                                                  languages' coding standards; --instructions also turns
                                                  the checkable rules of AGENTS.md, CLAUDE.md... into config
 
+Editor:
+  pflow serve [--port N]                         the editor (diagrams, code base report, C4) and its API on
+                                                 http://127.0.0.1 (a free port by default), as the desktop
+                                                 application and the VS Code extension run it
+
 Coding agents:
   pflow mcp                                      MCP server (stdio): project_conventions,
                                                  find_existing_code, review_changes, propose_fix
@@ -82,6 +91,7 @@ const CODE_COMMANDS: Record<string, CodeCommand> = {
     compare: compareCommand,
     mutate: mutateCommand,
     init: initCommand,
+    'fix-pr': fixPrCommand,
     'post-review': file => postReviewCommand(file)
 };
 
@@ -95,6 +105,9 @@ async function main(): Promise<number> {
     if (command === 'hook' && rest[0]) return hookCommand(rest[0]);
     if (command === 'catalogue') return catalogueCommand(values, rest[0]);
     if (command === 'c4') return c4Command(values, rest[0]);
+    if (command === 'trends') return trendsCommand(values, rest);
+    if (command === 'bench') return benchCommand(values, rest);
+    if (command === 'serve') return serveCommand(values);
     // pflow export <framework> <diagram>: the diagram is the second argument.
     const framework = command === 'export' ? rest.shift() : undefined;
     const [file, second] = rest;

@@ -33,8 +33,8 @@ export interface Finding {
     /** The property nuXmv found false. */
     spec?: string;
     counterexample?: CounterexampleStep[];
-    /** How the finding was established: ProvenFlow's own checks, or an external tool (semgrep, codeql, infer, esbmc, cbmc, kani, sarif). */
-    source: 'analysis' | 'nuxmv' | 'graph' | 'llm' | 'semgrep' | 'codeql' | 'infer' | 'esbmc' | 'cbmc' | 'kani' | 'sarif' | 'build';
+    /** How the finding was established: ProvenFlow's own checks, or an external tool (semgrep, codeql, infer, esbmc, cbmc, kani, sarif), or the OSV database (osv). */
+    source: 'analysis' | 'nuxmv' | 'graph' | 'llm' | 'semgrep' | 'codeql' | 'infer' | 'esbmc' | 'cbmc' | 'kani' | 'sarif' | 'build' | 'osv';
     /** Whether the problem was reproduced on the real code (replay of the counterexample, bounded model checking of the code). */
     confirmation?: Confirmation;
     /** Code values of the states the finding is about (e.g. the unreachable value). */

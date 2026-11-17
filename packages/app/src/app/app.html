@@ -1,3 +1,4 @@
+@if (!embedded) {
 <header class="topbar">
   <div class="brand">
     <span class="logo" aria-hidden="true">◉→◯</span>
@@ -98,6 +99,7 @@
 </header>
 
 <app-document-tabs (showReport)="showCodeReport()" />
+}
 
 <main class="workspace" [hidden]="!!documents.page()" [class.no-text]="!showText()" [class.maximized]="canvasMax()"
   [style.--text-w]="(showText() ? textW() : 28) + 'px'" [style.--insp-w]="inspectorW() + 'px'" [style.--bottom-h]="bottomH() + 'px'">

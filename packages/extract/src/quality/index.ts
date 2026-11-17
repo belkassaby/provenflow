@@ -7,6 +7,7 @@ import { DEFAULT_COMPLEXITY, limitsFor, type ProvenflowConfig } from '../config.
 import type { Facts, FunctionFact, Language } from '../ir.js';
 import type { Finding } from '../models.js';
 import { isTestFile } from '../scan.js';
+import type { Churn } from './churn.js';
 import { complexityFindings, type ComplexityLimits } from './complexity.js';
 import { coveredShare, readCoverage, untestedComplexFunctions, type Coverage } from './coverage.js';
 import { dependencyFindings } from './dependencies.js';
@@ -21,6 +22,7 @@ export { findClones, functionLabel, similarFunctions, similarToSnippet, type Clo
 export { STANDARDS, standardOf, type LanguageStandard } from './standards.js';
 export { shapeOf, restyle, dominant } from './naming.js';
 export { tokenize } from './tokens.js';
+export { DEFAULT_CHURN_MONTHS, readChurn, type Churn } from './churn.js';
 export { deleteLinesEdit, rethrowEdit, uniqueEdit } from './practices.js';
 
 export interface QualityMetrics {
@@ -36,8 +38,25 @@ export interface QualityMetrics {
     naming: { checked: number; inconsistent: number };
     dependencies: { unknown: number; undeclared: number };
     coverage?: { percent: number; covered: number; total: number };
-    /** The most complex functions. */
-    hotspots: Array<{ name: string; file: string; line: number; cognitive: number; nesting: number }>;
+    /**
+     * Where to simplify first: complex functions in files that change often (Cognitive Complexity times
+     * the commits to the file over `churn.months`), or the most complex ones without git history.
+     */
+    hotspots: Hotspot[];
+    /** The history the hotspots were weighed with. */
+    churn?: { months: number; commits: number };
+}
+
+export interface Hotspot {
+    name: string;
+    file: string;
+    line: number;
+    cognitive: number;
+    nesting: number;
+    /** Commits that changed the file in the period (with git history). */
+    changes?: number;
+    /** Cognitive Complexity times changes (or the complexity alone, without history). */
+    score: number;
 }
 
 export interface QualityResult {
@@ -52,6 +71,8 @@ export interface QualityResult {
 export interface QualityOptions {
     /** Coverage reports to read, besides config.coverage.reports. */
     coverageReports?: string[];
+    /** How often each file changed (git), to rank the hotspots. */
+    churn?: Churn;
 }
 
 export function complexityLimits(config: ProvenflowConfig): (language: Language | undefined) => ComplexityLimits {
@@ -110,7 +131,7 @@ export function analyseQuality(facts: Facts, config: ProvenflowConfig, read: (fi
     notes.push(...coverageNotes);
     findings.push(...untested);
 
-    const metrics = measure({ functions, sourceFiles, tokens, isTest, duplication, findings, limitsOf, languageOf, conventions: naming.conventions, coverage, config });
+    const metrics = measure({ functions, sourceFiles, tokens, isTest, duplication, findings, limitsOf, languageOf, conventions: naming.conventions, coverage, config, churn: options.churn });
     return { findings, metrics, clones: duplication?.clones ?? [], conventions: naming.conventions, coverage, notes };
 }
 
@@ -134,9 +155,25 @@ interface Measured {
     conventions: QualityResult['conventions'];
     coverage: Coverage | undefined;
     config: ProvenflowConfig;
+    churn: Churn | undefined;
 }
 
-function measure({ functions, sourceFiles, tokens, isTest, duplication, findings, limitsOf, languageOf, conventions, coverage, config }: Measured): QualityMetrics {
+const HOTSPOTS = 10;
+
+/** The functions to simplify first: complexity weighed by how often their file changes. */
+function hotspots(measured: FunctionFact[], churn: Churn | undefined): Hotspot[] {
+    return measured
+        .map(f => {
+            const changes = churn ? (churn.changes.get(f.loc.file) ?? 0) : undefined;
+            const { cognitive, nesting } = f.complexity!;
+            return { name: functionLabel(f), file: f.loc.file, line: f.loc.line, cognitive, nesting, changes, score: changes === undefined ? cognitive : cognitive * changes };
+        })
+        .filter(h => h.score > 0)
+        .sort((a, b) => b.score - a.score || b.cognitive - a.cognitive)
+        .slice(0, HOTSPOTS);
+}
+
+function measure({ functions, sourceFiles, tokens, isTest, duplication, findings, limitsOf, languageOf, conventions, coverage, config, churn }: Measured): QualityMetrics {
     const lines = sourceFiles.reduce((n, f) => n + codeLines(tokens.get(f) ?? []), 0);
     const testFiles = [...tokens.keys()].filter(isTest);
     const testLines = testFiles.reduce((n, f) => n + codeLines(tokens.get(f) ?? []), 0);
@@ -179,9 +216,7 @@ function measure({ functions, sourceFiles, tokens, isTest, duplication, findings
         naming: { checked: conventions.reduce((n, c) => n + c.names, 0), inconsistent: count('naming-convention') },
         dependencies: { unknown: count('unknown-dependency'), undeclared: count('undeclared-dependency') },
         coverage: coverage ? (({ covered, total, percent }) => ({ covered, total, percent }))(coveredShare(coverage)) : undefined,
-        hotspots: [...measured]
-            .sort((a, b) => b.complexity!.cognitive - a.complexity!.cognitive)
-            .slice(0, 10)
-            .map(f => ({ name: functionLabel(f), file: f.loc.file, line: f.loc.line, cognitive: f.complexity!.cognitive, nesting: f.complexity!.nesting }))
+        hotspots: hotspots(measured, churn),
+        churn: churn ? { months: churn.months, commits: churn.commits } : undefined
     };
 }

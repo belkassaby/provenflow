@@ -10,7 +10,8 @@
     "packages/extract",
     "packages/server",
     "packages/app",
-    "packages/desktop"
+    "packages/desktop",
+    "packages/vscode"
   ],
   "engines": {
     "node": ">=20.19"
@@ -24,9 +25,11 @@
     "start": "npm run start -w @provenflow/server",
     "desktop": "npm run build:desktop && npm start -w @provenflow/desktop",
     "dist:desktop": "npm run build && npm run dist -w @provenflow/desktop",
-    "test": "npm test -w @provenflow/language && npm test -w @provenflow/extract && npm test -w @provenflow/server && npm test -w @provenflow/app -- --watch=false && npm test -w @provenflow/desktop",
+    "test": "npm test -w @provenflow/language && npm test -w @provenflow/extract && npm test -w @provenflow/server && npm test -w @provenflow/app -- --watch=false && npm test -w @provenflow/desktop && npm test -w provenflow-vscode",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "check:code": "node packages/server/out/cli.js extract . --fail-on warning"
+    "check:code": "node packages/server/out/cli.js extract . --fail-on warning",
+    "build:vscode": "npm run build -w provenflow-vscode",
+    "build:jetbrains": "cd packages/jetbrains && ./gradlew buildPlugin"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

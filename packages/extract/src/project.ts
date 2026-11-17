@@ -12,6 +12,8 @@ import { CONFIG_FILE, loadConfig, type ChecksConfig, type ProvenflowConfig } fro
 import { mergeFacts, type Facts } from './ir.js';
 import { analyseArchitecture, type ArchitectureResult } from './architecture.js';
 import { buildLifecycles } from './lifecycles.js';
+import { vulnerableDependencies, type AdvisoryResult } from './advisories/osv.js';
+import { modelDrift } from './c4/index.js';
 import { confirmUnreachableInC, runAnalyzers, type AnalyzerOutput, type ToolRun } from './analyzers/index.js';
 import { ChangeChecker, detectChecks } from './buildcheck.js';
 import { quickFixes, readSafe, verifyProposals, type Proposal, type Rerun } from './fixes.js';
@@ -27,7 +29,7 @@ import type { CodeProof, ExtractedModel, Finding } from './models.js';
 import { analyseParadigm, type ParadigmProfile } from './paradigm.js';
 import { analysePatterns, checkExpectations, declaredInCode, gradePatternFindings, type PatternInstance } from './patterns.js';
 import { extractPython } from './python-frontend.js';
-import { analyseQuality, type QualityMetrics, type QualityResult } from './quality/index.js';
+import { analyseQuality, readChurn, type Churn, type QualityMetrics, type QualityResult } from './quality/index.js';
 import { selectFindings, selectionNotes, selectPatterns } from './catalogue/index.js';
 import { listSourceFiles, matchesAny, sourceFilter } from './scan.js';
 import { extractTreeSitter, TREE_SITTER_EXTENSIONS } from './treesitter/frontend.js';
@@ -57,6 +59,8 @@ export interface ExtractOptions {
     analyzers?: boolean;
     /** Replay counterexamples on the real code / check them with a code model checker. Default true. */
     confirm?: boolean;
+    /** How many counterexamples are replayed at most (default 12; `pflow bench` replays them all). */
+    replayLimit?: number;
     /** Build/type-check (and tests, when configured) proposed changes on a copy of the project. Default true. */
     buildChecks?: boolean;
     /** Internal: this run checks a proposed change (only the changed files are re-analysed by the tools). */
@@ -65,6 +69,10 @@ export interface ExtractOptions {
     onProgress?: OnProgress;
     /** Coverage reports (LCOV, Cobertura, JaCoCo) to read besides config.coverage.reports. */
     coverage?: string[];
+    /** Ask osv.dev about the locked dependency versions (besides config.advisories.osv). */
+    osv?: boolean;
+    /** The fetch used for osv.dev (tests). */
+    fetch?: typeof fetch;
     /**
      * The previous run of the same folder (its `previous`): only what the files changed since can
      * affect is redone. Ignored when the config or the options differ.
@@ -128,7 +136,9 @@ export async function extractProject(folder: string, options: ExtractOptions = {
     const verification = await verifyModels(models, options.checker, (m, i, n) =>
         progress('verify', `Checking model ${i + 1}/${n} with ${options.checker ? 'nuXmv' : 'the explicit-state checker'}: ${m.subject} (${m.model.specs.length} properties)…`, i, n)
     );
-    const tools = await analyzersPhase(run, facts);
+    const drift = driftPhase(run);
+    const analysed = withAdvisories(await analyzersPhase(run, facts), await advisoriesPhase(run));
+    const tools = { ...analysed, notes: [...analysed.notes, ...drift.notes] };
 
     let findings = dedupe([
         ...machines.findings,
@@ -139,7 +149,8 @@ export async function extractProject(folder: string, options: ExtractOptions = {
         ...paradigm.findings,
         ...quality.findings,
         ...verification.findings,
-        ...tools.findings
+        ...tools.findings,
+        ...drift.findings
     ]);
     findings = selectFindings(applyIgnores(gradePatternFindings(findings, instances), config), config).sort(bySeverity);
     const fixes = await fixesPhase(run, findings, { facts, models, verification, tools, llm, record });
@@ -204,8 +215,15 @@ function analyses(run: Run, facts: Facts) {
         patterns: selectPatterns(analysePatterns(facts, config), config),
         architecture: selectPatterns(analyseArchitecture(facts, config), config),
         paradigm: analyseParadigm(facts, config),
-        quality: analyseQuality(facts, config, run.readFile, { coverageReports: run.options.coverage })
+        quality: analyseQuality(facts, config, run.readFile, { coverageReports: run.options.coverage, churn: churnOf(run) })
     };
+}
+
+/** The commits per file, for the hotspots; not for a check of a proposed change or another version (overrides). */
+function churnOf(run: Run): Churn | undefined {
+    const { config, options } = run;
+    if (config.hotspots === false || options.rerunOf || options.overrides?.size) return undefined;
+    return readChurn(run.root, config.hotspots?.months);
 }
 
 /** One analysis: its folder, config and files, and what it can reuse from the previous run. */
@@ -301,6 +319,31 @@ async function runInstalledAnalyzers(run: Run, facts: Facts, changedSources: str
     }
 }
 
+/** Where the code base's own C4 model (workspace.dsl) and its code disagree; not for a proposed change or another version. */
+function driftPhase(run: Run): { findings: Finding[]; notes: string[] } {
+    const { config, options } = run;
+    if (config.c4 === false || options.rerunOf || options.overrides?.size) return { findings: [], notes: [] };
+    try {
+        const drift = modelDrift(run.root, config.c4?.model);
+        return { findings: drift.findings, notes: drift.notes };
+    } catch (error) {
+        return { findings: [], notes: [`C4 model not compared with the code: ${(error as Error).message}`] };
+    }
+}
+
+/** Known vulnerabilities of the locked dependency versions (osv.dev), when asked for; not when checking a proposed change. */
+async function advisoriesPhase(run: Run): Promise<AdvisoryResult | undefined> {
+    const { root, config, options, progress } = run;
+    const advisories = { ...config.advisories, osv: options.osv || config.advisories?.osv };
+    if (!advisories.osv || options.rerunOf) return undefined;
+    await progress('analyzers', 'Asking the OSV database about the locked dependency versions…');
+    return vulnerableDependencies(root, advisories, { fetch: options.fetch, cacheDir: options.cacheDir ? join(options.cacheDir, 'osv') : join(root, '.provenflow', 'cache', 'osv'), exclude: config.exclude });
+}
+
+function withAdvisories(tools: AnalyzerOutput, advisories: AdvisoryResult | undefined): AnalyzerOutput {
+    return advisories ? { ...tools, findings: [...tools.findings, ...advisories.findings], notes: [...tools.notes, ...advisories.notes] } : tools;
+}
+
 /** Analyser results on unchanged files are still valid. */
 function withPreviousTools(run: Run, tools: AnalyzerOutput): AnalyzerOutput {
     const previous = run.previous!;
@@ -361,6 +404,8 @@ function proposalsFor(run: Run, initial: Finding[], inputs: FixInputs): (finding
 }
 
 /** Findings checked on the code itself: counterexamples replayed, C state machines model checked. */
+const DEFAULT_REPLAYS = 12;
+
 async function confirmPhase(run: Run, findings: Finding[], models: ExtractedModel[], facts: Facts): Promise<Finding[]> {
     const { options, progress, root, config } = run;
     if (options.confirm === false || options.rerunOf) return findings;
@@ -372,7 +417,7 @@ async function confirmPhase(run: Run, findings: Finding[], models: ExtractedMode
         if (before?.confirmation && !touches(f, run.changed!)) keep.set(f, { ...f, confirmation: before.confirmation });
     }
     run.reused.confirmations = keep.size;
-    const replayed = await confirmFindings(findings.filter(f => !keep.has(f)), models, facts, root, 12, (f, i, n) => progress('confirm', `Replaying on the real code ${i + 1}/${n}: ${f.rule} on ${f.subject}…`, i, n));
+    const replayed = await confirmFindings(findings.filter(f => !keep.has(f)), models, facts, root, options.replayLimit ?? DEFAULT_REPLAYS, (f, i, n) => progress('confirm', `Replaying on the real code ${i + 1}/${n}: ${f.rule} on ${f.subject}…`, i, n));
     let next = 0;
     const confirmed = findings.map(f => keep.get(f) ?? replayed[next++]);
     await progress('confirm', 'Checking C state machines on the code…', 9, 10);

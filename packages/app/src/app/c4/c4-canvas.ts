@@ -2,7 +2,7 @@ import { afterNextRender, Component, effect, ElementRef, inject, input, OnDestro
 import cytoscape, { type Core, type EdgeCollection, type EdgeSingular, type EventObject, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import edgehandles from 'cytoscape-edgehandles';
-import { downloadText } from '../file-io';
+import { downloadDataUrl, downloadText } from '../file-io';
 import { cytoscapeToSvg } from '../diagram-canvas/svg-export';
 import { cytoscapeElements } from './c4-render';
 import { packPositions } from './c4-pack';
@@ -273,11 +273,7 @@ export class C4Canvas implements OnDestroy {
     }
 
     exportPng(name: string): void {
-        if (!this.cy) return;
-        const a = document.createElement('a');
-        a.href = this.cy.png({ full: true, scale: 2, bg: themeColour('--canvas-bg', '#ffffff') });
-        a.download = `${name}.png`;
-        a.click();
+        if (this.cy) downloadDataUrl(`${name}.png`, this.cy.png({ full: true, scale: 2, bg: themeColour('--canvas-bg', '#ffffff') }));
     }
 
     /** Routes the right-angled lines among these whose ends are attached to sides (see routeEdge). */

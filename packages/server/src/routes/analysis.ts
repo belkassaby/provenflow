@@ -33,7 +33,7 @@
  */
 import { rm } from 'node:fs/promises';
 import express, { type Express, type Request, type Response } from 'express';
-import { CATALOGUE, changeContext, extractProject, fixWithLlm, fixWithoutLlm, logged, verifyVersion, webReport, type ChangeEvent, type ChangeContext, type Finding, type ChecksConfig, type LlmProvider, type ProvenflowConfig } from '@provenflow/extract';
+import { CATALOGUE, changeContext, extractProject, fixWithLlm, fixWithoutLlm, logged, recordRun, verifyVersion, webReport, type ChangeEvent, type ChangeContext, type Finding, type ChecksConfig, type LlmProvider, type ProvenflowConfig } from '@provenflow/extract';
 import { nuxmvInfo, runNuxmv } from '../nuxmv-runner.js';
 import { bodyOf, folderKey, folderOf, HttpError, inSlot, providerOf, route, type ServerContext } from '../context.js';
 
@@ -140,7 +140,9 @@ async function analyse(ctx: ServerContext, req: Request, res: Response, a: Analy
         });
         if (!temp) ctx.analysedRoots.add(root);
         ctx.previousRuns.set(a.key, result.previous);
-        const report = { ...(webReport(result) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!ctx.options.allowLocalPaths };
+        // The editor's analyses count in the code base's trends, as the command line's do.
+        const history = temp ? [] : recordRun(result);
+        const report = { ...(webReport(result, history) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!ctx.options.allowLocalPaths };
         if (run) ctx.runs.finish(run, { result: report });
         else res.json(report);
     } catch (error) {

@@ -1,12 +1,14 @@
 /** `pflow c4`: the projects around a code base as a C4 model, and where code belongs. */
 import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { c4ViewToText, writeC4Dsl } from '@provenflow/language';
-import { mapProjects, projectMapMarkdown, type ProjectMap } from '@provenflow/extract';
-import type { Values } from './shared.js';
+import { formatFindings, loadConfig, mapProjects, modelDrift, projectMapMarkdown, type ProjectMap } from '@provenflow/extract';
+import { failOnLevel, type Values } from './shared.js';
 
 const list = (text: string | undefined) => text?.split(',').map(s => s.trim()).filter(Boolean);
 
 export function c4Command(values: Values, dir = '.'): number {
+    if (values.check) return checkCommand(values, dir);
     const map = mapProjects(dir, { scan: list(values.scan), owners: list(values.owner), depth: values.depth ? Number(values.depth) : undefined });
     const format = values.format ?? (values.json ? 'json' : formatOf(values.output));
     const text = render(map, format, values);
@@ -19,6 +21,23 @@ export function c4Command(values: Values, dir = '.'): number {
         console.log(`Wrote ${values.output}: ${map.projects.length} projects, ${map.suggestions.length} suggestion(s).`);
     } else process.stdout.write(text);
     return 0;
+}
+
+const RANK = { error: 0, warning: 1, info: 2 } as const;
+
+/** pflow c4 --check: where the code base's own C4 model and its code disagree; exit 5 on findings at --fail-on. */
+function checkCommand(values: Values, dir: string): number {
+    const config = loadConfig(resolve(dir), values.config);
+    const drift = modelDrift(dir, config.c4 ? config.c4.model : undefined);
+    drift.notes.forEach(n => console.error(`note: ${n}`));
+    if (!drift.file) {
+        console.log('No C4 model found (docs/c4/workspace.dsl, docs/workspace.dsl, workspace.dsl...): nothing to compare.');
+        return 0;
+    }
+    const findings = drift.findings;
+    console.log(findings.length ? formatFindings({ findings } as Parameters<typeof formatFindings>[0], 'info') : `${drift.file} matches the code.`);
+    const failOn = failOnLevel(values);
+    return failOn !== 'none' && findings.some(f => RANK[f.severity] <= RANK[failOn]) ? 5 : 0;
 }
 
 function formatOf(file: string | undefined): string {

@@ -435,7 +435,37 @@ finding says **✓ confirmed on the code**, **✗ not reproduced** or nothing:
 | `unreachable-state` of a C state variable | ESBMC/CBMC run a generated harness calling the file's functions in any order, 6 calls deep, and assert the value is never reached: *proved* confirms the finding, a trace refutes it (the model missed a transition) | C |
 
 The replay runs the project's code, with timers and I/O mocked, in a child process with a
-timeout; turn it off with `--no-confirm`.
+timeout; turn it off with `--no-confirm`. Only analyse code you trust to run.
+
+### Regression tests from counterexamples
+
+Each counterexample also becomes a test in `scenarios/`, next to the report. When the counterexample
+can be driven on the real code (as the replay drives it) and reaching its last state is itself the
+violation, the test makes the same calls and checks the property:
+- a `resource-leak` of a timer: fewer than 2 timers may still run;
+- a `stale-write-after-await`: the write made meanwhile must not be lost;
+- a property such as `!(state = jammed)`: the state must not be reached.
+
+The test fails while the bug is there and passes once it is fixed, so it can be moved among the
+project's tests (TypeScript and JavaScript as vitest, Python as pytest) to keep the bug from coming
+back. Its header has the counterexample, the property, the replay's verdict and the fix.
+
+Properties such as `cannot-settle` (`AG EF`) are broken by the missing way out, not by reaching the
+state, so they stay **skeletons**: the steps to replay, to finish by hand. report.md marks them.
+
+### How often counterexamples are real: `pflow bench`
+
+```sh
+pflow bench ../app ../lib ../service -o precision.md
+```
+
+It analyses each folder, replays every counterexample on the code (not only the first 12, as an
+analysis does), and counts per rule how many were confirmed, refuted, or could not run. The headline
+is the share confirmed of those the code decided. A refuted counterexample is a false alarm of the
+model (it is coarser than the code); one that could not run, because the class needs real
+dependencies or a tool is missing, says nothing either way. `--json` gives the counts.
+
+The replay runs the code of every folder given, so measure only code you trust to run.
 
 ## Code quality: duplication, complexity, naming, dependencies, tests
 
@@ -482,6 +512,15 @@ if the change makes it worse ("Raised from 18 by this change").
 "languages": { "python": { "complexity": { "cognitive": 12 } } }
 ```
 
+**Hotspots.** Complex code nobody touches costs little; complex code changed every week is where
+bugs and slow reviews come from. report.md ranks the functions to simplify first by their
+Cognitive Complexity times the commits that changed their file in the last 12 months (`git log`).
+Outside a git repository, or with `"hotspots": false`, it lists the most complex functions.
+
+```json
+"hotspots": { "months": 6 }
+```
+
 ### Naming conventions
 
 Class, function, method and field names are compared with the style expected for their language
@@ -506,6 +545,24 @@ What is read for each language:
 - **Python:** `requirements*.txt`, `pyproject.toml` (PEP 621 and Poetry), `setup.cfg`/`setup.py` and
   `Pipfile`; the standard library and what is installed come from `python3`.
 - **Go:** `go.mod`.
+
+**Known vulnerabilities (OSV).** With `--osv` (or `"advisories": { "osv": true }`), the exact versions
+the project installs are checked against the [OSV](https://osv.dev) database. They are read from
+`package-lock.json`, `poetry.lock`, `uv.lock`, pinned `requirements*.txt` lines, `Cargo.lock`,
+`go.mod`, `composer.lock` and literal versions in `pom.xml`.
+
+| rule | severity | when |
+| --- | --- | --- |
+| `vulnerable-dependency` | error for critical and high advisories, warning for moderate, info for low | A locked version has known vulnerabilities. The finding names the advisories (GHSA, CVE) and the versions that fix them, on the lockfile's line. |
+
+Only package names and versions are sent to osv.dev, never code. Local, linked and workspace
+packages, packages from another registry than the public one, and names matching `private` are
+never sent. Answers are cached for a day in `.provenflow/cache/osv`. When osv.dev cannot be reached,
+a note says so and the analysis goes on.
+
+```json
+"advisories": { "osv": true, "private": ["@acme/*", "acme-*"] }
+```
 
 ### Tests and coverage
 
@@ -697,6 +754,10 @@ cycles and paradigm profiles.
   },
   "duplication": { "minTokens": 100, "minLines": 10, "similarity": 0.8 },
   "coverage": { "reports": ["coverage/lcov.info"] },
+  "hotspots": { "months": 12 },
+  "advisories": { "osv": true, "private": ["@acme/*"] },
+  "history": ".provenflow/history.jsonl",
+  "c4": { "model": "docs/c4/workspace.dsl" },
   "mutation": { "test": "npm test", "max": 20 },
   "baseline": "provenflow-baseline.json",
   "agents": { "failOn": "warning", "requireTests": true },
@@ -719,6 +780,10 @@ cycles and paradigm profiles.
   false` turns off the dependency check.
 - `coverage.reports` lists the coverage reports to read; `mutation` sets the test command and the
   number of mutants.
+- `hotspots.months` is how much git history weighs the hotspots (`false`: none);
+  `advisories` turns on the OSV check and lists private package names never sent; `history` is
+  where each run's measures go (`false`: nowhere); `c4.model` is the C4 model compared with the code
+  (found under `docs/` by default; `false` turns the comparison off).
 - `baseline` is the file of accepted findings (default `provenflow-baseline.json` when it exists).
 - `agents` sets how lines written by coding agents are held: `failOn`, `requireTests`, and `authors`
   (extra patterns that recognise an agent).
@@ -904,7 +969,7 @@ so a run can be reproduced and a second run costs nothing.
 | `report.codequality.json` | GitLab Code Quality (merge request widget) |
 | `report.rdjson` | reviewdog: comments on GitHub, GitLab, Gerrit, Bitbucket or Gitea; verified changes as suggestions |
 | `models/*.pflow` | the ProvenFlow editor: Open .pflow… to see, check and replay |
-| `scenarios/*` | a vitest/pytest skeleton per counterexample |
+| `scenarios/*` | a vitest/pytest regression test per counterexample (or a skeleton to finish, see [Regression tests from counterexamples](#regression-tests-from-counterexamples)) |
 
 The exit code is 5 when there are findings at or above `--fail-on`, beyond the baseline. That is
 `error` by default; use `warning` for stricter gates, or `none`. report.md also has a **Code quality**
@@ -975,6 +1040,8 @@ jobs:
 | `mutate` | `0` | mutation-test up to this many changed lines (needs the dependencies installed) |
 | `check-run` | `false` | also post a check run named ProvenFlow with every finding as an annotation (`checks: write`) |
 | `fix` | `true` | propose verified fixes, posted as suggestions |
+| `fix-pr` | `false` | also open one pull request into the pull request's branch with every verified fix (needs `contents: write` and `pull-requests: write`; not for pull requests from forks) |
+| `osv` | `false` | report known vulnerabilities of the locked dependency versions, from osv.dev (sends package names and versions, never code) |
 | `files` | `false` | review the whole changed files, not only the changed lines |
 | `semgrep` / `cbmc` / `infer` | `true` / `false` / `false` | install the analyser on the runner |
 | `incremental` | `true` | keep each run in the Actions cache, and re-analyse only what a push changed |
@@ -1089,6 +1156,45 @@ request exists (recipes in `examples/ci/`):
 - **reviewdog** (GitHub, GitLab, Gerrit, Bitbucket, Gitea): `reviewdog -f=rdjson
   -filter-mode=added < report.rdjson` (`examples/ci/reviewdog.yml`).
 - **Anything else:** the exit code (5 on new findings), `report.sarif` and `report.json`.
+
+## Trends over time: pflow trends
+
+Each `pflow extract`, and each analysis in the editor, adds a line of measures to the code base's
+history (`.provenflow/history.jsonl`, or the config's `"history": "path"`; `false` or `--no-history`
+keeps none): the date and commit, errors, warnings and notes, findings per category, duplicated
+code, complexity, false properties and coverage. report.md shows how they moved in a **Trends**
+section, and so does:
+
+```sh
+pflow trends                          # this code base
+pflow trends --backfill 12            # first measure 12 older commits, spread over the last year
+pflow trends ../app ../lib            # several code bases
+pflow trends --projects               # this one and the owner's other projects (as pflow c4 finds them)
+```
+
+Each measure shows its first and latest value, the change, and a sparkline of every run. A commit
+measured twice keeps its latest measure. `--backfill` analyses the older versions from git without
+checking them out (no analysers, no replay), so it changes nothing in the working tree. `.provenflow/`
+is gitignored: in CI, keep the history in the cache or point `history` at a committed file.
+
+## Every verified fix as one pull request: pflow fix-pr
+
+```sh
+pflow fix-pr . --dry-run            # the commit it would push, and its description
+pflow fix-pr .                      # push it to provenflow/fixes-<branch> and open the pull request
+pflow review . --base origin/main --fix --fix-pr --github
+```
+
+The verified fixes of a run (`--fix`, and with `--llm` the LLM's) are applied one on top of the
+other. A fix whose text another fix already changed is left out and named in the description. The
+result is committed with git's plumbing on a separate index, so the working tree and the index stay
+as they are. The commit is pushed to its own branch, and a pull request is opened, or the open one
+updated, when `GITHUB_TOKEN` and `GITHUB_REPOSITORY` are set. Otherwise the branch is pushed and you
+open the pull request.
+
+On a pull request (in GitHub Actions), the fixes are made on top of the pull request's head commit,
+not the merge commit the checkout made, and proposed to its branch (`provenflow/fixes-pr-<n>` into
+it). A pull request from a fork cannot receive pushes: its fixes stay suggestions in the review.
 
 ## Comparing two versions: pflow compare
 

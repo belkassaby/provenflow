@@ -26,6 +26,12 @@ inputs:
   fix:
     description: Propose verified fixes, posted as GitHub suggestions.
     default: 'true'
+  fix-pr:
+    description: Also open one pull request into the pull request's branch with every verified fix (implies fix; needs contents write and pull-requests write; not for pull requests from forks).
+    default: 'false'
+  osv:
+    description: Report known vulnerabilities of the locked dependency versions, from osv.dev (sends package names and versions, never code).
+    default: 'false'
   files:
     description: Review the whole changed files, not only the changed lines.
     default: 'false'
@@ -155,6 +161,8 @@ runs:
       run: |
         args=(review "${{ inputs.path }}" --github --fail-on "${{ inputs.fail-on }}" -q)
         [ "${{ inputs.fix }}" = "true" ] && args+=(--fix)
+        [ "${{ inputs.fix-pr }}" = "true" ] && args+=(--fix --fix-pr)
+        [ "${{ inputs.osv }}" = "true" ] && args+=(--osv)
         [ "${{ inputs.files }}" = "true" ] && args+=(--files)
         [ "${{ inputs.new-only }}" = "true" ] && args+=(--new-only)
         [ "${{ inputs.check-run }}" = "true" ] && args+=(--check-run)
