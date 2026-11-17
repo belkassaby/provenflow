@@ -1,16 +1,58 @@
 # ProvenFlow in VS Code
 
-The extension (`packages/vscode`) shows ProvenFlow's findings in VS Code while you work. It runs the
-`pflow` command-line tool on the workspace folder, reads the report it writes, and shows each
-finding where it is:
+The extension (`packages/vscode`) brings ProvenFlow into VS Code while you work. It runs the `pflow`
+command-line tool on the workspace folder, reads the report it writes, and shows it in three places:
 
-- in the Problems panel and as a squiggle on its lines, with the fix to make;
-- with the property nuXmv found false, and whether replaying it on the real code confirmed it;
-- with the steps of its counterexample as related places, so you can follow the run in the code;
-- with its proposed change as a quick fix, when pflow verified it.
+- **The ProvenFlow sidebar** (its icon in the activity bar): the findings by kind with their
+  counterexample steps, the extracted models with the properties found false, the hotspots and the
+  quality trends.
+- **The editor:** each finding in the Problems panel and as a squiggle on its lines, with the fix to
+  make, the property nuXmv found false, whether replaying it on the real code confirmed it, and the
+  steps of its counterexample as related places. A verified change is offered as a quick fix.
+- **ProvenFlow editor tabs:** the same editor as the web and desktop versions, in VS Code tabs. It
+  shows a model as a diagram with its counterexample, the C4 architecture of the folder, and any
+  `.pflow` diagram or Structurizr DSL workspace.
 
 The extension contains no analysis of its own. It runs the same `pflow extract` as the CLI, the
 GitHub Action and the editor, with the same `provenflow.config.json` and baseline.
+
+## The sidebar
+
+| View | What it shows | A click |
+| --- | --- | --- |
+| Findings | The findings grouped by kind (security, state machines, resource lifecycles, duplicated code...), the groups with errors first, with a badge counting errors and warnings. A finding says whether the replay confirmed it on the code, and lists its counterexample steps. | Opens the finding's line, or a step's line |
+| Models | The state machines, resource lifecycles and patterns extracted from the code, those with false properties first, with the properties found false | Opens the model in a ProvenFlow editor tab, checked, so its counterexample shows |
+| Hotspots | The complex functions in files that change often: Cognitive Complexity × commits to the file | Opens the function |
+| Trends | Errors, warnings, false properties, duplication, complexity, coverage and code lines over the measured commits: the latest value, the change since the first and a bar per commit | - |
+
+The buttons at the top of Findings are **Analyse workspace**, **Open report** (report.md),
+**Open C4 architecture** and **Open the ProvenFlow editor**. On a finding:
+- the light bulb applies its verified fix;
+- the bug button opens its model with the counterexample.
+
+At the top of Trends:
+- **Refresh trends** reads them again;
+- **Measure older commits** measures 12 older commits from git, without checking them out
+  (`pflow trends --backfill 12`).
+
+Analyses on save don't add to the trends, because they measure uncommitted work. Each
+`pflow extract` run in a terminal adds the commit it measures.
+
+## ProvenFlow editor tabs
+
+A tab opens for each document:
+- a model, from the Models view or **ProvenFlow: Open model in the editor**;
+- the C4 architecture of the folder, from **ProvenFlow: Open C4 architecture**;
+- a `.pflow`, `.nxd`, `.dsl` or `.c4.json` file, from **Open in the ProvenFlow editor**. That button
+  is in the editor's title bar and the explorer's context menu.
+
+Opening the same document again shows its tab. The tabs follow VS Code's light or dark theme.
+**Browse…** next to a folder path opens VS Code's folder dialog.
+
+The editor runs on a local server, which `pflow serve` starts the first time a tab opens. It listens
+on a free port of 127.0.0.1 only, and stops with VS Code. The editor needs a built
+`packages/app` (`npm run build`). Checking a model needs nuXmv (`NUXMV_PATH`), as in the other
+versions of the editor.
 
 ## Install from source
 
@@ -36,10 +78,14 @@ In this order:
 
 1. `provenflow.cliPath`, when set (absolute, or relative to the workspace folder). A `.js` file,
    such as `packages/server/out/cli.js`, runs with the `node` on the PATH.
-2. `node_modules/.bin/pflow` in the workspace folder.
+2. `node_modules/.bin/pflow` in the workspace folder, or in a folder above it (a package of a
+   monorepo).
 3. `pflow` on the PATH.
 
-If none is found, the extension says so and does nothing else.
+When none is found, an error offers two buttons:
+- **Choose pflow…** picks the file, such as `packages/server/out/cli.js` of a built ProvenFlow
+  checkout. It's kept in your user settings (`provenflow.cliPath`) and used at once.
+- **Open Settings** opens the setting.
 
 ## When it runs
 
@@ -75,7 +121,11 @@ pflow's own messages go to the **ProvenFlow** output channel.
 | --- | --- |
 | ProvenFlow: Analyse workspace | Runs pflow on the folder of the active file (or the one you pick). |
 | ProvenFlow: Open report | Opens `report.md` in the Markdown preview. |
-| ProvenFlow: Open model | Opens one of the extracted models (`models/*.pflow`). Open it in the ProvenFlow editor to check it and replay its counterexamples. |
+| ProvenFlow: Open model in the editor | Opens one of the extracted models (`models/*.pflow`) in a ProvenFlow editor tab. |
+| ProvenFlow: Open the ProvenFlow editor | Opens an editor tab with nothing in it: draw a diagram, or File → Import code base. |
+| ProvenFlow: Open C4 architecture | Maps the folder and the projects around it as a C4 model, in an editor tab. |
+| ProvenFlow: Open in the ProvenFlow editor | Opens the active `.pflow` diagram or C4 workspace in an editor tab. |
+| ProvenFlow: Refresh trends, Measure older commits | Read the trends again, or first measure 12 older commits. |
 
 ## Fixes
 
@@ -91,10 +141,33 @@ With `provenflow.offerUnverifiedFixes`, changes pflow could not verify are offer
 
 ## Development
 
-- `src/report.ts`: report.json as problems per file (no `vscode` import).
-- `src/cli.ts`: which pflow to run, and its arguments (no `vscode` import).
-- `src/analysis-process.ts`: one run at a time (no `vscode` import).
-- `src/extension.ts`, `problem-view.ts`, `fix-actions.ts`, `analysis-status.ts`: the parts that use
-  VS Code's API.
+- `src/report.ts`: report.json as problems per file.
+- `src/sidebar.ts`, `src/trends.ts`: what the sidebar's views show, as plain trees.
+- `src/cli.ts`: which pflow to run, and its arguments.
+- `src/analysis-process.ts`: one run at a time.
+- `src/editor-page.ts`, `src/editor-documents.ts`, `src/editor-server.ts`: the page of an editor tab,
+  what it opens, and `pflow serve`.
 
-`npm test -w provenflow-vscode` tests the first three with vitest.
+None of the files above imports `vscode`. These use VS Code's API:
+- `src/extension.ts`;
+- `sidebar-views.ts` and `tree-view.ts`;
+- `editor-panels.ts`;
+- `problem-view.ts`, `fix-actions.ts` and `analysis-status.ts`.
+
+An editor tab is a webview whose only content is a frame of the editor that `pflow serve` runs. The
+page passes messages between the extension and the editor, each one `{ provenflow: <type>, ... }`:
+
+| From | Message | What it does |
+| --- | --- | --- |
+| extension | `open-file` | Opens a diagram, a model to check (`check: true`) or a C4 workspace. |
+| extension | `map-c4` | Maps a folder in the C4 tab. |
+| extension | `theme` | Sets the light or dark theme. |
+| extension | `command` | Runs a menu command, as the desktop application's menus do. |
+| extension | `folder` | Answers `pick-folder`. |
+| editor | `ready` | Says the editor listens. Messages wait until then. |
+| editor | `pick-folder` | Asks for VS Code's folder dialog. |
+
+The editor's side is `packages/app/src/app/host-frame.ts`. The page allows only its own script and
+the editor's origin (Content Security Policy). It passes on only the editor frame's messages.
+
+`npm test -w provenflow-vscode` tests the files that don't use `vscode`, with vitest.

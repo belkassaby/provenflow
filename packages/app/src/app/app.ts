@@ -110,7 +110,12 @@ export class App implements OnInit {
                     'help-walkthroughs': () => this.openHelp('walkthroughs'),
                     'toggle-theme': () => this.theme.toggle()
                 },
-                file => (file.kind === 'c4' ? this.openC4(file) : this.documents.open(file.text, file.name, 'file'))
+                {
+                    diagram: file => this.documents.open(file.text, file.name, 'file'),
+                    model: file => void this.openCodeModel({ text: file.text, name: file.name, check: true }),
+                    c4: file => this.openC4(file)
+                },
+                folder => this.openC4(folder)
             )
         );
     }

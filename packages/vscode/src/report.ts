@@ -19,6 +19,8 @@ export interface PatchFile {
 
 export interface ReportFinding {
     rule: string;
+    /** The kind of finding (state-machine, lifecycle, security...): the Findings view's groups. */
+    category?: string;
     severity: Severity;
     subject: string;
     message: string;
@@ -26,15 +28,46 @@ export interface ReportFinding {
     loc?: Location;
     endLine?: number;
     related?: Location[];
+    /** The model (models/<model>.pflow) that proves it. */
+    model?: string;
     spec?: string;
     counterexample?: Array<{ state: string; event?: string; loc?: Location }>;
     confirmation?: { by: string; status: 'confirmed' | 'refuted' | 'unknown'; detail: string };
     suggestedPatch?: { verified: boolean; note: string; by?: string; files?: PatchFile[] };
 }
 
+/** A function to simplify first: complex, in a file that changes often. */
+export interface Hotspot {
+    name: string;
+    file: string;
+    line: number;
+    cognitive: number;
+    /** Commits that changed its file (0 outside git). */
+    changes: number;
+    score: number;
+}
+
+/** A model extracted from the code (models/<id>.pflow). */
+export interface ReportModel {
+    id: string;
+    kind: string;
+    subject: string;
+    loc?: Location;
+}
+
+/** A property checked on a model. */
+export interface ReportVerdict {
+    model: string;
+    spec: string;
+    verdict: 'true' | 'false' | 'unknown';
+}
+
 export interface Report {
     findings: ReportFinding[];
     summary: Record<Severity, number>;
+    models: ReportModel[];
+    verdicts: ReportVerdict[];
+    hotspots: Hotspot[];
 }
 
 /** A proposed change: the whole new text of each file it touches. */
@@ -63,9 +96,15 @@ export interface Problem {
 /** Reads report.json's text; undefined when it is not a report. */
 export function parseReport(text: string): Report | undefined {
     try {
-        const value = JSON.parse(text) as Partial<Report>;
+        const value = JSON.parse(text) as Partial<Report> & { quality?: { metrics?: { hotspots?: Hotspot[] } } };
         if (!Array.isArray(value.findings)) return undefined;
-        return { findings: value.findings, summary: value.summary ?? countSeverities(value.findings) };
+        return {
+            findings: value.findings,
+            summary: value.summary ?? countSeverities(value.findings),
+            models: value.models ?? [],
+            verdicts: value.verdicts ?? [],
+            hotspots: value.quality?.metrics?.hotspots ?? []
+        };
     } catch {
         return undefined;
     }

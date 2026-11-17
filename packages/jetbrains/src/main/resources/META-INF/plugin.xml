@@ -1,0 +1,74 @@
+<idea-plugin>
+    <id>io.github.belkassaby.provenflow</id>
+    <name>ProvenFlow</name>
+    <vendor url="https://github.com/belkassaby/provenflow">ProvenFlow</vendor>
+    <description><![CDATA[
+    <p>ProvenFlow in JetBrains IDEs: model-checked findings, verified fixes and the ProvenFlow editor, from the
+    <code>pflow</code> command-line tool.</p>
+    <ul>
+      <li>A <b>ProvenFlow tool window</b> with the findings by kind and their counterexample steps, the models
+      extracted from the code with the properties found false, the hotspots (complexity &times; git churn) and the
+      quality trends.</li>
+      <li>The findings <b>in the code</b>: highlighted lines, scroll-bar marks and gutter icons with the property and
+      whether replaying it on the real code confirmed it; verified fixes on Alt+Enter.</li>
+      <li>The <b>ProvenFlow editor</b> in IDE tabs: models with their counterexamples, the C4 architecture of the
+      project, and a ProvenFlow tab next to every .pflow diagram and C4 workspace (.dsl).</li>
+    </ul>
+    <p>The plugin runs <code>pflow extract</code> when a file is saved; set the pflow to run in
+    Settings | Tools | ProvenFlow.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.jcef</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable parentId="tools" instance="io.github.belkassaby.provenflow.ide.ProvenflowConfigurable"
+                                 id="io.github.belkassaby.provenflow.settings" displayName="ProvenFlow"/>
+        <notificationGroup id="ProvenFlow" displayType="BALLOON"/>
+        <toolWindow id="ProvenFlow" anchor="right" icon="/icons/provenflow.svg"
+                    factoryClass="io.github.belkassaby.provenflow.ide.ProvenflowToolWindowFactory"/>
+        <postStartupActivity implementation="io.github.belkassaby.provenflow.ide.LoadLastReport"/>
+        <editorFactoryListener implementation="io.github.belkassaby.provenflow.ide.FindingEditorListener"/>
+        <intentionAction>
+            <className>io.github.belkassaby.provenflow.ide.ApplyFixIntention</className>
+            <category>ProvenFlow</category>
+            <skipBeforeAfter>true</skipBeforeAfter>
+        </intentionAction>
+        <fileType name="ProvenFlow diagram" implementationClass="io.github.belkassaby.provenflow.ide.PflowFileType"
+                  fieldName="instance" language="TEXT" extensions="pflow;nxd"/>
+        <fileEditorProvider implementation="io.github.belkassaby.provenflow.ide.ProvenflowFileEditorProvider"/>
+        <fileEditorProvider implementation="io.github.belkassaby.provenflow.ide.ProvenflowDocumentEditorProvider"/>
+    </extensions>
+
+    <projectListeners>
+        <listener class="io.github.belkassaby.provenflow.ide.HighlightOnReport"
+                  topic="io.github.belkassaby.provenflow.ide.ReportListener"/>
+    </projectListeners>
+
+    <actions>
+        <group id="ProvenFlow.Menu" text="ProvenFlow" popup="true" icon="/icons/provenflow.svg">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="ProvenFlow.Analyse" class="io.github.belkassaby.provenflow.ide.AnalyseAction"
+                    text="Analyse Project" description="Run pflow extract on the project and show its findings" icon="AllIcons.Actions.Execute"/>
+            <action id="ProvenFlow.OpenReport" class="io.github.belkassaby.provenflow.ide.OpenReportAction"
+                    text="Open Report" description="Open report.md of the last analysis" icon="AllIcons.Actions.Preview"/>
+            <action id="ProvenFlow.OpenModel" class="io.github.belkassaby.provenflow.ide.OpenModelAction"
+                    text="Open Model in the Editor…" description="Open a model of the last analysis in the ProvenFlow editor"/>
+            <action id="ProvenFlow.OpenC4" class="io.github.belkassaby.provenflow.ide.OpenC4Action"
+                    text="Open C4 Architecture" description="Map the project and the projects around it as a C4 model" icon="AllIcons.Actions.ShowAsTree"/>
+            <action id="ProvenFlow.OpenEditor" class="io.github.belkassaby.provenflow.ide.OpenEditorAction"
+                    text="Open the ProvenFlow Editor" description="Open an empty ProvenFlow editor tab" icon="AllIcons.Actions.Edit"/>
+            <separator/>
+            <action id="ProvenFlow.RefreshTrends" class="io.github.belkassaby.provenflow.ide.RefreshTrendsAction"
+                    text="Refresh Trends" description="Read the quality trends again" icon="AllIcons.Actions.Refresh"/>
+            <action id="ProvenFlow.BackfillTrends" class="io.github.belkassaby.provenflow.ide.BackfillTrendsAction"
+                    text="Measure Older Commits" description="Measure 12 older commits from git (pflow trends --backfill)" icon="AllIcons.Vcs.History"/>
+        </group>
+        <action id="ProvenFlow.OpenInEditor" class="io.github.belkassaby.provenflow.ide.OpenInEditorAction"
+                text="Open in the ProvenFlow Editor" description="Open this diagram or C4 workspace in a ProvenFlow editor tab"
+                icon="/icons/provenflow.svg">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

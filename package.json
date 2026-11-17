@@ -28,7 +28,8 @@
     "test": "npm test -w @provenflow/language && npm test -w @provenflow/extract && npm test -w @provenflow/server && npm test -w @provenflow/app -- --watch=false && npm test -w @provenflow/desktop && npm test -w provenflow-vscode",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:code": "node packages/server/out/cli.js extract . --fail-on warning",
-    "build:vscode": "npm run build -w provenflow-vscode"
+    "build:vscode": "npm run build -w provenflow-vscode",
+    "build:jetbrains": "cd packages/jetbrains && ./gradlew buildPlugin"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

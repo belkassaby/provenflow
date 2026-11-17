@@ -30,7 +30,7 @@ Nothing in the editor or the server is specific to the desktop. The desktop appl
 ```
 packages/desktop/
 ├── src/main.ts          the application: one instance, the server, the window, files to open, IPC
-├── src/server.ts        createApp() from @provenflow/server on 127.0.0.1:<free port>
+├── src/server.ts        startEditorServer() from @provenflow/server on 127.0.0.1:<free port> (as pflow serve)
 ├── src/window.ts        a sandboxed window (no Node, context isolation) that stays on the local page;
 │                        other links open in the browser
 ├── src/preload.cts      the bridge the editor sees as window.provenflowDesktop: menu commands,

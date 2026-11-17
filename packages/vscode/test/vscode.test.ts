@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AnalysisProcess } from '../src/analysis-process';
-import { extractArguments, findCli, startsAnalysis, spawnPlan } from '../src/cli';
+import { extractArguments, findCli, startsAnalysis, spawnPlan, trendsArguments } from '../src/cli';
 import { countsText, offeredFixes, parseReport, problemsByFile, type ReportFinding } from '../src/report';
 
 const leak: ReportFinding = {
@@ -54,8 +54,10 @@ describe('the report as problems in the editor', () => {
 
 describe('running pflow', () => {
     it('asks for the report only, never failing on findings, quick by default', () => {
-        expect(extractArguments('/w', '/w/.provenflow/vscode', { full: false, fixes: true })).toEqual(['extract', '/w', '-o', '/w/.provenflow/vscode', '--quiet', '--fail-on', 'none', '--no-analyzers', '--no-confirm', '--fix']);
-        expect(extractArguments('/w', '/o', { full: true, fixes: false })).toEqual(['extract', '/w', '-o', '/o', '--quiet', '--fail-on', 'none']);
+        expect(extractArguments('/w', '/w/.provenflow/vscode', { full: false, fixes: true })).toEqual(['extract', '/w', '-o', '/w/.provenflow/vscode', '--quiet', '--fail-on', 'none', '--no-history', '--no-analyzers', '--no-confirm', '--fix']);
+        expect(extractArguments('/w', '/o', { full: true, fixes: false })).toEqual(['extract', '/w', '-o', '/o', '--quiet', '--fail-on', 'none', '--no-history']);
+        expect(trendsArguments('/w')).toEqual(['trends', '/w', '--json']);
+        expect(trendsArguments('/w', 12)).toEqual(['trends', '/w', '--json', '--backfill', '12', '--quiet']);
     });
 
     it('finds pflow: the configured path, then the workspace, then the PATH', () => {
@@ -66,6 +68,8 @@ describe('running pflow', () => {
         expect(findCli('/w', 'tools/cli.js', env, there(['/w/tools/cli.js', '/opt/bin/pflow']))).toBe('/w/tools/cli.js');
         expect(findCli('/w', '/nowhere/pflow', env, there(['/opt/bin/pflow']))).toBeUndefined();
         expect(findCli('/w', '', env, there([]))).toBeUndefined();
+        // A package of a monorepo: the pflow installed at its root.
+        expect(findCli('/repo/packages/app', '', env, there(['/repo/node_modules/.bin/pflow', '/opt/bin/pflow']))).toBe('/repo/node_modules/.bin/pflow');
     });
 
     it('runs a .js with node, and analyses on save except in its own outputs, git and dependencies', () => {

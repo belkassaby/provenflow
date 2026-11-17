@@ -131,9 +131,15 @@ developments" and removes the limitations listed in its evaluation chapter.
   reaching a state, expected steps and visits, and export to PRISM / Storm.
 - **Import.** Existing LangGraph (JSON, Mermaid, Python source), CrewAI Flow, Mermaid and XState
   graphs become diagrams you can verify.
-- **VS Code.** An extension runs `pflow` when a file is saved, shows the findings in the Problems
-  panel with the steps of each counterexample, and applies verified fixes as quick fixes
+- **VS Code.** An extension runs `pflow` when a file is saved. A ProvenFlow sidebar lists the
+  findings with their counterexample steps, the models, the hotspots and the trends. The Problems
+  panel shows the findings, and verified fixes apply as quick fixes. The ProvenFlow editor opens
+  models with their counterexamples, the C4 architecture and `.pflow` files in VS Code tabs
   ([docs/vscode.md](docs/vscode.md)).
+- **JetBrains IDEs.** A plugin for IntelliJ IDEA, WebStorm, PyCharm and the other IntelliJ Platform
+  IDEs does the same. It adds a ProvenFlow tool window, highlights the findings with gutter icons,
+  applies verified fixes on Alt+Enter, and shows the ProvenFlow editor in IDE tabs
+  ([docs/jetbrains.md](docs/jetbrains.md)).
 
 ### Limitations of the original tool, now removed
 
@@ -620,7 +626,8 @@ packages/
 │   ├── src/main.ts  server.ts  window.ts  the server on a loopback port, a sandboxed window, files to open
 │   ├── src/preload.cts  menu.ts        the bridge to the editor; native menus
 │   └── scripts/stage.mjs  electron-builder.yml  packaging and installers
-├── vscode/     provenflow-vscode     VS Code extension: runs pflow, diagnostics and quick fixes
+├── vscode/     provenflow-vscode     VS Code extension: runs pflow; sidebar, diagnostics, quick fixes, editor tabs (pflow serve)
+├── jetbrains/  (Gradle, Kotlin)      JetBrains plugin: the same in IntelliJ IDEA, WebStorm, PyCharm...
 └── app/        @provenflow/app       Angular UI (the same in the browser and in the desktop application)
     └── src/app/
         ├── diagram-store.ts            signals store keeping text and diagram in sync
@@ -700,13 +707,24 @@ npm run dist:desktop                     # installers for this platform (DMG, NS
 
 ### 4. Or in VS Code
 
-The VS Code extension runs `pflow` on the workspace when you save, and shows the findings and
-verified fixes in the editor ([docs/vscode.md](docs/vscode.md)):
+The VS Code extension runs `pflow` on the workspace when you save. It shows the findings, models,
+hotspots and trends in a ProvenFlow sidebar, the findings and verified fixes in the code, and the
+ProvenFlow editor in VS Code tabs ([docs/vscode.md](docs/vscode.md)):
 
 ```sh
 npm run build:vscode                     # build it
 cd packages/vscode && npx @vscode/vsce package --no-dependencies   # provenflow-vscode-0.1.0.vsix
-code --install-extension provenflow-vscode-0.1.0.vsix
+code --install-extension provenflow-vscode-0.1.0.vsix   # or Extensions view → ⋯ → Install from VSIX…
+```
+
+### 5. Or in a JetBrains IDE
+
+The JetBrains plugin does the same in IntelliJ IDEA, WebStorm, PyCharm and the other IntelliJ
+Platform IDEs, 2026.2 or later ([docs/jetbrains.md](docs/jetbrains.md)):
+
+```sh
+cd packages/jetbrains && ./gradlew buildPlugin   # build/distributions/provenflow-jetbrains-0.1.0.zip
+# Settings | Plugins | ⚙ → Install Plugin from Disk…
 ```
 
 For development with live reload (Angular on :4200, API proxied to :3000):
@@ -833,6 +851,7 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow init <dir> [--instructions --llm p:model]` | `provenflow.config.json` proposed from the code and the languages' coding standards (and the checkable rules of AGENTS.md, CLAUDE.md…) |
 | `pflow catalogue [<dir>] [--json] [-o file] [--checks ids \| --skip ids]` | the patterns, principles and anti-patterns the checks verify, explained with examples, and which are selected (`checks` in provenflow.config.json) |
 | `pflow c4 [<dir>] [--scan dirs] [--owner names] [-o file] [--format dsl\|json\|plantuml\|mermaid\|markdown] [--view key] [--merge] [--check]` | the projects around the code base with the same owner as a C4 model (Structurizr DSL), how they depend on each other, and where code belongs; `--check` compares the code base's own `workspace.dsl` with its code (exit 5 on findings) |
+| `pflow serve [--port N]` | the editor (diagrams, code base report, C4) and its API on 127.0.0.1, a free port by default; the VS Code extension's editor tabs run it |
 | `pflow mcp` | MCP server for coding agents: `project_conventions`, `find_existing_code`, `review_changes`, `propose_fix` |
 | `pflow hook <post-edit\|stop>` | Claude Code hooks: the findings of the uncommitted changes go back to the agent |
 

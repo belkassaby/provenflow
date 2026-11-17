@@ -59,7 +59,9 @@ export const OPTIONS = {
     last: { type: 'string' },
     backfill: { type: 'string' },
     projects: { type: 'boolean', default: false },
-    'fix-pr': { type: 'boolean', default: false }
+    'fix-pr': { type: 'boolean', default: false },
+    port: { type: 'string' },
+    'until-stdin-closes': { type: 'boolean', default: false }
 } as const;
 
 export function parse(argv: string[]) {

@@ -3,6 +3,7 @@ import { hookCommand } from './commands/agents.js';
 import { c4Command } from './commands/c4.js';
 import { trendsCommand } from './commands/trends.js';
 import { benchCommand } from './commands/bench.js';
+import { serveCommand } from './commands/serve.js';
 import { catalogueCommand } from './commands/catalogue.js';
 import { baselineCommand, compareCommand, extractCommand, fixPrCommand, initCommand, mutateCommand, postReviewCommand, reviewCommand } from './commands/code.js';
 import { diagramCommand, isDiagramCommand } from './commands/diagram.js';
@@ -69,6 +70,11 @@ Code bases (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rus
                                                  languages' coding standards; --instructions also turns
                                                  the checkable rules of AGENTS.md, CLAUDE.md... into config
 
+Editor:
+  pflow serve [--port N]                         the editor (diagrams, code base report, C4) and its API on
+                                                 http://127.0.0.1 (a free port by default), as the desktop
+                                                 application and the VS Code extension run it
+
 Coding agents:
   pflow mcp                                      MCP server (stdio): project_conventions,
                                                  find_existing_code, review_changes, propose_fix
@@ -100,6 +106,7 @@ async function main(): Promise<number> {
     if (command === 'c4') return c4Command(values, rest[0]);
     if (command === 'trends') return trendsCommand(values, rest);
     if (command === 'bench') return benchCommand(values, rest);
+    if (command === 'serve') return serveCommand(values);
     // pflow export <framework> <diagram>: the diagram is the second argument.
     const framework = command === 'export' ? rest.shift() : undefined;
     const [file, second] = rest;

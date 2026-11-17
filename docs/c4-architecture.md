@@ -167,7 +167,7 @@ pflow c4 ../my-app --format plantuml --view context  # one view as C4-PlantUML (
 pflow c4 ../my-app --json                            # everything, as JSON
 pflow c4 ../my-app --merge -o docs/c4/workspace.dsl  # the code base's own workspace.dsl with the projects added
 pflow c4 ../my-app --scan ~/git/org,~/git/other --owner my-org,@my-scope --depth 3
-pflow c4 ../my-app --check                           # where workspace.dsl and the code disagree (exit 5 on warnings)
+pflow c4 ../my-app --check --fail-on warning         # where workspace.dsl and the code disagree (exit 5 on warnings)
 pflow trends ../my-app --projects                    # the quality trends of the owner's projects
 ```
 

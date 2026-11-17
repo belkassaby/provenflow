@@ -10,10 +10,13 @@ export interface RunOutcome {
     stopped: boolean;
     /** The last lines pflow wrote on stderr (notes and errors). */
     stderr: string;
+    /** What pflow wrote on stdout (up to 4 MB: `pflow trends --json`). */
+    stdout: string;
 }
 
 /** How much of stderr is kept for the message shown when a run fails. */
 const STDERR_KEPT = 4000;
+const STDOUT_KEPT = 4 * 1024 * 1024;
 
 export class AnalysisProcess {
     /** The pflow process of the run going on, if any. */
@@ -31,12 +34,14 @@ export class AnalysisProcess {
             const child = spawn(plan.command, plan.args, { cwd, shell: plan.shell, windowsHide: true });
             this.child = child;
             let stderr = '';
+            let stdout = '';
             let stopped = false;
             child.stderr?.on('data', chunk => (stderr = (stderr + String(chunk)).slice(-STDERR_KEPT)));
-            child.on('error', error => this.finish(child, resolve, { stopped, stderr: `${stderr}${error.message}` }));
+            child.stdout?.on('data', chunk => (stdout = (stdout + String(chunk)).slice(0, STDOUT_KEPT)));
+            child.on('error', error => this.finish(child, resolve, { stopped, stderr: `${stderr}${error.message}`, stdout }));
             child.on('exit', (code, signal) => {
                 stopped = signal !== null;
-                this.finish(child, resolve, { code: code ?? undefined, stopped, stderr });
+                this.finish(child, resolve, { code: code ?? undefined, stopped, stderr, stdout });
             });
         });
     }

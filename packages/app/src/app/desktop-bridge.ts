@@ -1,4 +1,5 @@
 import { Component, inject, Injectable, input, output } from '@angular/core';
+import { ParentFrameHost } from './host-frame';
 
 /** A file the desktop application opened (File → Open…, a double-click in the file manager, the command line). */
 export interface DesktopFile {
@@ -6,35 +7,59 @@ export interface DesktopFile {
     path: string;
     text: string;
     kind: 'diagram' | 'c4';
+    /** A model extracted from code, to check at once (its counterexamples show). */
+    check?: boolean;
 }
 
-/** What the desktop application's preload script exposes (packages/desktop/src/preload.cts). */
-interface DesktopApi {
+/** How the editor opens each kind of file the desktop application or VS Code sends it. */
+export interface FileOpeners {
+    diagram(file: DesktopFile): void;
+    /** A model extracted from code, to check at once. */
+    model(file: DesktopFile): void;
+    c4(file: DesktopFile): void;
+}
+
+/**
+ * What the desktop application's preload script exposes (packages/desktop/src/preload.cts), and the
+ * VS Code extension through the frame it shows the editor in (host-frame.ts).
+ */
+export interface DesktopApi {
     platform: string;
     onCommand(callback: (command: string) => void): () => void;
     onOpenFile(callback: (file: DesktopFile) => void): () => void;
+    /** A folder whose projects to map in the C4 tab (VS Code). */
+    onMapC4?(callback: (path: string) => void): () => void;
+    /** The host's theme, which the editor follows (VS Code). */
+    onTheme?(callback: (theme: 'light' | 'dark') => void): () => void;
     ready(): void;
     pickFolder(title?: string): Promise<string | null>;
     setTheme?(theme: 'light' | 'dark'): void;
 }
 
 /**
- * The editor running inside the desktop application (Electron) rather than a browser: the native
- * menus send it commands, the files the user opens with the application come in, and folders can
- * be chosen with the system's dialog. In a browser `available` is false and nothing happens.
+ * The editor running inside the desktop application (Electron) or a VS Code tab rather than a
+ * browser: the native menus or the extension send it commands, the files the user opens with them
+ * come in, and folders can be chosen with the system's dialog. In a browser `available` is false and
+ * nothing happens.
  */
 @Injectable({ providedIn: 'root' })
 export class DesktopBridge {
-    private readonly api = (globalThis as { provenflowDesktop?: DesktopApi }).provenflowDesktop;
+    private readonly api = (globalThis as { provenflowDesktop?: DesktopApi }).provenflowDesktop ?? (typeof window === 'undefined' ? undefined : ParentFrameHost.fromPage(window));
     readonly available = !!this.api;
     readonly platform = this.api?.platform ?? 'web';
 
     /** Runs the menu commands, and opens the files: from now on (and those waiting since the start). */
-    connect(commands: Record<string, () => void>, open: (file: DesktopFile) => void): void {
+    connect(commands: Record<string, () => void>, open: FileOpeners, mapC4?: (path: string) => void): void {
         if (!this.api) return;
         this.api.onCommand(command => commands[command]?.());
-        this.api.onOpenFile(open);
+        this.api.onOpenFile(file => (file.kind === 'c4' ? open.c4(file) : file.check ? open.model(file) : open.diagram(file)));
+        if (mapC4) this.api.onMapC4?.(mapC4);
         this.api.ready();
+    }
+
+    /** Follows the host's theme, when it has one to follow (VS Code). */
+    followTheme(apply: (theme: 'light' | 'dark') => void): void {
+        this.api?.onTheme?.(apply);
     }
 
     pickFolder(title?: string): Promise<string | null> {

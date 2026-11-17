@@ -3,7 +3,7 @@
   "displayName": "ProvenFlow",
   "version": "0.1.0",
   "private": true,
-  "description": "ProvenFlow's findings in VS Code: model-checked state machines, resource lifecycles, code quality and verified fixes, from the pflow command-line tool.",
+  "description": "ProvenFlow in VS Code: a sidebar with the model-checked findings, models, hotspots and quality trends of the workspace, the ProvenFlow editor (diagrams, counterexamples, C4 architecture) in editor tabs, and verified fixes as quick fixes, from the pflow command-line tool.",
   "license": "MIT",
   "publisher": "belkassaby",
   "repository": {
@@ -17,7 +17,8 @@
   },
   "categories": [
     "Linters",
-    "Programming Languages"
+    "Programming Languages",
+    "Visualization"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -27,17 +28,61 @@
       {
         "command": "provenflow.analyse",
         "title": "Analyse workspace",
-        "category": "ProvenFlow"
+        "category": "ProvenFlow",
+        "icon": "$(play)"
       },
       {
         "command": "provenflow.openReport",
         "title": "Open report",
-        "category": "ProvenFlow"
+        "category": "ProvenFlow",
+        "icon": "$(output)"
       },
       {
         "command": "provenflow.openModel",
-        "title": "Open model",
+        "title": "Open model in the editor",
         "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.openEditor",
+        "title": "Open the ProvenFlow editor",
+        "category": "ProvenFlow",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "provenflow.openC4",
+        "title": "Open C4 architecture",
+        "category": "ProvenFlow",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "provenflow.openInEditor",
+        "title": "Open in the ProvenFlow editor",
+        "category": "ProvenFlow",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "provenflow.showCounterexample",
+        "title": "Show the model and its counterexample",
+        "category": "ProvenFlow",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "provenflow.applyFindingFix",
+        "title": "Apply the fix",
+        "category": "ProvenFlow",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "provenflow.refreshTrends",
+        "title": "Refresh trends",
+        "category": "ProvenFlow",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "provenflow.backfillTrends",
+        "title": "Measure older commits",
+        "category": "ProvenFlow",
+        "icon": "$(history)"
       }
     ],
     "configuration": {
@@ -75,6 +120,137 @@
           "description": "Also offer fixes that could not be verified, to review before keeping them."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "provenflow",
+          "title": "ProvenFlow",
+          "icon": "media/provenflow.svg"
+        }
+      ]
+    },
+    "views": {
+      "provenflow": [
+        {
+          "id": "provenflow.findings",
+          "name": "Findings"
+        },
+        {
+          "id": "provenflow.models",
+          "name": "Models"
+        },
+        {
+          "id": "provenflow.hotspots",
+          "name": "Hotspots"
+        },
+        {
+          "id": "provenflow.trends",
+          "name": "Trends"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "provenflow.findings",
+        "contents": "No analysis yet. ProvenFlow analyses the folder when a file is saved, or now:\n[Analyse workspace](command:provenflow.analyse)\n[Open the ProvenFlow editor](command:provenflow.openEditor)\n[Open C4 architecture](command:provenflow.openC4)"
+      },
+      {
+        "view": "provenflow.models",
+        "contents": "The state machines, resource lifecycles and patterns ProvenFlow extracts from the code show here after an analysis."
+      },
+      {
+        "view": "provenflow.hotspots",
+        "contents": "The complex functions in files that change often show here after an analysis."
+      },
+      {
+        "view": "provenflow.trends",
+        "contents": "No commits measured yet. Each pflow extract run in a terminal measures one, or measure older ones from git:\n[Measure older commits](command:provenflow.backfillTrends)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "provenflow.analyse",
+          "when": "view == provenflow.findings",
+          "group": "navigation@1"
+        },
+        {
+          "command": "provenflow.openReport",
+          "when": "view == provenflow.findings",
+          "group": "navigation@2"
+        },
+        {
+          "command": "provenflow.openC4",
+          "when": "view == provenflow.findings",
+          "group": "navigation@3"
+        },
+        {
+          "command": "provenflow.openEditor",
+          "when": "view == provenflow.findings",
+          "group": "navigation@4"
+        },
+        {
+          "command": "provenflow.refreshTrends",
+          "when": "view == provenflow.trends",
+          "group": "navigation@1"
+        },
+        {
+          "command": "provenflow.backfillTrends",
+          "when": "view == provenflow.trends",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "provenflow.applyFindingFix",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )fix( |$)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "provenflow.showCounterexample",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )model( |$)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "provenflow.applyFindingFix",
+          "when": "view == provenflow.findings && viewItem =~ /fix/",
+          "group": "1_fix"
+        },
+        {
+          "command": "provenflow.showCounterexample",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )model( |$)/",
+          "group": "2_model"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "provenflow.openInEditor",
+          "when": "resourceExtname == .pflow || resourceExtname == .nxd || resourceExtname == .dsl",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "provenflow.openInEditor",
+          "when": "resourceExtname == .pflow || resourceExtname == .nxd || resourceExtname == .dsl",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "provenflow.showCounterexample",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.applyFindingFix",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.openInEditor",
+          "when": "resourceExtname == .pflow || resourceExtname == .nxd || resourceExtname == .dsl"
+        }
+      ]
     }
   },
   "scripts": {

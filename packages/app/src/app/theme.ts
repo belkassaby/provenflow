@@ -24,6 +24,8 @@ export class ThemeService {
         // The desktop window follows a theme that was chosen; otherwise it follows the system already.
         const saved = savedTheme();
         if (saved) this.desktop.setTheme(saved);
+        // In a VS Code tab: VS Code's theme.
+        this.desktop.followTheme(theme => this.apply(theme));
         // Until a theme is chosen, follow the system's (it may change with the time of day).
         globalThis.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => {
             if (!savedTheme()) this.apply(systemTheme());

@@ -3,7 +3,10 @@
     "**/test/fixtures/**",
     "examples/**",
     "packages/desktop/stage/**",
-    "packages/desktop/release/**"
+    "packages/desktop/release/**",
+    "packages/jetbrains/build/**",
+    "packages/jetbrains/.gradle/**",
+    "packages/jetbrains/.intellijPlatform/**"
   ],
   "layers": [
     {
@@ -60,6 +63,14 @@
       "name": "vscode",
       "paths": [
         "packages/vscode/src/**"
+      ],
+      "mayImport": [],
+      "style": "object-oriented"
+    },
+    {
+      "name": "jetbrains",
+      "paths": [
+        "packages/jetbrains/src/main/**"
       ],
       "mayImport": [],
       "style": "object-oriented"
@@ -187,6 +198,16 @@
       "rule": "naming-convention",
       "file": "packages/language/src/state-diagram-module.ts",
       "reason": "Langium's dependency-injection modules name each service factory after the service class (ScopeComputation, StateDiagramValidator)."
+    },
+    {
+      "rule": "many-parameters",
+      "subject": "customizeCellRenderer",
+      "reason": "IntelliJ's ColoredTreeCellRenderer declares customizeCellRenderer(tree, value, selected, expanded, leaf, row, hasFocus): the plugin overrides the platform's method and cannot change its parameters."
+    },
+    {
+      "rule": "flag-argument",
+      "subject": "NodeRenderer.customizeCellRenderer",
+      "reason": "IntelliJ's ColoredTreeCellRenderer declares customizeCellRenderer(tree, value, selected, expanded, leaf, row, hasFocus): the plugin overrides the platform's method and cannot change its parameters."
     }
   ],
   "limits": {
