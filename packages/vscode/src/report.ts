@@ -14,6 +14,8 @@ export interface Location {
 
 export interface PatchFile {
     file: string;
+    /** The file's text the change was made on (absent in older reports). */
+    before?: string;
     after: string;
 }
 
@@ -22,6 +24,8 @@ export interface ReportFinding {
     /** The kind of finding (state-machine, lifecycle, security...): the Findings view's groups. */
     category?: string;
     severity: Severity;
+    /** What found it: an extracted model, a quality check, or an analyser (semgrep, infer...). */
+    source?: string;
     subject: string;
     message: string;
     fix: string;
@@ -91,6 +95,8 @@ export interface Problem {
     message: string;
     related: RelatedPlace[];
     fix?: ProblemFix;
+    /** The finding it shows, for the fixes made on request. */
+    finding: ReportFinding;
 }
 
 /** Reads report.json's text; undefined when it is not a report. */
@@ -137,7 +143,8 @@ export function problemOf(finding: ReportFinding): Problem | undefined {
         code: finding.rule,
         message: messageOf(finding),
         related: relatedOf(finding),
-        fix: fixOf(finding)
+        fix: fixOf(finding),
+        finding
     };
 }
 

@@ -869,7 +869,7 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | POST   | `/api/nurv` | `{ diagram }`: NuRV monitor sources and build commands (needs `NURV_PATH`) |
 | POST   | `/api/apply` | `{ root, file, before, after }`: writes a reviewed change into a folder this server analysed by path (409 if the file changed since) |
 | POST   | `/api/apply-edits` | `{ root, changes: [{ id, edits }] }`: applies several changes in order, each on top of the previous ones; one that no longer matches is reported as a conflict |
-| POST   | `/api/fix` | `{ path \| files, name, finding, llm }`: the LLM implements the finding's suggested fix; the change comes back verified or not, with the files before/after and the diff |
+| POST   | `/api/fix` | `{ path \| files, name, finding, llm }`: the LLM implements the finding's suggested fix (`how: 'analysis'` instead of `llm`: the analysis's own fix, or a draft); the change comes back verified or not, with the files before/after and the diff |
 | POST   | `/api/verify-change` | `{ path \| files, name, finding, changed: [{ file, after }] }`: verifies a reviewed version of the files like a proposed change (nothing is written) |
 | GET / PUT | `/api/llm-settings` | LLM keys (masked when read), models and addresses; PUT only on a server bound to localhost. `POST /api/llm-settings/test { provider }` checks one |
 | GET    | `/api/catalogue` | the patterns and practices catalogue: `{ entries }`, each explained (problem, solution, when to use it and not, example) with the rules that check it |

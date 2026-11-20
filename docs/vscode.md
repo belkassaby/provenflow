@@ -8,7 +8,8 @@ command-line tool on the workspace folder, reads the report it writes, and shows
   quality trends.
 - **The editor:** each finding in the Problems panel and as a squiggle on its lines, with the fix to
   make, the property nuXmv found false, whether replaying it on the real code confirmed it, and the
-  steps of its counterexample as related places. A verified change is offered as a quick fix.
+  steps of its counterexample as related places. A verified change is offered as a quick fix, and
+  any finding can be fixed in a diff, with or without an LLM, and verified before it is applied.
 - **ProvenFlow editor tabs:** the same editor as the web and desktop versions, in VS Code tabs. It
   shows a model as a diagram with its counterexample, the C4 architecture of the folder, and any
   `.pflow` diagram or Structurizr DSL workspace.
@@ -28,6 +29,7 @@ GitHub Action and the editor, with the same `provenflow.config.json` and baselin
 The buttons at the top of Findings are **Analyse workspace**, **Open report** (report.md),
 **Open C4 architecture** and **Open the ProvenFlow editor**. On a finding:
 - the light bulb applies its verified fix;
+- the wrench (**Fix…**) fixes it in a diff (see [Fixes](#fixes));
 - the bug button opens its model with the counterexample.
 
 At the top of Trends:
@@ -174,6 +176,35 @@ are left unsaved, so you can read the change first. Saving them starts a new ana
 With `provenflow.offerUnverifiedFixes`, changes pflow could not verify are offered too, as
 **apply unverified fix (review it)**. Read them before keeping them.
 
+### Fixing any finding in a diff
+
+Every finding with a place in the code can be fixed in a diff: **Fix…** on the finding in the
+sidebar (its context menu, or the wrench), or **ProvenFlow: fix <rule>…** in the quick fixes of its
+lines. Choose how:
+
+| Choice | What you get |
+| --- | --- |
+| Review the verified fix (or proposed fix) | The change the analysis proposed, when the finding has one. |
+| Fix without an LLM | The automatic fix where the analysis has one for the rule (state values not handled, a stale write after an `await`, a resource leak), checked. For any other finding, a draft: the suggested fix as a `TODO(pflow <rule>)` comment where the code has to change, to finish by hand. |
+| Fix with <provider> <model> | The LLM implements the suggested fix, and the change is checked like the automatic fixes. One entry for each LLM set up in **LLM Settings (API Keys)…**, the preferred one first. |
+| Edit by hand | The file as it is, to change yourself in the diff. |
+| Set up an LLM (API keys)… | Shown while no Anthropic or OpenAI key is set: opens the editor's LLM settings. |
+
+The change opens in a diff for each file it touches: the file at the left, the change at the right.
+The right side can be edited. The buttons at the top of the diff, and the notification, are:
+
+- **Verify** checks the right side as it is now: the analysis again on the changed files, and the
+  build or type check on a copy of the project. It says whether the finding is gone and whether
+  anything new appeared.
+- **Apply** writes the right side into the files, in one edit you can undo, as long as they did not
+  change since the fix was made. It warns when that version was not verified.
+- **Discard** closes the diff.
+
+The fixes and the checks run in the editor's server (`pflow serve`, started when needed), with the
+LLM keys of its settings. The first one in a folder analyses the folder; the next ones reuse that
+analysis until a file changes, and then redo only the changed files. The changes under review live
+in memory (the `provenflow-fix:` scheme) until they are applied or discarded.
+
 ## Development
 
 - `src/report.ts`: report.json as problems per file.
@@ -182,12 +213,14 @@ With `provenflow.offerUnverifiedFixes`, changes pflow could not verify are offer
 - `src/analysis-process.ts`: one run at a time.
 - `src/editor-page.ts`, `src/editor-documents.ts`, `src/editor-server.ts`: the page of an editor tab,
   what it opens, and `pflow serve`.
+- `src/change-client.ts`: the ways to fix a finding, and the requests to `pflow serve` for a fix or a
+  check (`POST /api/fix`, `POST /api/verify-change`).
 
 None of the files above imports `vscode`. These use VS Code's API:
 - `src/extension.ts`;
 - `sidebar-views.ts` and `tree-view.ts`;
 - `editor-panels.ts`;
-- `problem-view.ts`, `fix-actions.ts` and `analysis-status.ts`.
+- `problem-view.ts`, `fix-actions.ts`, `fix-review.ts` (fixing in a diff) and `analysis-status.ts`.
 
 An editor tab is a webview whose only content is a frame of the editor that `pflow serve` runs. The
 page passes messages between the extension and the editor, each one `{ provenflow: <type>, ... }`:

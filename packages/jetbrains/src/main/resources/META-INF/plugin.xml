@@ -11,6 +11,8 @@
       quality trends.</li>
       <li>The findings <b>in the code</b>: highlighted lines, scroll-bar marks and gutter icons with the property and
       whether replaying it on the real code confirmed it; verified fixes on Alt+Enter.</li>
+      <li>Any finding <b>fixed in a diff</b>: the fix the analysis makes itself, one written by an LLM, or your own
+      edit, verified (the finding gone, nothing new, the build passing) before it is applied.</li>
       <li>The <b>ProvenFlow editor</b> in IDE tabs: models with their counterexamples, the C4 architecture of the
       project, and a ProvenFlow tab next to every .pflow diagram and C4 workspace (.dsl).</li>
     </ul>
@@ -31,6 +33,11 @@
         <editorFactoryListener implementation="io.github.belkassaby.provenflow.ide.FindingEditorListener"/>
         <intentionAction>
             <className>io.github.belkassaby.provenflow.ide.ApplyFixIntention</className>
+            <category>ProvenFlow</category>
+            <skipBeforeAfter>true</skipBeforeAfter>
+        </intentionAction>
+        <intentionAction>
+            <className>io.github.belkassaby.provenflow.ide.FixFindingIntention</className>
             <category>ProvenFlow</category>
             <skipBeforeAfter>true</skipBeforeAfter>
         </intentionAction>

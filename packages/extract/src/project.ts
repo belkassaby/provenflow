@@ -443,12 +443,15 @@ function rerunner(root: string, config: ProvenflowConfig, options: ExtractOption
 
 /**
  * What checking one change of a project needs (for fixWithLlm and verifyVersion): its last results
- * (`options.previous`, or a new analysis without proposals), the re-run, and its build checks.
+ * (`options.previous` while no source file changed since; otherwise a new analysis without
+ * proposals, which redoes only the changed files when `options.previous` was made the same way),
+ * the re-run, and its build checks.
  */
 export async function changeContext(root: string, options: ExtractOptions = {}): Promise<ChangeContext> {
     const config = options.config ?? loadConfig(root, options.configFile);
-    const baseline = options.previous ?? (await extractProject(root, { ...options, previous: undefined, quickFixes: 0, llmFixes: 0, confirm: false })).previous;
     const files = listSourceFiles(root, config.include, config.exclude);
+    const current = options.previous && changedFiles(options.previous.fingerprints, fingerprints(files, f => readSafe(join(root, f)))).size === 0;
+    const baseline = current ? options.previous! : (await extractProject(root, { ...options, quickFixes: 0, llmFixes: 0, confirm: false })).previous;
     const detected = options.buildChecks !== false ? detectChecks(root, files, config) : { build: [], test: [] };
     const checker = new ChangeChecker(root, [...detected.build, ...detected.test], config.verification?.timeoutSec ?? 300);
     return { root, baseline, rerun: rerunner(root, config, options), buildCheck: checker.enabled ? overrides => checker.check(overrides) : undefined };

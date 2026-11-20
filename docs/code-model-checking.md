@@ -921,8 +921,12 @@ the build or type check on a copy). The review then opens: the code before and a
 the LLM's explanation, and the verdict. Edit the right side and **Verify this version**, ask for
 a **New LLM fix**, or **Apply** it. Each click asks the LLM again (these answers are not cached).
 
-The same from the API: `POST /api/fix { path | files, finding, llm }`, and
-`POST /api/verify-change { path | files, finding, changed: [{ file, after }] }` for your version.
+The same from the API: `POST /api/fix { path | files, finding, llm }` (or `how: 'analysis'` for the
+fix without an LLM), and `POST /api/verify-change { path | files, finding, changed: [{ file, after }] }`
+for your version. A folder the server did not analyse itself (the IDEs analyse with `pflow extract`)
+is analysed with the first request; the next ones reuse that analysis while no source file changed,
+and otherwise redo only the changed files. The VS Code extension and the JetBrains plugin use these
+to fix any finding in a diff ([docs/vscode.md](vscode.md#fixes), [docs/jetbrains.md](jetbrains.md#fixing-a-finding-in-a-diff)).
 
 ## LLM assistance, verified
 

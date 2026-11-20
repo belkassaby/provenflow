@@ -116,27 +116,37 @@ object Fixes {
     }
 }
 
-/** Alt+Enter on a line with a finding: its proposed change, when pflow verified it (or unverified ones, when asked for). */
-class ApplyFixIntention : IntentionAction, HighPriorityAction {
-    override fun getFamilyName(): String = "ProvenFlow: apply fix"
-
-    override fun getText(): String = "ProvenFlow: apply verified fix"
-
+/** Alt+Enter on a line with a finding the intention `offers` something for. */
+abstract class FindingIntention : IntentionAction {
     override fun startInWriteAction(): Boolean = false
 
     override fun isAvailable(project: Project, editor: Editor?, file: PsiFile?): Boolean = editor != null && findingAt(project, editor) != null
 
     override fun invoke(project: Project, editor: Editor?, file: PsiFile?) {
-        editor?.let { findingAt(project, it) }?.let { Fixes.apply(project, it) }
+        editor?.let { findingAt(project, it) }?.let { run(project, it) }
     }
+
+    protected abstract fun offers(project: Project, finding: Finding): Boolean
+
+    protected abstract fun run(project: Project, finding: Finding)
 
     private fun findingAt(project: Project, editor: Editor): Finding? {
         val report = AnalysisService.of(project).report ?: return null
         val line = editor.caretModel.logicalPosition.line + 1
-        val policy = AnalysisService.of(project).fixPolicy()
         return FindingHighlights.findingsIn(project, editor, report).firstOrNull { f ->
             val first = f.loc?.line ?: 0
-            line in first..(f.endLine ?: first) && f.offeredPatch(policy) != null
+            line in first..(f.endLine ?: first) && offers(project, f)
         }
     }
+}
+
+/** Alt+Enter on a line with a finding: its proposed change, when pflow verified it (or unverified ones, when asked for). */
+class ApplyFixIntention : FindingIntention(), HighPriorityAction {
+    override fun getFamilyName(): String = "ProvenFlow: apply fix"
+
+    override fun getText(): String = "ProvenFlow: apply verified fix"
+
+    override fun offers(project: Project, finding: Finding): Boolean = finding.offeredPatch(AnalysisService.of(project).fixPolicy()) != null
+
+    override fun run(project: Project, finding: Finding) = Fixes.apply(project, finding)
 }

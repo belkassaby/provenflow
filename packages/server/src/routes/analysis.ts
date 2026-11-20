@@ -192,11 +192,15 @@ async function singleChange(ctx: ServerContext, kind: 'fix' | 'verify', req: Req
     const source = await folderOf(ctx, body);
     try {
         const key = folderKey(source, body.name);
-        const options = { config, checker: await checkerOf(ctx), analyzers: body.analyzers !== false, previous: ctx.previousRuns.get(key) };
+        const analyzers = body.analyzers !== false;
+        // A baseline of this server's own analysis without analysers would miss their findings.
+        const kept = `${key}|analyzers:${analyzers}`;
+        const options = { config, checker: await checkerOf(ctx), analyzers, previous: ctx.previousRuns.get(key) ?? ctx.changeBaselines.get(kept) };
         await inSlot(ctx, BUSY, () =>
             respond(req, res, async onEvent => {
-                onEvent({ type: 'stage', text: options.previous ? 'Preparing the check (from the last analysis of this folder)…' : 'Analysing the folder first (the server has no analysis of it since it started)…' });
+                onEvent({ type: 'stage', text: options.previous ? 'Preparing the check (from the last analysis of this folder, again for the files changed since)…' : 'Analysing the folder first (the server has no analysis of it since it started)…' });
                 const change = await changeContext(source.root, options);
+                if (change.baseline !== options.previous && !ctx.previousRuns.has(key)) ctx.changeBaselines.set(kept, change.baseline);
                 return makeChange(change, asked, options, onEvent);
             })
         );

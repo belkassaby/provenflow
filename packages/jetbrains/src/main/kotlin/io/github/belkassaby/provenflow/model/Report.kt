@@ -13,14 +13,18 @@ data class CounterexampleStep(val state: String, val event: String? = null, val 
 
 data class Confirmation(val by: String, val status: String, val detail: String)
 
-data class PatchFile(val file: String, val after: String)
+/** A file a change touches: its text the change was made on (absent in older reports), and its new text. */
+data class PatchFile(val file: String, val after: String, val before: String? = null)
 
-data class SuggestedPatch(val verified: Boolean, val note: String, val files: List<PatchFile>? = null)
+/** `by`: quick fix, draft, or the LLM that proposed it. */
+data class SuggestedPatch(val verified: Boolean, val note: String, val files: List<PatchFile>? = null, val by: String? = null)
 
 data class Finding(
     val rule: String,
     val category: String? = null,
     val severity: String,
+    /** What found it: an extracted model, a quality check, or an analyser (semgrep, infer...). */
+    val source: String? = null,
     val subject: String,
     val message: String,
     val fix: String,

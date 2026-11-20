@@ -12,7 +12,8 @@ command-line tool on the project, reads the report it writes, and shows it in th
 - **The code:** each finding highlights its lines, with a mark on the scroll bar and a gutter icon.
   The icon's tooltip has the message, the fix, the property nuXmv found false, and whether replaying
   it on the real code confirmed it. On a line with a verified fix, Alt+Enter offers
-  **ProvenFlow: apply verified fix**.
+  **ProvenFlow: apply verified fix**. On any finding's line it offers **ProvenFlow: fix…**, which
+  fixes it in a diff, with or without an LLM (see [Fixing a finding in a diff](#fixing-a-finding-in-a-diff)).
 - **ProvenFlow editor tabs:** the same editor as the web, desktop and VS Code versions. It shows a
   model as a diagram with its counterexample, the C4 architecture of the project, and any `.pflow`
   diagram or C4 workspace (`.dsl`, `.c4.json`). Those files get a **ProvenFlow** tab next to their
@@ -80,7 +81,7 @@ Trends tab measures 12 older commits from git (`pflow trends --backfill 12`).
 
 | Tab | What it shows | Double-click (or Enter) |
 | --- | --- | --- |
-| Findings | The findings grouped by kind, errors first; the tab's title counts errors and warnings. A finding says whether the replay confirmed it, and lists its counterexample steps. Right-click: **Apply Fix**, **Show Model and Counterexample**. | Opens the finding's line, or a step's line |
+| Findings | The findings grouped by kind, errors first; the tab's title counts errors and warnings. A finding says whether the replay confirmed it, and lists its counterexample steps. Right-click: **Fix…** (in a diff), **Apply Fix**, **Show Model and Counterexample**. | Opens the finding's line, or a step's line |
 | Models | The models, those with false properties first, with the properties found false | Opens the model in a ProvenFlow editor tab, checked, so its counterexample shows |
 | Hotspots | Complex functions in files that change often: Cognitive Complexity × commits to the file | Opens the function |
 | Trends | Errors, warnings, false properties, duplication, complexity, coverage and code lines over the measured commits | - |
@@ -97,6 +98,33 @@ Settings | Tools | ProvenFlow:
 | Full analysis | off | Also run the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and replay counterexamples on the code. Slower. |
 | Propose automatic fixes | on | `--fix`: each fix is verified by re-running the analysis and the build. |
 | Also offer fixes that could not be verified | off | |
+
+## Fixing a finding in a diff
+
+**Fix…** in a finding's context menu in the tool window, or **ProvenFlow: fix…** on Alt+Enter on its
+lines, asks how to fix it:
+
+| Choice | What you get |
+| --- | --- |
+| Review the verified fix (or proposed fix) | The change the analysis proposed, when the finding has one. |
+| Fix without an LLM | The automatic fix where the analysis has one for the rule (state values not handled, a stale write after an `await`, a resource leak), checked. For any other finding, a draft: the suggested fix as a `TODO(pflow <rule>)` comment where the code has to change, to finish by hand. |
+| Fix with <provider> <model> | The LLM implements the suggested fix, and the change is checked like the automatic fixes. One entry for each LLM set up in **LLM Settings (API Keys)…**, the preferred one first. |
+| Edit by hand | The file as it is, to change yourself in the diff. |
+| Set up an LLM (API keys)… | Shown while no Anthropic or OpenAI key is set: opens the editor's LLM settings. |
+
+The change opens in the IDE's diff: the file at the left, the change at the right, which can be
+edited. With several files, a list above the diff switches between them. The dialog's buttons:
+
+- **Verify** checks the right side as it is now: the analysis again on the changed files, and the
+  build or type check on a copy of the project. The line above the diff says whether the finding is
+  gone and whether anything new appeared.
+- **Apply** writes the right side into the files, in one command you can undo, as long as they did
+  not change since the fix was made. It warns when that version was not verified.
+- **Discard** closes the dialog.
+
+The fixes and the checks run in the editor's server (`pflow serve`, started when needed), with the
+LLM keys of its settings. The first one in a project analyses the project; the next ones reuse that
+analysis until a file changes, and then redo only the changed files.
 
 ## The ProvenFlow menu
 
@@ -151,9 +179,10 @@ text as it was when the tab opened.
 ## Development
 
 - `src/main/kotlin/.../model/` (no IDE classes): report.json, which pflow to run and its arguments,
-  the tool window's trees, the trends, and the editor tab's page.
-- `src/main/kotlin/.../ide/`: settings, the analysis service, the highlighting and quick fix, the
-  tool window, the actions, the editor server and the JCEF editor tabs.
+  the tool window's trees, the trends, the editor tab's page, and the ways to fix a finding with the
+  requests to `pflow serve` for a fix or a check (`Fixing.kt`).
+- `src/main/kotlin/.../ide/`: settings, the analysis service, the highlighting and quick fix, fixing
+  in a diff (`FixReview.kt`), the tool window, the actions, the editor server and the JCEF editor tabs.
 - `src/main/resources/META-INF/plugin.xml`: what the plugin adds to the IDE.
 
 `./gradlew test` tests the `model` package with JUnit. Use the same two properties as above.

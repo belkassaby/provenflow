@@ -3,7 +3,7 @@
   "displayName": "ProvenFlow",
   "version": "0.1.0",
   "private": true,
-  "description": "ProvenFlow in VS Code: a sidebar with the model-checked findings, models, hotspots and quality trends of the workspace, the ProvenFlow editor (diagrams, counterexamples, C4 architecture) in editor tabs, and verified fixes as quick fixes, from the pflow command-line tool.",
+  "description": "ProvenFlow in VS Code: a sidebar with the model-checked findings, models, hotspots and quality trends of the workspace, the ProvenFlow editor (diagrams, counterexamples, C4 architecture) in editor tabs, verified fixes as quick fixes, and any finding fixed in a diff (the analysis's own fix, an LLM's, or by hand), verified before it is applied, from the pflow command-line tool.",
   "license": "MIT",
   "publisher": "belkassaby",
   "repository": {
@@ -71,6 +71,35 @@
         "title": "Apply the fix",
         "category": "ProvenFlow",
         "icon": "$(lightbulb)"
+      },
+      {
+        "command": "provenflow.fixFindingNode",
+        "title": "Fix… (in a diff, with or without an LLM)",
+        "category": "ProvenFlow",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "provenflow.fixFinding",
+        "title": "Fix a finding in a diff",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.fixReview.verify",
+        "title": "Verify this fix",
+        "category": "ProvenFlow",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "provenflow.fixReview.apply",
+        "title": "Apply this fix",
+        "category": "ProvenFlow",
+        "icon": "$(check)"
+      },
+      {
+        "command": "provenflow.fixReview.discard",
+        "title": "Discard this fix",
+        "category": "ProvenFlow",
+        "icon": "$(close)"
       },
       {
         "command": "provenflow.refreshTrends",
@@ -333,6 +362,11 @@
       ],
       "view/item/context": [
         {
+          "command": "provenflow.fixFindingNode",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )located( |$)/ && !(viewItem =~ /(^| )fix( |$)/)",
+          "group": "inline@1"
+        },
+        {
           "command": "provenflow.applyFindingFix",
           "when": "view == provenflow.findings && viewItem =~ /(^| )fix( |$)/",
           "group": "inline@1"
@@ -341,6 +375,11 @@
           "command": "provenflow.showCounterexample",
           "when": "view == provenflow.findings && viewItem =~ /(^| )model( |$)/",
           "group": "inline@2"
+        },
+        {
+          "command": "provenflow.fixFindingNode",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )located( |$)/",
+          "group": "1_fix@0"
         },
         {
           "command": "provenflow.applyFindingFix",
@@ -354,6 +393,21 @@
         }
       ],
       "editor/title": [
+        {
+          "command": "provenflow.fixReview.verify",
+          "when": "resourceScheme == provenflow-fix",
+          "group": "navigation@1"
+        },
+        {
+          "command": "provenflow.fixReview.apply",
+          "when": "resourceScheme == provenflow-fix",
+          "group": "navigation@2"
+        },
+        {
+          "command": "provenflow.fixReview.discard",
+          "when": "resourceScheme == provenflow-fix",
+          "group": "navigation@3"
+        },
         {
           "submenu": "provenflow.menu",
           "when": "activeWebviewPanelId == 'provenflow.editor'",
@@ -384,6 +438,26 @@
         {
           "command": "provenflow.openInEditor",
           "when": "resourceExtname == .pflow || resourceExtname == .nxd || resourceExtname == .dsl"
+        },
+        {
+          "command": "provenflow.fixFindingNode",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.fixFinding",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.fixReview.verify",
+          "when": "provenflow.fixReviewOpen"
+        },
+        {
+          "command": "provenflow.fixReview.apply",
+          "when": "provenflow.fixReviewOpen"
+        },
+        {
+          "command": "provenflow.fixReview.discard",
+          "when": "provenflow.fixReviewOpen"
         }
       ],
       "provenflow.menu": [

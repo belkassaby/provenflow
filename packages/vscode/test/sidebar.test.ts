@@ -48,7 +48,7 @@ describe('the ProvenFlow sidebar', () => {
             ['Naming', '1', 'info']
         ]);
         const [finding] = groups[1].children!;
-        expect(finding).toMatchObject({ label: 'Poller can lose the interval held in this.timer.', description: 'resource-leak · poller.ts:5 · confirmed on the code', context: 'finding fix model', place: { file: 'poller.ts', line: 5 } });
+        expect(finding).toMatchObject({ label: 'Poller can lose the interval held in this.timer.', description: 'resource-leak · poller.ts:5 · confirmed on the code', context: 'finding located fix model', place: { file: 'poller.ts', line: 5 } });
         expect(finding.children!.map(s => [s.label, s.description])).toEqual([
             ['0. idle', undefined],
             ['1. Poller.start → held', 'poller.ts:5']

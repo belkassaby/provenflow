@@ -66,7 +66,7 @@ class ProvenflowToolWindowFactory : ToolWindowFactory, DumbAware {
 /**
  * A tab of the tool window: a tree of nodes, a toolbar, and the empty text with its action. A
  * double-click (or Enter) opens a node's place in the code, or its model in the ProvenFlow editor;
- * a finding's context menu applies its fix or shows its counterexample.
+ * a finding's context menu fixes it in a diff, applies its proposed fix or shows its counterexample.
  */
 class NodeTreePanel(
     private val project: Project,
@@ -90,7 +90,7 @@ class NodeTreePanel(
             toolbar = ActionManager.getInstance().createActionToolbar("ProvenFlow", group, true).also { it.targetComponent = tree }.component
         }
         installOpening()
-        PopupHandler.installPopupMenu(tree, DefaultActionGroup(ApplyFixAction(), ShowCounterexampleAction()), "ProvenFlowTree")
+        PopupHandler.installPopupMenu(tree, DefaultActionGroup(FixAction(), ApplyFixAction(), ShowCounterexampleAction()), "ProvenFlowTree")
     }
 
     /** Replaces the tree; the groups of findings stay expanded. */
@@ -130,6 +130,18 @@ class NodeTreePanel(
 
     private fun runAction(id: String) {
         ActionManager.getInstance().getAction(id)?.let { ActionManager.getInstance().tryToExecute(it, null, tree, "ProvenFlow", true) }
+    }
+
+    private inner class FixAction : AnAction("Fix…", "Fix this finding in a diff: the analysis's own fix, an LLM's, or your edit, verified before it is applied", AllIcons.Actions.Edit), DumbAware {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabledAndVisible = selected()?.finding?.loc != null
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            selected()?.finding?.let { FindingFixes.start(project, it) }
+        }
     }
 
     private inner class ApplyFixAction : AnAction("Apply Fix", "Apply the change ProvenFlow proposed for this finding", AllIcons.Actions.IntentionBulb), DumbAware {

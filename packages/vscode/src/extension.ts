@@ -16,6 +16,7 @@ import { EditorMenu } from './editor-menu-commands';
 import { EditorPanels } from './editor-panels';
 import { EditorServerProcess } from './editor-server';
 import { APPLY_FIX, applyFix, FixActions } from './fix-actions';
+import { FIX_COMMANDS, FixReview } from './fix-review';
 import { ProblemView } from './problem-view';
 import { parseReport, problemOf, problemsByFile, type Report } from './report';
 import type { TreeNode } from './sidebar';
@@ -32,6 +33,7 @@ const COMMANDS = {
     openInEditor: 'provenflow.openInEditor',
     showCounterexample: 'provenflow.showCounterexample',
     applyFindingFix: 'provenflow.applyFindingFix',
+    fixFinding: 'provenflow.fixFindingNode',
     refreshTrends: 'provenflow.refreshTrends',
     backfillTrends: 'provenflow.backfillTrends'
 } as const;
@@ -57,6 +59,8 @@ export class ProvenflowExtension implements vscode.Disposable {
     private readonly sidebar = new SidebarViews();
     private readonly editors: EditorPanels;
     private readonly menu: EditorMenu;
+    private readonly server = new EditorServerProcess();
+    private readonly fixes: FixReview;
     /** One pflow run per workspace folder: a new one stops the one still running. */
     private readonly runs = new Map<string, AnalysisProcess>();
     private readonly registrations: vscode.Disposable[];
@@ -68,8 +72,9 @@ export class ProvenflowExtension implements vscode.Disposable {
             openC4: () => this.openC4(),
             openFile: uri => this.openInEditor(uri)
         });
-        this.editors = new EditorPanels(new EditorServerProcess(), () => this.serverLaunch(), icon, this.menu);
+        this.editors = new EditorPanels(this.server, () => this.serverLaunch(), icon, this.menu);
         this.menu.attach(this.editors);
+        this.fixes = new FixReview(() => this.serverUrl());
         const command = (id: string, run: (...args: never[]) => unknown) => vscode.commands.registerCommand(id, run);
         this.registrations = [
             command(COMMANDS.analyse, () => this.analyseChosen()),
@@ -80,6 +85,7 @@ export class ProvenflowExtension implements vscode.Disposable {
             command(COMMANDS.openInEditor, (uri?: vscode.Uri) => this.openInEditor(uri)),
             command(COMMANDS.showCounterexample, (node: TreeNode) => this.openModelOf(node)),
             command(COMMANDS.applyFindingFix, (node: TreeNode) => this.applyFixOf(node)),
+            command(COMMANDS.fixFinding, (node: TreeNode) => this.fixOf(node)),
             command(COMMANDS.refreshTrends, () => this.refreshTrends()),
             command(COMMANDS.backfillTrends, () => this.refreshTrends(BACKFILL_COMMITS)),
             command(REVEAL, reveal),
@@ -127,7 +133,7 @@ export class ProvenflowExtension implements vscode.Disposable {
         for (const run of this.runs.values()) run.dispose();
         this.runs.clear();
         this.registrations.forEach(r => r.dispose());
-        [this.problems, this.status, this.log, this.sidebar, this.editors, this.menu].forEach(d => d.dispose());
+        [this.problems, this.status, this.log, this.sidebar, this.editors, this.menu, this.fixes].forEach(d => d.dispose());
     }
 
     private settings(): Settings {
@@ -166,6 +172,18 @@ export class ProvenflowExtension implements vscode.Disposable {
         }
         const cli = await this.cliFor(root);
         return cli ? { cli, cwd: root } : undefined;
+    }
+
+    /** The editor's server, started when needed (with the pflow of the sidebar's folder). */
+    private async serverUrl(): Promise<string | undefined> {
+        const launch = await this.serverLaunch();
+        if (!launch) return undefined;
+        try {
+            return await this.server.url(launch.cli, launch.cwd);
+        } catch (error) {
+            this.failed(`ProvenFlow: ${(error as Error).message}`);
+            return undefined;
+        }
     }
 
     private runFor(root: string): AnalysisProcess {
@@ -231,6 +249,11 @@ export class ProvenflowExtension implements vscode.Disposable {
     private async applyFixOf(node: TreeNode): Promise<void> {
         const fix = node.finding && problemOf(node.finding)?.fix;
         if (this.sidebar.folder && fix) await applyFix(this.sidebar.folder, fix);
+    }
+
+    /** A finding of the sidebar, fixed in a diff (fix-review.ts). */
+    private async fixOf(node: TreeNode): Promise<void> {
+        if (this.sidebar.folder && node.finding) await vscode.commands.executeCommand(FIX_COMMANDS.fix, this.sidebar.folder, node.finding);
     }
 
     private async openC4(): Promise<void> {

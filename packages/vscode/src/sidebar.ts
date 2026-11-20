@@ -73,7 +73,6 @@ function rank(order: string[], category: string): number {
 function findingNode(f: ReportFinding, key: string): TreeNode {
     const where = f.loc ? `${f.loc.file}:${f.loc.line}` : f.subject;
     const confirmed = f.confirmation?.status === 'confirmed' ? ' · confirmed on the code' : f.confirmation?.status === 'refuted' ? ' · not reproduced' : '';
-    const fix = f.suggestedPatch?.files?.length ? (f.suggestedPatch.verified ? 'fix' : 'unverified-fix') : '';
     const steps = (f.counterexample ?? []).map((step, i) => ({
         id: `${key}:step:${i}`,
         label: `${i}. ${step.event ? `${step.event} → ` : ''}${step.state}`,
@@ -90,10 +89,16 @@ function findingNode(f: ReportFinding, key: string): TreeNode {
         tone: f.severity,
         place: f.loc,
         model: f.model,
-        context: ['finding', fix, f.model ? 'model' : ''].filter(Boolean).join(' '),
+        context: contextOf(f),
         finding: f,
         children: steps.length ? steps : undefined
     };
+}
+
+/** What a finding's menu offers: Fix… (with a place), its proposed fix, its model. */
+function contextOf(f: ReportFinding): string {
+    const fix = f.suggestedPatch?.files?.length ? (f.suggestedPatch.verified ? 'fix' : 'unverified-fix') : '';
+    return ['finding', f.loc ? 'located' : '', fix, f.model ? 'model' : ''].filter(Boolean).join(' ');
 }
 
 /** The models, those with false properties first, each with the properties found false. */

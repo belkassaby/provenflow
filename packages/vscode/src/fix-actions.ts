@@ -1,5 +1,9 @@
-/** Quick fixes: the changes pflow proposed (and verified) for the findings under the cursor. */
+/**
+ * Quick fixes: the changes pflow proposed (and verified) for the findings under the cursor, applied
+ * at once, and for every finding a fix to review in a diff (fix-review.ts).
+ */
 import * as vscode from 'vscode';
+import { FIX_COMMANDS } from './fix-review';
 import type { ProblemView } from './problem-view';
 import { offeredFixes, type ProblemFix } from './report';
 
@@ -14,12 +18,20 @@ export class FixActions implements vscode.CodeActionProvider {
         const folder = vscode.workspace.getWorkspaceFolder(document.uri);
         if (!folder) return [];
         const unverified = vscode.workspace.getConfiguration('provenflow').get<boolean>('offerUnverifiedFixes', false);
-        return offeredFixes(this.problems.problemsAt(document.uri, range), { unverified }).map(fix => {
+        const problems = this.problems.problemsAt(document.uri, range);
+        const fixes = offeredFixes(problems, { unverified }).map(fix => {
             const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
             action.isPreferred = fix.verified;
             action.command = { command: APPLY_FIX, title: fix.title, arguments: [folder.uri, fix] };
             return action;
         });
+        const reviews = problems.map(p => {
+            const title = `ProvenFlow: fix ${p.code}… (in a diff, with or without an LLM)`;
+            const action = new vscode.CodeAction(title, vscode.CodeActionKind.QuickFix);
+            action.command = { command: FIX_COMMANDS.fix, title, arguments: [folder.uri, p.finding] };
+            return action;
+        });
+        return [...fixes, ...reviews];
     }
 }
 

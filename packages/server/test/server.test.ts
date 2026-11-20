@@ -429,6 +429,28 @@ describe('one change for one finding: LLM fix, and Verify this version', () => {
         expect(readFileSync(join(copy, file.file), 'utf8')).toBe(file.before); // nothing written
     });
 
+    it('fixes a folder it never analysed (as the IDEs ask), reusing that analysis until a file changes', async () => {
+        const ide = mkdtempSync(join(tmpdir(), 'provenflow-ide-'));
+        cpSync(copy, ide, { recursive: true });
+        const stages = async (body: unknown) => {
+            const res = await fetch(`${url}/api/fix`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify(body) });
+            const lines = (await res.text()).trim().split('\n').map(l => JSON.parse(l));
+            return { first: lines.find(l => l.event?.type === 'stage').event.text as string, result: lines.at(-1).result };
+        };
+        try {
+            const finding = { rule: 'stale-write-after-await', subject: 'unknown', message: '', fix: 'Check the status again after the await.', severity: 'warning', loc: { file: 'src/ui/widgets.ts', line: 1 } };
+            const fresh = await stages({ path: ide, finding, how: 'analysis', analyzers: false });
+            expect(fresh.first).toMatch(/^Analysing the folder first/);
+            expect(fresh.result.finding.suggestedPatch).toBeDefined();
+            expect((await stages({ path: ide, finding, how: 'analysis', analyzers: false })).first).toMatch(/^Preparing the check \(from the last analysis/);
+            writeFileSync(join(ide, 'src/ui/widgets.ts'), `${readFileSync(join(ide, 'src/ui/widgets.ts'), 'utf8')}\nexport const changed = 1;\n`);
+            const again = await stages({ path: ide, finding, how: 'analysis', analyzers: false });
+            expect(again.result.finding.suggestedPatch.files[0].before).toContain('export const changed = 1;');
+        } finally {
+            rmSync(ide, { recursive: true, force: true });
+        }
+    });
+
     it('streams what the LLM does (the stage, the answer, the tokens) and logs its usage', async () => {
         const report = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 0 })).json();
         const leak = report.findings.find((f: { rule: string; subject: string }) => f.rule === 'resource-leak' && f.subject.startsWith('Poller'));
