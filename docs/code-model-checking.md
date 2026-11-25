@@ -221,6 +221,24 @@ Machines declared with XState, LangGraph, CrewAI Flows or python-transitions are
 | `stale-write-after-await`: a write after an `await` relies on a check made before it, while other methods write the variable | warning | analysis |
 | `property-violated`: a property declared in the config is false | error | nuXmv |
 
+The values a write can set come from the code:
+- a literal (`this.mode = 'draw'`) sets that value;
+- any other value of a finite union type (another field, an object's property, a function's
+  result) can set every value of that type;
+- a parameter written as is (`this.mode = mode`) takes the values its callers pass. A private method
+  takes only those, since every call is in the code; a public method can also be called by code the
+  analysis does not see, so it can set every value of the parameter's type;
+- an Angular template writes through event bindings (`(click)="tab.set('home')"`) and two-way
+  bindings (`[(mode)]="maskMode"` sets any value of `maskMode`'s type), and reads through `@if`,
+  `*ngIf` and interpolations;
+- an object passed to a call (`setViewState({ mode: 'gene' })`) or typed `Partial<...>` writes the
+  fields it names; an object created whole gives them initial values.
+
+A write whose values stay unknown (an `any`, or a computed value in a language without types) leaves
+values out of the model. For that variable, `unreachable-state`, `stuck-state` and `cannot-settle`
+are not reported: the model's notes list the writes, and `--llm` can resolve them. A field declared
+without a value starts in `unset`, which is not a state it has to come back to.
+
 ### Resource lifecycles (typestate)
 
 These resources are tracked, per owning class:
@@ -239,6 +257,21 @@ class's public methods and dispose hooks (`ngOnDestroy`, `DestroyRef.onDestroy`,
 | `resource-leak`: the resource can be lost, i.e. acquired again while held, or held when the object is disposed or dropped | warning | nuXmv `INVARSPEC !(state = leaked)` |
 | `release-not-guaranteed`: a function releases a temp dir, file or lock only on the normal path | warning | analysis (release outside `finally`/`with`) |
 | `unremovable-listener`: an inline listener on a global target, which can never be removed | warning | analysis |
+
+What the model knows about the code and the framework, so that it does not report what cannot happen:
+- **guards**: an acquisition is not repeated while held when its function returns early on the
+  handle (`if (this.sub) return;`), on a field the function sets itself (`if (this.busy) return;
+  this.busy = true;`), or runs inside a check that none is held (`if (el && !this.observer)`). A
+  method calling a guarded helper is guarded too;
+- **hooks called once**: Angular calls `ngOnInit`, `ngAfterViewInit` and `ngAfterContentInit` once
+  per instance;
+- **dispose methods**: `ngOnDestroy`, `destroy`, `dispose`, `unsubscribe`, `detach`... (and `close`,
+  `stop`, `disconnect`... for `Closeable`/`Disposable` classes);
+- **releases kept in a closure**: `this.end = () => removeEventListener(...)` releases wherever
+  `this.end()` is called;
+- **listeners kept in a collection** (`this.listeners.push([type, listener])`) are not lost when
+  more are added;
+- **timeouts**: a pending `setTimeout` of an object without a lifecycle fires once and is gone.
 
 ### Design patterns
 
@@ -466,6 +499,17 @@ model (it is coarser than the code); one that could not run, because the class n
 dependencies or a tool is missing, says nothing either way. `--json` gives the counts.
 
 The replay runs the code of every folder given, so measure only code you trust to run.
+
+`--labels <feedback.json>` also measures the findings people answered (see
+[Answers to reviews](#answers-to-reviews-pflow-feedback)): per rule, how many were answered as false
+positives, fixed or declined, and how many of the false positives the analysis **still reports**.
+The file applies to the folder named like its repository. `--fail-on-labels` exits 5 when any false
+positive is still reported.
+
+This repository keeps such files in `bench/labels/`, each with the revision its answers were checked
+against. `npm run bench:reviews` (after `npm run build`) clones each repository at that revision into
+`.provenflow/bench/`, installs its dependencies without running their scripts, and runs the bench
+with its labels: run it after changing a model, to see that no answered false positive comes back.
 
 ## Code quality: duplication, complexity, naming, dependencies, tests
 
@@ -710,7 +754,8 @@ on data) are dropped, so the model can do more than the code.
   model. It holds for the code too, *as far as the model captures it*. What it does not capture:
   - writes through aliases or reflection;
   - state changed by code outside the project;
-  - computed values that stay unresolved (listed in the model's notes).
+  - computed values that stay unresolved (listed in the model's notes; the variable's reachability,
+    stuck states and settling are then not checked at all).
 - **A counterexample** is a run of the model. The code may not allow it, because of a condition on
   another variable. That is why each counterexample comes with a test skeleton in `scenarios/`:
   - replay the calls on the real code;
@@ -761,6 +806,7 @@ cycles and paradigm profiles.
   "mutation": { "test": "npm test", "max": 20 },
   "baseline": "provenflow-baseline.json",
   "agents": { "failOn": "warning", "requireTests": true },
+  "review": { "feedback": "provenflow-feedback.json", "minPrecision": 0.5, "minAnswers": 5, "rules": { "long-function": "inline" } },
   "checks": { "skip": ["flag-argument"] }
 }
 ```
@@ -787,6 +833,10 @@ cycles and paradigm profiles.
 - `baseline` is the file of accepted findings (default `provenflow-baseline.json` when it exists).
 - `agents` sets how lines written by coding agents are held: `failOn`, `requireTests`, and `authors`
   (extra patterns that recognise an agent).
+- `review` sets what a pull-request review comments on inline: the answers file (`feedback`,
+  `false` for none), the share of answered findings a rule needs to have been real (`minPrecision`,
+  after `minAnswers` answers), and `rules` placed `inline` or in the `summary` whatever the answers
+  say. See [Answers to reviews](#answers-to-reviews-pflow-feedback).
 - `checks` selects the entries of the [patterns and practices catalogue](#patterns-and-practices-the-catalogue)
   to check: `select` replaces the default selection, `skip` removes entries from it.
 
@@ -1016,6 +1066,34 @@ Later pushes do not repeat the review. Each comment carries a hidden marker with
 `--state <dir>` keeps the run between pushes; the Action keeps it in the Actions cache, so a push
 re-analyses only the files it changed.
 
+### Answers to reviews: `pflow feedback`
+
+A reply to a review comment is a verdict on its finding. `pflow feedback` reads the replies on the
+pull requests of a repository and writes them to `provenflow-feedback.json`:
+
+```sh
+pflow feedback owner/repo                 # GITHUB_TOKEN, or the GitHub CLI's login
+pflow feedback owner/repo --max 50 -o provenflow-feedback.json
+```
+
+Each answered finding gets a verdict from the first sentence of its first reply: `false-positive`
+("Not a leak: ...", "False positive", "Reachable: ..."), `fixed` ("Fixed in abc1234", "Split
+..."), `declined` ("Leaving this one ..."), `outdated` ("Already gone ...") or `unclear`. Check the
+`unclear` ones and correct any verdict by hand: a later run adds new answers and keeps the ones
+already in the file.
+
+Commit the file at the root of the code base. Reviews then use it:
+- a finding answered as a false positive is not commented on again, on any pull request: it is
+  listed in the summary with a link to the answer;
+- a rule whose answered findings were real (fixed) less often than `review.minPrecision` (default
+  50%, once it has `review.minAnswers` answers, default 5) goes to the summary instead of inline
+  comments;
+- `review.rules` places a rule whatever the answers say (`"inline"` or `"summary"`).
+
+On the pull request itself, a finding answered as a false positive is listed in the summary with the
+`ignore` entry that accepts it, the answer's first sentence as its `reason`, ready to paste into
+provenflow.config.json.
+
 ### The GitHub Action
 
 ```yaml
@@ -1029,7 +1107,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }          # the base of the pull request is needed for the diff
-      - uses: belkassaby/provenflow@v0
+      # Pin a commit (the comment gives its version): a moving tag such as @v0 changes the analysis
+      # between two pushes, so the same code can get a different review.
+      - uses: belkassaby/provenflow@<commit-sha> # v0.x.y
         with:
           fail-on: error                  # the check fails on errors of the changed lines (warning, none)
 ```
@@ -1085,7 +1165,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { name: provenflow-review, run-id: '${{ github.event.workflow_run.id }}', github-token: '${{ github.token }}' }
-      - uses: belkassaby/provenflow@v0
+      - uses: belkassaby/provenflow@<commit-sha> # v0.x.y, the same as the review
         with: { post-review-file: provenflow-review.json }
 ```
 

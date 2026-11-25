@@ -29,7 +29,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:code": "node packages/server/out/cli.js extract . --fail-on warning",
     "build:vscode": "npm run build -w provenflow-vscode",
-    "build:jetbrains": "cd packages/jetbrains && ./gradlew buildPlugin"
+    "build:jetbrains": "cd packages/jetbrains && ./gradlew buildPlugin",
+    "bench:reviews": "node bench/run.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

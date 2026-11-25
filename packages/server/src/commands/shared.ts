@@ -62,7 +62,9 @@ export const OPTIONS = {
     'fix-pr': { type: 'boolean', default: false },
     port: { type: 'string' },
     'progress-json': { type: 'boolean', default: false },
-    'until-stdin-closes': { type: 'boolean', default: false }
+    'until-stdin-closes': { type: 'boolean', default: false },
+    labels: { type: 'string', multiple: true },
+    'fail-on-labels': { type: 'boolean', default: false }
 } as const;
 
 export function parse(argv: string[]) {

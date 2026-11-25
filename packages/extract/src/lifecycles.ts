@@ -11,7 +11,9 @@ import { formatLocation } from './ir.js';
 import { ModelBuilder, slug, type ExtractedModel, type Finding } from './models.js';
 
 /** Methods that end an object's life. */
-const DISPOSE = /^(ngOnDestroy|destroy|dispose|__exit__|__aexit__|__del__|onDestroy|__destruct|deinit|drop|finalize|onCleared|componentWillUnmount|unmount|~\w+)$|(_destroy|_free|_deinit)$/i;
+const DISPOSE = /^(ngOnDestroy|destroy|dispose|__exit__|__aexit__|__del__|onDestroy|__destruct|deinit|drop|finalize|onCleared|componentWillUnmount|unmount|unsubscribe|detach|~\w+)$|(_destroy|_free|_deinit)$/i;
+/** Hooks the framework calls once per instance: what they acquire is not acquired again by them. */
+const ONCE = /^(ngOnInit|ngAfterViewInit|ngAfterContentInit)$/;
 /** Methods that release but after which the object can be used again, unless the class is Closeable/Disposable. */
 const WEAK_DISPOSE = /^(close|stop|shutdown|cleanup|disconnect|teardown|cancel)$|(_close|_cleanup|_shutdown)$/i;
 const CLOSEABLE = /^(Closeable|AutoCloseable|IDisposable|IAsyncDisposable|Disposable|io\.Closer|Closer)$/;
@@ -117,20 +119,7 @@ function lifecycleModel(cls: ClassFact, kind: ResourceKind, handle: string, ops:
     const releases = ops.filter(o => o.op === 'release');
     const subject = `${cls.name} ${kind} ${handle}`;
 
-    // An inline listener on window/document cannot be removed.
-    for (const a of acquires.filter(o => o.kind === 'listener' && o.global && o.anonymous)) {
-        if (cls.providedInRoot) continue;
-        findings.push({
-            rule: 'unremovable-listener',
-            category: 'lifecycle',
-            severity: 'warning',
-            subject: `${cls.name}.${a.member}`,
-            message: `${cls.name} adds an inline listener to a global target (${a.text}); it can never be removed, so it outlives every ${cls.name}.`,
-            fix: 'Keep the listener in a field (or use an AbortController signal) and remove it when the object is disposed (ngOnDestroy / DestroyRef.onDestroy).',
-            loc: a.loc,
-            source: 'analysis'
-        });
-    }
+    findings.push(...unremovableListeners(cls, acquires));
 
     // Methods doing each operation, directly or through the methods they call.
     const direct = (op: 'acquire' | 'release') => new Set(ops.filter(o => o.op === op).map(o => o.member));
@@ -155,28 +144,19 @@ function lifecycleModel(cls: ClassFact, kind: ResourceKind, handle: string, ops:
     b.state('leaked');
     if (!lives) b.state('disposed');
 
-    const locOf = (member: string, op: 'acquire' | 'release') => ops.find(o => o.member === member && o.op === op)?.loc ?? cls.methods.find(m => m.name === member)?.loc;
-    for (const member of [...closure].filter(entry)) {
-        if (isDispose(member)) continue;
-        const acquire = ops.find(o => o.member === member && o.op === 'acquire');
-        const releaseFirst = releaseClosure.has(member) && releasesBeforeAcquiring(ops, member);
-        const guarded = acquires.some(a => a.member === member && a.guarded);
-        b.transition('idle', 'held', { event: `${cls.name}.${member}`, loc: acquire?.loc ?? locOf(member, 'acquire') });
-        b.transition('held', releaseFirst || guarded ? 'held' : 'leaked', { event: `${cls.name}.${member}`, loc: acquire?.loc ?? locOf(member, 'acquire') });
-    }
-    for (const member of [...releaseClosure].filter(entry)) {
-        b.transition('held', 'idle', { event: `${cls.name}.${member}`, loc: locOf(member, 'release') });
-    }
-    if (!lives) {
-        if (disposers.length === 0) {
-            b.transition('idle', 'disposed', { event: `${cls.name} discarded` });
-            b.transition('held', 'leaked', { event: `${cls.name} discarded (no dispose method)` });
-        }
-        for (const d of disposers) {
-            b.transition('idle', 'disposed', { event: `${cls.name}.${d}`, loc: cls.methods.find(m => m.name === d)?.loc });
-            b.transition('held', releaseClosure.has(d) ? 'disposed' : 'leaked', { event: `${cls.name}.${d}`, loc: locOf(d, 'release') ?? cls.methods.find(m => m.name === d)?.loc });
-        }
-    }
+    const ctx: LifecycleContext = {
+        cls,
+        kind,
+        b,
+        acquires,
+        releaseClosure,
+        entry,
+        isDispose,
+        locOf: (member, op) => ops.find(o => o.member === member && o.op === op)?.loc ?? cls.methods.find(m => m.name === member)?.loc
+    };
+    addAcquisitions(ctx, ops, closure);
+    for (const member of [...releaseClosure].filter(entry)) b.transition('held', 'idle', { event: `${cls.name}.${member}`, loc: ctx.locOf(member, 'release') });
+    if (!lives) addDisposal(ctx, disposers);
     const lastAcquire = acquires[0];
     b.spec('INVARSPEC', 'never_leaked', '!(state = leaked)', {
         rule: 'resource-leak',
@@ -193,6 +173,82 @@ function lifecycleModel(cls: ClassFact, kind: ResourceKind, handle: string, ops:
         states: ['leaked']
     });
     return { model: b.build(), findings };
+}
+
+interface LifecycleContext {
+    cls: ClassFact;
+    kind: ResourceKind;
+    b: ModelBuilder;
+    acquires: ResourceOpFact[];
+    releaseClosure: Set<string>;
+    entry: (member: string) => boolean;
+    isDispose: (member: string) => boolean;
+    locOf: (member: string, op: 'acquire' | 'release') => ResourceOpFact['loc'] | undefined;
+}
+
+/** An inline listener on window/document cannot be removed. */
+function unremovableListeners(cls: ClassFact, acquires: ResourceOpFact[]): Finding[] {
+    if (cls.providedInRoot) return [];
+    return acquires
+        .filter(o => o.kind === 'listener' && o.global && o.anonymous)
+        .map(a => ({
+            rule: 'unremovable-listener',
+            category: 'lifecycle' as const,
+            severity: 'warning' as const,
+            subject: `${cls.name}.${a.member}`,
+            message: `${cls.name} adds an inline listener to a global target (${a.text}); it can never be removed, so it outlives every ${cls.name}.`,
+            fix: 'Keep the listener in a field (or use an AbortController signal) and remove it when the object is disposed (ngOnDestroy / DestroyRef.onDestroy).',
+            loc: a.loc,
+            source: 'analysis' as const
+        }));
+}
+
+/** Each method other code calls that acquires: from idle it holds; while held, it leaks unless it releases first or is guarded. */
+function addAcquisitions(ctx: LifecycleContext, ops: ResourceOpFact[], closure: Set<string>): void {
+    const { cls, b } = ctx;
+    for (const member of [...closure].filter(ctx.entry)) {
+        if (ctx.isDispose(member)) continue;
+        const loc = ops.find(o => o.member === member && o.op === 'acquire')?.loc ?? ctx.locOf(member, 'acquire');
+        b.transition('idle', 'held', { event: `${cls.name}.${member}`, loc });
+        if (ONCE.test(member)) continue;
+        const releaseFirst = ctx.releaseClosure.has(member) && releasesBeforeAcquiring(ops, member);
+        // Guarded when every acquisition the method reaches (itself or through the helpers it calls) is.
+        const reached = ctx.acquires.filter(a => reaches(cls, member, a.member));
+        const guarded = reached.length > 0 && reached.every(a => a.guarded);
+        b.transition('held', releaseFirst || guarded ? 'held' : 'leaked', { event: `${cls.name}.${member}`, loc });
+    }
+}
+
+/** The end of the owner's life: its dispose methods, or being dropped when it has none. */
+function addDisposal(ctx: LifecycleContext, disposers: string[]): void {
+    const { cls, b } = ctx;
+    if (disposers.length === 0) {
+        b.transition('idle', 'disposed', { event: `${cls.name} discarded` });
+        // A pending timeout of an object without a lifecycle fires once and is gone.
+        b.transition('held', ctx.kind === 'timeout' ? 'disposed' : 'leaked', { event: `${cls.name} discarded (no dispose method)` });
+    }
+    for (const d of disposers) {
+        const loc = cls.methods.find(m => m.name === d)?.loc;
+        b.transition('idle', 'disposed', { event: `${cls.name}.${d}`, loc });
+        b.transition('held', ctx.releaseClosure.has(d) ? 'disposed' : 'leaked', { event: `${cls.name}.${d}`, loc: ctx.locOf(d, 'release') ?? loc });
+    }
+}
+
+/** Whether `from` is `to` or calls it, directly or through other methods of the class. */
+function reaches(cls: ClassFact, from: string, to: string): boolean {
+    const seen = new Set([from]);
+    const queue = [from];
+    while (queue.length) {
+        const m = queue.shift()!;
+        if (m === to) return true;
+        for (const c of cls.methods.find(x => x.name === m)?.calls ?? []) {
+            if (!seen.has(c)) {
+                seen.add(c);
+                queue.push(c);
+            }
+        }
+    }
+    return false;
 }
 
 /** Methods that perform the operation directly or by calling (transitively) a method that does. */

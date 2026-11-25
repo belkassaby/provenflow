@@ -11,6 +11,9 @@ export { isApplied, lineDiff, quickFixes, verifyProposals, type Edit, type Propo
 export { BUNDLED_RULES, parseCbmcJson, parseEsbmc, parseKani, sarifToFindings, type ToolRun } from './analyzers/index.js';
 export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './buildcheck.js';
 export * from './review.js';
+export * from './review-feedback.js';
+export * from './review-placement.js';
+export { commentKey } from './github-api.js';
 export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export type { IncrementalInfo, PreviousRun } from './incremental.js';
