@@ -1,7 +1,7 @@
 {
   "name": "provenflow-vscode",
   "displayName": "ProvenFlow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "ProvenFlow in VS Code: a sidebar with the model-checked findings, models, hotspots and quality trends of the workspace, the ProvenFlow editor (diagrams, counterexamples, C4 architecture) in editor tabs, verified fixes as quick fixes, and any finding fixed in a diff (the analysis's own fix, an LLM's, or by hand), verified before it is applied, from the pflow command-line tool.",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@provenflow/extract",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Extracts verifiable models from a code base (TypeScript, Python, Java, Kotlin, Groovy, Scala, C, C++, C#, Go, Rust, Swift, Ruby, PHP, R): state machines, resource lifecycles, design-pattern contracts, paradigm and architecture rules.",
   "type": "module",
@@ -24,7 +24,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@provenflow/language": "0.1.0",
+    "@provenflow/language": "0.2.0",
     "typescript": "~6.0.3",
     "web-tree-sitter": "0.25.10",
     "tree-sitter-wasms": "0.1.13",

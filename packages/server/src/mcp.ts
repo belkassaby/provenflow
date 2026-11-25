@@ -122,7 +122,7 @@ async function handle(method: string, params: Record<string, unknown>): Promise<
                 result: {
                     protocolVersion: typeof params['protocolVersion'] === 'string' ? params['protocolVersion'] : '2025-06-18',
                     capabilities: { tools: {} },
-                    serverInfo: { name: 'provenflow', version: '0.1.0' },
+                    serverInfo: { name: 'provenflow', version: '0.2.0' },
                     instructions: 'Call project_conventions before writing code, find_existing_code before writing a helper, and review_changes before committing; fix its errors and warnings.'
                 }
             };

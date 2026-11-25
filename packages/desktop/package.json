@@ -1,6 +1,6 @@
 {
   "name": "@provenflow/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "ProvenFlow as a desktop application for macOS, Windows and Linux (Electron): the editor and its server in one window, with native menus, file dialogs and file associations.",
   "type": "module",
@@ -18,8 +18,8 @@
     "pack": "npm run build && npm run stage && electron-builder --config electron-builder.yml --dir"
   },
   "dependencies": {
-    "@provenflow/extract": "0.1.0",
-    "@provenflow/server": "0.1.0"
+    "@provenflow/extract": "0.2.0",
+    "@provenflow/server": "0.2.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -54,7 +54,7 @@ export function sarif(result: ExtractionResult): unknown {
         version: '2.1.0',
         runs: [
             {
-                tool: { driver: { name: 'ProvenFlow', informationUri: 'https://github.com/belkassaby/provenflow', semanticVersion: '0.1.0', rules: [...byRule.values()].map(sarifRule) } },
+                tool: { driver: { name: 'ProvenFlow', informationUri: 'https://github.com/belkassaby/provenflow', semanticVersion: '0.2.0', rules: [...byRule.values()].map(sarifRule) } },
                 automationDetails: { id: 'provenflow/' },
                 results: numbered(result.findings).map(sarifResult)
             }
