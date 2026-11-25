@@ -1,6 +1,6 @@
 {
   "name": "@provenflow/server",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Node.js backend that runs nuXmv on generated models, plus the pflow command-line tool.",
   "type": "module",
@@ -24,8 +24,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@provenflow/extract": "0.2.0",
-    "@provenflow/language": "0.2.0",
+    "@provenflow/extract": "0.2.1",
+    "@provenflow/language": "0.2.1",
     "express": "^5.2.1"
   },
   "devDependencies": {

@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import type { ExtractionResult } from './project.js';
 import { findingKey } from './incremental.js';
 import type { Category, Finding } from './models.js';
+import { PROVENFLOW_VERSION } from './version.js';
 
 const DOCS = 'https://github.com/belkassaby/provenflow/blob/main/docs/code-model-checking.md';
 
@@ -54,7 +55,7 @@ export function sarif(result: ExtractionResult): unknown {
         version: '2.1.0',
         runs: [
             {
-                tool: { driver: { name: 'ProvenFlow', informationUri: 'https://github.com/belkassaby/provenflow', semanticVersion: '0.2.0', rules: [...byRule.values()].map(sarifRule) } },
+                tool: { driver: { name: 'ProvenFlow', informationUri: 'https://github.com/belkassaby/provenflow', semanticVersion: PROVENFLOW_VERSION, rules: [...byRule.values()].map(sarifRule) } },
                 automationDetails: { id: 'provenflow/' },
                 results: numbered(result.findings).map(sarifResult)
             }

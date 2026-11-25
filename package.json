@@ -1,6 +1,6 @@
 {
   "name": "provenflow",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Design and verify state machines with nuXmv, and review code: model-check a code base or pull request, with verified fixes.",
   "license": "MIT",

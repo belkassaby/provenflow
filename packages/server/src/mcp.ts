@@ -12,7 +12,7 @@
  */
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
-import { changeContext, extractProject, fixWithoutLlm, formatFindings, functionLabel, limitsFor, projectReader, qualitySection, runReview, similarToSnippet, STANDARDS, type ExtractionResult } from '@provenflow/extract';
+import { changeContext, extractProject, fixWithoutLlm, formatFindings, functionLabel, limitsFor, projectReader, PROVENFLOW_VERSION, qualitySection, runReview, similarToSnippet, STANDARDS, type ExtractionResult } from '@provenflow/extract';
 
 interface Tool {
     name: string;
@@ -122,7 +122,7 @@ async function handle(method: string, params: Record<string, unknown>): Promise<
                 result: {
                     protocolVersion: typeof params['protocolVersion'] === 'string' ? params['protocolVersion'] : '2025-06-18',
                     capabilities: { tools: {} },
-                    serverInfo: { name: 'provenflow', version: '0.2.0' },
+                    serverInfo: { name: 'provenflow', version: PROVENFLOW_VERSION },
                     instructions: 'Call project_conventions before writing code, find_existing_code before writing a helper, and review_changes before committing; fix its errors and warnings.'
                 }
             };

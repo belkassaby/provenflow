@@ -1,6 +1,6 @@
 {
   "name": "@provenflow/language",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Langium-based state diagram language (.pflow), diagram model, nuXmv model generator and nuXmv output parser.",
   "type": "module",

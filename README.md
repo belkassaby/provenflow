@@ -23,7 +23,8 @@ AI-generated code base, or a pull request:
   `pflow bench` counts how often the counterexamples of a code base are real, and how many findings
   people answered as false positives are still reported;
 - replies to review comments are verdicts (`pflow feedback`): a finding answered as a false positive
-  is not commented on again, and a rule answered mostly with false positives goes to the summary;
+  is not commented on again, and a rule answered mostly with false positives by the current minor
+  version goes to the summary;
 - fixes are proposed without an LLM (automatic fixes) or with one, and each is marked verified only
   when re-running the analysis and the build on the changed code shows the finding gone and nothing
   new; every verified fix of a run can go into one pull request (`pflow fix-pr`, or the Action's
@@ -717,8 +718,8 @@ ProvenFlow editor in VS Code tabs ([docs/vscode.md](docs/vscode.md)):
 
 ```sh
 npm run build:vscode                     # build it
-cd packages/vscode && npx @vscode/vsce package --no-dependencies   # provenflow-vscode-0.2.0.vsix
-code --install-extension provenflow-vscode-0.2.0.vsix   # or Extensions view → ⋯ → Install from VSIX…
+cd packages/vscode && npx @vscode/vsce package --no-dependencies   # provenflow-vscode-0.2.1.vsix
+code --install-extension provenflow-vscode-0.2.1.vsix   # or Extensions view → ⋯ → Install from VSIX…
 ```
 
 ### 5. Or in a JetBrains IDE
@@ -727,7 +728,7 @@ The JetBrains plugin does the same in IntelliJ IDEA, WebStorm, PyCharm and the o
 Platform IDEs, 2026.2 or later ([docs/jetbrains.md](docs/jetbrains.md)):
 
 ```sh
-cd packages/jetbrains && ./gradlew buildPlugin   # build/distributions/provenflow-jetbrains-0.2.0.zip
+cd packages/jetbrains && ./gradlew buildPlugin   # build/distributions/provenflow-jetbrains-0.2.1.zip
 # Settings | Plugins | ⚙ → Install Plugin from Disk…
 ```
 
@@ -849,7 +850,7 @@ NUXMV_PATH=/path/to/nuXmv npx pflow check examples/mutex.pflow --engine bdd
 | `pflow fix-pr <dir> [--base ref] [--branch name] [--dry-run] [--llm p:model]` | every verified fix as one commit on a branch (the working tree is not touched), pushed, with a pull request opened or updated |
 | `pflow trends [<dir>...] [--projects] [--backfill N] [--last N] [--json] [-o file]` | how errors, warnings, duplication, complexity, false properties and coverage moved over the runs; `--projects` adds the owner's other projects, `--backfill` measures N older commits |
 | `pflow bench <dir>... [--labels feedback.json]... [--fail-on-labels] [-o file] [--json]` | how often the counterexamples are real: every one is replayed on the code, and the share confirmed is counted per rule; `--labels` adds, per rule, the findings people answered as false positives that are still reported |
-| `pflow feedback <owner/repo> [-o provenflow-feedback.json] [--max N]` | the verdicts given in replies to review comments (false positive, fixed, declined), kept in a file that reviews read: answered false positives are not commented on again, and rules answered mostly so go to the summary |
+| `pflow feedback <owner/repo> [-o provenflow-feedback.json] [--max N]` | the verdicts given in replies to review comments (false positive, fixed, declined), kept in a file that reviews read: answered false positives are not commented on again, and rules answered mostly so, for the current minor version, go to the summary |
 | `pflow baseline <dir> [--update]` | accept today's findings (`provenflow-baseline.json`): only new ones fail; `--update` only removes |
 | `pflow compare <dir> (--base ref \| --before dir) [-o report.md]` | code quality of two versions side by side: duplication, complexity, findings fixed and introduced |
 | `pflow mutate <dir> [--base ref] [--max N]` | mutation testing of the changed lines with the project's tests |

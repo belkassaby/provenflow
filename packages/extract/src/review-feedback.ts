@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findingKey } from './incremental.js';
 import type { Finding } from './models.js';
-import { commentKey, githubApi, type GithubApi } from './github-api.js';
+import { commentKey, commentVersion, githubApi, type GithubApi } from './github-api.js';
 
 export type Verdict = 'false-positive' | 'fixed' | 'declined' | 'outdated' | 'unclear';
 
@@ -22,6 +22,8 @@ export interface ReviewLabel {
     reply: string;
     pull?: number;
     url?: string;
+    /** The ProvenFlow version that made the finding (from 0.2.1); only answers to the running minor version count for a rule's precision. */
+    version?: string;
 }
 
 export interface ReviewFeedback {
@@ -61,18 +63,19 @@ export interface ReviewThreadComment {
 
 /** The labels of one pull request's review comments: the first reply that is not ProvenFlow's own. */
 export function labelsFromComments(comments: ReviewThreadComment[], pull?: number): ReviewLabel[] {
-    const findings = new Map<number, string>();
+    const findings = new Map<number, { key: string; version?: string }>();
     for (const c of comments) {
         const key = commentKey(c.body ?? '');
-        if (key && !c.in_reply_to_id && key.includes('|')) findings.set(c.id, key);
+        if (key && !c.in_reply_to_id && key.includes('|')) findings.set(c.id, { key, version: commentVersion(c.body ?? '') });
     }
     const labels = new Map<number, ReviewLabel>();
     const ordered = [...comments].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '') || a.id - b.id);
     for (const c of ordered) {
-        const key = c.in_reply_to_id ? findings.get(c.in_reply_to_id) : undefined;
-        if (!key || labels.has(c.in_reply_to_id!) || commentKey(c.body ?? '')) continue;
+        const finding = c.in_reply_to_id ? findings.get(c.in_reply_to_id) : undefined;
+        if (!finding || labels.has(c.in_reply_to_id!) || commentKey(c.body ?? '')) continue;
         const reply = (c.body ?? '').trim();
-        labels.set(c.in_reply_to_id!, { key, rule: key.split('|')[0], verdict: classifyReply(reply), reply: reply.slice(0, 400), pull, url: c.html_url });
+        const { key, version } = finding;
+        labels.set(c.in_reply_to_id!, { key, rule: key.split('|')[0], verdict: classifyReply(reply), reply: reply.slice(0, 400), pull, url: c.html_url, ...(version ? { version } : {}) });
     }
     return [...labels.values()];
 }
