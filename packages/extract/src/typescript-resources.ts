@@ -83,13 +83,55 @@ export class ResourceFacts {
         });
     }
 
-    /** `if (this.timer) return;` (or `if (!this.timer) { ... }`) before the acquisition in its function. */
+    /**
+     * `if (this.timer) return;` (or `if (!this.timer) { ... }`) before the acquisition in its function,
+     * or an early return on a field the function sets itself: `if (this.busy) return; this.busy = true;`,
+     * `if (this.channelSub) return; ... this.channelSub = ...` (the function runs once until reset).
+     */
     private guardedAcquire(node: ts.Node, handle: string): boolean {
         const fn = enclosingNamedFunction(node);
         if (!fn?.body) return false;
         const before = this.ctx.sf.text.slice(fn.body.getStart(this.ctx.sf), node.getStart(this.ctx.sf));
         const h = escape(handle.replace(/:.*$/, ''));
-        return new RegExp(`if\\s*\\(\\s*${h}\\s*(!==?\\s*(undefined|null)\\s*)?\\)\\s*(return|\\{\\s*return)`).test(before) || new RegExp(`if\\s*\\(\\s*!\\s*${h}\\s*\\)`).test(before);
+        if (new RegExp(`if\\s*\\(\\s*${h}\\s*(!==?\\s*(undefined|null)\\s*)?\\)\\s*(return|\\{\\s*return)`).test(before) || new RegExp(`if\\s*\\(\\s*!\\s*${h}\\s*\\)`).test(before)) return true;
+        return this.insideUnsetCheck(node, h) || this.keptInCollection(node, fn) || (ts.isBlock(fn.body) && this.exitsOnOwnFlag(fn.body, node));
+    }
+
+    /** `if (el && !this.observer) { this.observer = new ResizeObserver(...) }`: acquired only while none is held. */
+    private insideUnsetCheck(node: ts.Node, handle: string): boolean {
+        const unset = new RegExp(`(!\\s*${handle}\\b|${handle}\\s*===?\\s*(undefined|null)\\b)`);
+        for (let n: ts.Node = node; n.parent && !isFunctionLike(n); n = n.parent) {
+            const p = n.parent;
+            if (ts.isIfStatement(p) && p.thenStatement === n) {
+                const condition = p.expression.getText(this.ctx.sf);
+                if (unset.test(condition) && !condition.includes('||')) return true;
+            }
+        }
+        return false;
+    }
+
+    /** `window.addEventListener(type, listener); this.listeners.push([type, listener]);`: every listener is kept for removal. */
+    private keptInCollection(node: ts.Node, fn: ts.FunctionLikeDeclaration): boolean {
+        if (!ts.isCallExpression(node) || !fn.body) return false;
+        const listener = node.arguments[1];
+        if (!listener || !ts.isIdentifier(listener)) return false;
+        return new RegExp(`this\\.\\w+\\.(push|add|set)\\([^;]*\\b${escape(listener.text)}\\b`).test(fn.body.getText(this.ctx.sf));
+    }
+
+    /** An `if (...) return;` before `node` whose condition reads a `this.` field the same body assigns. */
+    private exitsOnOwnFlag(body: ts.Block, node: ts.Node): boolean {
+        const assigned = new Set<string>();
+        const collect = (n: ts.Node): void => {
+            if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left) && n.left.expression.kind === ts.SyntaxKind.ThisKeyword) assigned.add(n.left.name.text);
+            ts.forEachChild(n, collect);
+        };
+        collect(body);
+        const at = node.getStart(this.ctx.sf);
+        return body.statements.some(st => {
+            if (st.getEnd() > at || !ts.isIfStatement(st) || st.elseStatement || !exits(st.thenStatement)) return false;
+            const condition = st.expression.getText(this.ctx.sf);
+            return [...assigned].some(f => new RegExp(`\\bthis\\.${escape(f)}\\b`).test(condition));
+        });
     }
 
     /** The variable or field a resource handle is stored in: `this.timer = setInterval(...)`, `const dir = await mkdtemp(...)`. */
@@ -127,7 +169,7 @@ export class ResourceFacts {
     private owner(node: ts.Node): { id: string; kind: 'class' | 'function'; member: string } | undefined {
         const fn = enclosingNamedFunction(node);
         const cls = ts.findAncestor(node, ts.isClassDeclaration);
-        const member = onDestroyCallback(node) ? 'ngOnDestroy' : fn ? memberName(fn) : 'module';
+        const member = onDestroyCallback(node) ? 'ngOnDestroy' : (storedClosureField(node, fn) ?? (fn ? memberName(fn) : 'module'));
         if (cls?.name) return { id: `${this.ctx.file}#${cls.name.text}`, kind: 'class', member };
         if (fn) return { id: `${this.ctx.file}#${memberName(fn)}`, kind: 'function', member };
         return undefined;
@@ -158,4 +200,24 @@ function isInFinally(node: ts.Node): boolean {
 /** Event targets that outlive the code registering on them. */
 function isLongLived(receiver: string): boolean {
     return /^(window|document|globalThis|process)\b/.test(receiver) || /^this\.\w+$/.test(receiver) || /matchMedia\(/.test(receiver);
+}
+
+/** `return;` / `throw ...;`, alone or ending a block. */
+function exits(statement: ts.Statement): boolean {
+    const last = ts.isBlock(statement) ? statement.statements[statement.statements.length - 1] : statement;
+    return !!last && (ts.isReturnStatement(last) || ts.isThrowStatement(last));
+}
+
+/**
+ * `this.end = () => { window.removeEventListener(...) }`: what the closure does happens when a method
+ * calls `this.end()`, so it counts as a member named after the field.
+ */
+function storedClosureField(node: ts.Node, fn: ts.FunctionLikeDeclaration | undefined): string | undefined {
+    for (let n: ts.Node = node; n.parent && n !== fn; n = n.parent) {
+        const p = n.parent;
+        if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && ts.isBinaryExpression(p) && p.right === n && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(p.left) && p.left.expression.kind === ts.SyntaxKind.ThisKeyword) {
+            return p.left.name.text;
+        }
+    }
+    return undefined;
 }

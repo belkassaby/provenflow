@@ -11,6 +11,11 @@ import type { ExtractionResult } from './project.js';
 import { formatLocation } from './ir.js';
 import type { Finding } from './models.js';
 import { findingKey } from './incremental.js';
+import { githubApi, marker, MARKER, type GithubApi, type GithubTarget } from './github-api.js';
+import { labelsFromComments } from './review-feedback.js';
+import { disputedMarkdown } from './review-placement.js';
+
+export { githubApi, type GithubApi, type GithubTarget } from './github-api.js';
 
 /** New-file line numbers added or changed, per file (from `git diff --unified=0`). */
 export type ChangedLines = Map<string, Set<number>>;
@@ -76,9 +81,6 @@ export interface ReviewComment {
     key: string;
 }
 
-/** Hidden in each comment, so a later run knows which findings it already reported. */
-const marker = (key: string) => `<!-- provenflow:${key.replace(/--/g, '- -')} -->`;
-const MARKER = /<!-- provenflow:(.+?) -->/;
 const SUMMARY = 'summary';
 const FIXED = 'fixed';
 
@@ -146,14 +148,6 @@ export function reviewSummary(result: ExtractionResult, relevant: Finding[], com
     ].join('\n');
 }
 
-export interface GithubTarget {
-    token: string;
-    repository: string;
-    pull: number;
-    commit: string;
-    apiUrl?: string;
-}
-
 /** The pull request of a GitHub Actions run (GITHUB_EVENT_PATH), if any. */
 export function githubTargetFromEnv(env: NodeJS.ProcessEnv = process.env): GithubTarget | undefined {
     const token = env['GITHUB_TOKEN'];
@@ -192,6 +186,7 @@ interface GithubComment {
     body?: string;
     in_reply_to_id?: number;
     html_url?: string;
+    created_at?: string;
 }
 
 /**
@@ -203,7 +198,8 @@ interface GithubComment {
 export async function publishReview(target: GithubTarget, payload: ReviewPayload, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
     const api = githubApi(target, fetchImpl);
     const repo = `/repos/${payload.repository}`;
-    const { reported, closed } = earlierComments(await api.all<GithubComment>(`${repo}/pulls/${payload.pull}/comments`));
+    const inline = await api.all<GithubComment>(`${repo}/pulls/${payload.pull}/comments`);
+    const { reported, closed } = earlierComments(inline);
     const current = new Set(payload.keys);
     const fresh = payload.comments.filter(c => !reported.has(c.key.replace(/--/g, '- -')) && !reported.has(c.key));
     const gone = [...reported].filter(([key, c]) => !current.has(key) && !current.has(key.replace(/- -/g, '--')) && !closed.has(c.id));
@@ -211,35 +207,10 @@ export async function publishReview(target: GithubTarget, payload: ReviewPayload
     for (const [, c] of gone) await api.call('POST', `${repo}/pulls/${payload.pull}/comments/${c.id}/replies`, { body: `✓ No longer reported at ${short}.\n\n${marker(FIXED)}` });
     const review = await postComments(api, repo, payload, fresh);
     const status = `\n\n<sub>At ${short}: ${fresh.length} new, ${payload.comments.length - fresh.length} already reported, ${gone.length} no longer reported since the last review.</sub>`;
-    const summary = `${payload.summary}${review.folded}${acceptance(reported, closed, new Set(gone.map(([k]) => k)))}${status}\n\n${marker(SUMMARY)}`;
+    const disputed = disputedMarkdown(labelsFromComments(inline, payload.pull), current);
+    const summary = `${payload.summary}${review.folded}${disputed}${acceptance(reported, closed, new Set(gone.map(([k]) => k)))}${status}\n\n${marker(SUMMARY)}`;
     const summaryUrl = await upsertSummary(api, repo, payload.pull, summary);
     return { posted: review.posted, alreadyReported: payload.comments.length - fresh.length, fixed: gone.length, url: review.url, summaryUrl };
-}
-
-export interface GithubApi {
-    call(method: string, path: string, body?: unknown): Promise<Response>;
-    /** Every page of a list (up to 2,000 items). */
-    all<T>(path: string): Promise<T[]>;
-}
-
-export function githubApi(target: GithubTarget, fetchImpl: typeof fetch): GithubApi {
-    const base = target.apiUrl ?? 'https://api.github.com';
-    const headers = { authorization: `Bearer ${target.token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' };
-    const call = (method: string, path: string, body?: unknown) => fetchImpl(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    return {
-        call,
-        async all<T>(path: string): Promise<T[]> {
-            const out: T[] = [];
-            for (let page = 1; page <= 20; page++) {
-                const res = await call('GET', `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
-                if (!res.ok) throw new Error(`GitHub: HTTP ${res.status} reading ${path}: ${(await res.text()).slice(0, 200)}`);
-                const items = (await res.json()) as T[];
-                out.push(...items);
-                if (items.length < 100) break;
-            }
-            return out;
-        }
-    };
 }
 
 /** The findings commented before on this pull request (by their marker), and the comments already answered as fixed. */

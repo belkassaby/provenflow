@@ -3,13 +3,6 @@
   "version": 1,
   "entries": [
     {
-      "rule": "unreachable-state",
-      "subject": "App.tab",
-      "file": "packages/app/src/app/app.ts",
-      "count": 1,
-      "message": "'python' is a declared value of App.tab but no code path sets it."
-    },
-    {
       "rule": "cognitive-complexity",
       "subject": "setVariable",
       "file": "packages/app/src/app/attribute-table/attribute-table.ts",
@@ -39,20 +32,6 @@
       "file": "packages/app/src/app/code-import/code-diff.ts",
       "count": 1,
       "message": "current reaches through 3 objects in `this.view.b.state.doc.toString()` (b → state → doc): it depends on the structure of objects it does not own, so a change in any of them breaks it."
-    },
-    {
-      "rule": "stuck-state",
-      "subject": "CodeReportPage.back",
-      "file": "packages/app/src/app/code-import/code-report-page.ts",
-      "count": 1,
-      "message": "Once CodeReportPage.back is 'findings' no code changes it again, and 'findings' does not look like a final state. (Unless a computed write, e.g. packages/app/src/app/code-import/code-report-page.ts"
-    },
-    {
-      "rule": "unreachable-state",
-      "subject": "CodeReportPage.back",
-      "file": "packages/app/src/app/code-import/code-report-page.ts",
-      "count": 2,
-      "message": "'edits' is a declared value of CodeReportPage.back but no code path sets it."
     },
     {
       "rule": "cognitive-complexity",
@@ -137,13 +116,6 @@
       "message": "sync is 72 lines long (limit 50)."
     },
     {
-      "rule": "unreachable-state",
-      "subject": "DiagramCanvas.layoutKind",
-      "file": "packages/app/src/app/diagram-canvas/diagram-canvas.ts",
-      "count": 1,
-      "message": "'vertical' is a declared value of DiagramCanvas.layoutKind but no code path sets it."
-    },
-    {
       "rule": "cognitive-complexity",
       "subject": "scoreParts",
       "file": "packages/app/src/app/diagram-canvas/layouts.ts",
@@ -180,20 +152,6 @@
       "file": "packages/app/src/app/diagram-store.ts",
       "count": 1,
       "message": "parse takes the boolean flag `updateModel`: a call like parse(…, true) does not say what true means, and the function does two things."
-    },
-    {
-      "rule": "stuck-state",
-      "subject": "NuxmvApi.engine",
-      "file": "packages/app/src/app/nuxmv-api.ts",
-      "count": 1,
-      "message": "Once NuxmvApi.engine is 'bdd' no code changes it again, and 'bdd' does not look like a final state. (Unless a computed write, e.g. packages/app/src/app/properties-panel/properties-panel.ts:95, does.)"
-    },
-    {
-      "rule": "unreachable-state",
-      "subject": "NuxmvApi.engine",
-      "file": "packages/app/src/app/nuxmv-api.ts",
-      "count": 1,
-      "message": "'bmc' is a declared value of NuxmvApi.engine but no code path sets it."
     },
     {
       "rule": "cognitive-complexity",
@@ -389,14 +347,6 @@
       "message": "buildLifecycles has a Cognitive Complexity of 37 (limit 15; cyclomatic 23, nesting 5): it is hard to read and to test."
     },
     {
-      "rule": "cognitive-complexity",
-      "subject": "lifecycleModel",
-      "file": "packages/extract/src/lifecycles.ts",
-      "count": 1,
-      "measure": 31,
-      "message": "lifecycleModel has a Cognitive Complexity of 31 (limit 15; cyclomatic 29, nesting 3): it is hard to read and to test."
-    },
-    {
       "rule": "deep-nesting",
       "subject": "buildLifecycles",
       "file": "packages/extract/src/lifecycles.ts",
@@ -467,14 +417,6 @@
     },
     {
       "rule": "cognitive-complexity",
-      "subject": "addStandardSpecs",
-      "file": "packages/extract/src/machines.ts",
-      "count": 1,
-      "measure": 18,
-      "message": "addStandardSpecs has a Cognitive Complexity of 18 (limit 15; cyclomatic 13, nesting 3): it is hard to read and to test."
-    },
-    {
-      "rule": "cognitive-complexity",
       "subject": "buildStateMachines",
       "file": "packages/extract/src/machines.ts",
       "count": 1,
@@ -486,7 +428,7 @@
       "subject": "machineOf",
       "file": "packages/extract/src/machines.ts",
       "count": 1,
-      "measure": 42,
+      "measure": 38,
       "message": "machineOf has a Cognitive Complexity of 42 (limit 15; cyclomatic 35, nesting 4): it is hard to read and to test."
     },
     {
@@ -524,14 +466,6 @@
       "count": 1,
       "measure": 17,
       "message": "factories has a Cognitive Complexity of 17 (limit 15; cyclomatic 12, nesting 3): it is hard to read and to test."
-    },
-    {
-      "rule": "cognitive-complexity",
-      "subject": "observers",
-      "file": "packages/extract/src/patterns.ts",
-      "count": 1,
-      "measure": 19,
-      "message": "observers has a Cognitive Complexity of 19 (limit 15; cyclomatic 9, nesting 3): it is hard to read and to test."
     },
     {
       "rule": "cognitive-complexity",
@@ -971,7 +905,7 @@
       "subject": "resolveParameters",
       "file": "packages/extract/src/typescript-frontend.ts",
       "count": 1,
-      "measure": 22,
+      "measure": 19,
       "message": "resolveParameters has a Cognitive Complexity of 22 (limit 15; cyclomatic 12, nesting 4): it is hard to read and to test."
     },
     {
@@ -981,14 +915,6 @@
       "count": 1,
       "measure": 60,
       "message": "sourcesOf has a Cognitive Complexity of 60 (limit 15; cyclomatic 33, nesting 4): it is hard to read and to test."
-    },
-    {
-      "rule": "cognitive-complexity",
-      "subject": "stateFacts",
-      "file": "packages/extract/src/typescript-frontend.ts",
-      "count": 1,
-      "measure": 29,
-      "message": "stateFacts has a Cognitive Complexity of 29 (limit 15; cyclomatic 17, nesting 3): it is hard to read and to test."
     },
     {
       "rule": "cognitive-complexity",

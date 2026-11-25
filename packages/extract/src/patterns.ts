@@ -137,7 +137,8 @@ function singletons(facts: Facts, classes: ClassFact[], result: PatternResult, m
         const obtain = c.providedInRoot ? `inject(${c.name})` : `${c.name}.${accessor?.name ?? 'instance'}`;
         b.transition('none', 'one', { event: obtain, loc: accessor?.loc ?? c.loc });
         b.transition('one', 'one', { event: obtain, loc: accessor?.loc ?? c.loc });
-        const bypasses = facts.instantiations.filter(n => n.className === c.name && !n.inTest && n.inClass !== c.name && (!n.language || n.language === c.language));
+        // A default argument of an injected constructor never runs: the injector passes the instance.
+        const bypasses = facts.instantiations.filter(n => n.className === c.name && !n.inTest && !n.injectedDefault && n.inClass !== c.name && (!n.language || n.language === c.language));
         for (const n of bypasses) {
             b.transition('none', 'one', { event: `new ${c.name}`, loc: n.loc });
             b.transition('one', 'many', { event: `new ${c.name}`, loc: n.loc });
@@ -169,30 +170,38 @@ function observers(classes: ClassFact[], result: PatternResult, modelId: (b: str
             const subscribe = c.methods.filter(m => m.addsParamTo.includes(field));
             const notify = c.methods.filter(m => m.iteratesAndCalls.includes(field));
             if (notify.length === 0) continue;
-            const unsubscribe = c.methods.filter(m => m.removesFrom.includes(field) && !m.addsParamTo.includes(field));
-            const returnsDisposer = subscribe.some(m => m.returnsFunction);
             const id = modelId(`pattern-observer-${c.name}-${field}`);
-            const b = new ModelBuilder(id, 'pattern', `${c.name}.${field} (observer)`, c.loc);
-            b.state('detached', true);
-            b.state('attached');
-            for (const m of subscribe) b.transition('detached', 'attached', { event: `${c.name}.${m.name}`, loc: m.loc });
-            for (const m of notify) b.transition('attached', 'attached', { event: `${c.name}.${m.name}`, loc: m.loc });
-            for (const m of unsubscribe) b.transition('attached', 'detached', { event: `${c.name}.${m.name}`, loc: m.loc });
-            if (returnsDisposer) b.transition('attached', 'detached', { event: 'unsubscribe function returned by subscribe', loc: subscribe.find(m => m.returnsFunction)?.loc });
-            b.spec('CTLSPEC', 'can_detach', 'AG (state = attached -> EF state = detached)', {
-                rule: 'observer-cannot-unsubscribe',
-                category: 'pattern',
-                severity: 'warning',
-                message: `${c.name} registers observers in ${field} (${subscribe.map(m => m.name).join(', ')}) and notifies them (${notify.map(m => m.name).join(', ')}), but an observer can never be removed: every subscriber lives as long as ${c.name}.`,
-                fix: `Add an unsubscribe/off method that removes the listener from ${field}, or return an unsubscribe function from ${subscribe[0].name}().`,
-                loc: subscribe[0].loc,
-                fallback: 'recover',
-                states: ['attached', 'detached']
-            });
-            result.models.push(b.build());
+            result.models.push(observerModel(c, field, subscribe, notify, id));
             result.instances.push({ pattern: 'observer', subject: `${c.name}.${field}`, loc: subscribe[0].loc, evidence: `${subscribe.map(m => m.name).join('/')} adds to ${field}, ${notify.map(m => m.name).join('/')} calls each`, model: id });
         }
     }
+}
+
+/** Detached/attached, with every way a listener of `field` is removed: an unsubscribe method, the end of the subscribing call, a returned disposer. */
+function observerModel(c: ClassFact, field: string, subscribe: MethodFact[], notify: MethodFact[], id: string): ExtractedModel {
+    const unsubscribe = c.methods.filter(m => m.removesFrom.includes(field) && !m.addsParamTo.includes(field));
+    // add(listener) ... finally delete(listener): the listener lives as long as the call.
+    const scoped = subscribe.filter(m => m.removesFrom.includes(field));
+    const disposer = subscribe.find(m => m.returnsFunction);
+    const b = new ModelBuilder(id, 'pattern', `${c.name}.${field} (observer)`, c.loc);
+    b.state('detached', true);
+    b.state('attached');
+    for (const m of subscribe) b.transition('detached', 'attached', { event: `${c.name}.${m.name}`, loc: m.loc });
+    for (const m of notify) b.transition('attached', 'attached', { event: `${c.name}.${m.name}`, loc: m.loc });
+    for (const m of unsubscribe) b.transition('attached', 'detached', { event: `${c.name}.${m.name}`, loc: m.loc });
+    for (const m of scoped) b.transition('attached', 'detached', { event: `${c.name}.${m.name} ends (removes its listener)`, loc: m.loc });
+    if (disposer) b.transition('attached', 'detached', { event: 'unsubscribe function returned by subscribe', loc: disposer.loc });
+    b.spec('CTLSPEC', 'can_detach', 'AG (state = attached -> EF state = detached)', {
+        rule: 'observer-cannot-unsubscribe',
+        category: 'pattern',
+        severity: 'warning',
+        message: `${c.name} registers observers in ${field} (${subscribe.map(m => m.name).join(', ')}) and notifies them (${notify.map(m => m.name).join(', ')}), but an observer can never be removed: every subscriber lives as long as ${c.name}.`,
+        fix: `Add an unsubscribe/off method that removes the listener from ${field}, or return an unsubscribe function from ${subscribe[0].name}().`,
+        loc: subscribe[0].loc,
+        fallback: 'recover',
+        states: ['attached', 'detached']
+    });
+    return b.build();
 }
 
 // -------------------------------------------------------------------- builder

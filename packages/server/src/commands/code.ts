@@ -22,12 +22,15 @@ import {
     loadConfig,
     logged,
     mergeConfigs,
+    placeFindings,
+    placementMarkdown,
     projectReader,
     proposeConfig,
     providerFromSpec,
     publishCheckRun,
     publishReview,
     readBaseline,
+    readFeedback,
     readInstructions,
     recordRun,
     reviewComments,
@@ -106,8 +109,9 @@ export async function reviewCommand(dir: string, values: Values): Promise<number
     });
     clearProgress();
     if (values.state) writeState(values.state, run.result.previous);
-    const comments = run.changed ? reviewComments(run.relevant, run.changed, projectReader(resolve(dir))) : [];
-    const body = reviewSummary(run.result, run.relevant, comments.length, run.base, run.extras);
+    const placed = placeFindings(run.relevant, readFeedback(resolve(dir), run.config.review?.feedback), run.config.review);
+    const comments = run.changed ? reviewComments(placed.inline, run.changed, projectReader(resolve(dir))) : [];
+    const body = `${reviewSummary(run.result, run.relevant, comments.length, run.base, run.extras)}${placementMarkdown(placed.summary)}`;
     console.log(body);
     if (run.result.incremental) console.log(`\n(Incremental: ${run.result.incremental.changed.length} file(s) changed since the last run of this pull request.)`);
     if (!values.quiet) console.log(formatFindings({ ...run.result, findings: run.relevant }, 'warning'));

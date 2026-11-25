@@ -108,9 +108,13 @@ function machineOf(variable: StateVariableFact, writes: StateWriteFact[], facts:
         }
     }
 
+    // A write whose values are unknown leaves values out of the model: what it cannot reach or leave
+    // says nothing about the code, so those properties are not checked (the user's own still are).
     const dynamic = writes.filter(w => w.targets === null || w.incomplete);
     if (dynamic.length > 0) {
-        b.notes.push(`${dynamic.length} write(s) with a computed value are not (fully) in the model: ${dynamic.slice(0, 3).map(w => formatLocation(w.loc)).join(', ')}${dynamic.length > 3 ? ', ...' : ''}. Run with --llm to resolve them.`);
+        b.notes.push(
+            `${dynamic.length} write(s) with a computed value are not (fully) in the model: ${dynamic.slice(0, 3).map(w => formatLocation(w.loc)).join(', ')}${dynamic.length > 3 ? ', ...' : ''}. Reachability, stuck states and settling are not checked until they are known (run with --llm to resolve them).`
+        );
     }
 
     // Values the code compares against: a declared value never set makes that branch dead code.
@@ -143,13 +147,13 @@ function machineOf(variable: StateVariableFact, writes: StateWriteFact[], facts:
     const reachable = reachableStates(model);
     for (const s of model.model.states) {
         const value = model.values[s.name] ?? s.name;
-        if (!reachable.has(s.name) || withSuccessor.has(s.name) || terminal.includes(value) || value === 'unset') continue;
+        if (dynamic.length > 0 || !reachable.has(s.name) || withSuccessor.has(s.name) || terminal.includes(value) || value === 'unset') continue;
         findings.push({
             rule: 'stuck-state',
             category: 'state-machine',
-            severity: dynamic.length > 0 ? 'info' : 'warning',
+            severity: 'warning',
             subject: variable.name,
-            message: `Once ${variable.name} is '${value}' no code changes it again, and '${value}' does not look like a final state.${dynamic.length > 0 ? ` (Unless a computed write, e.g. ${formatLocation(dynamic[0].loc)}, does.)` : ''}`,
+            message: `Once ${variable.name} is '${value}' no code changes it again, and '${value}' does not look like a final state.`,
             fix: `Add the transition out of '${value}' (a reset, retry or cancel), or list it in provenflow.config.json under machines["${variable.name}"].terminal if it is final.`,
             loc: variable.loc,
             model: id,
@@ -175,30 +179,31 @@ function addStandardSpecs(
     hasDynamicWrites: boolean,
     reads: Facts['reads'] = []
 ): void {
-    for (const value of values) {
+    for (const value of hasDynamicWrites ? [] : values) {
         if (!b.has(value)) continue;
         const tested = reads.find(r => r.values.includes(value));
         b.spec('CTLSPEC', `reach_${b.idOf(value)}`, `EF state = ${b.idOf(value)}`, {
             rule: 'unreachable-state',
             category: 'state-machine',
-            severity: hasDynamicWrites ? 'info' : 'warning',
+            severity: 'warning',
             message: tested
                 ? `${name} is compared with '${value}' (${formatLocation(tested.loc)}) but no code path sets it to '${value}': that branch is dead code.`
                 : `'${value}' is a declared value of ${name} but no code path sets it.`,
             fix: tested
                 ? `Either add the code that moves ${name} to '${value}', or remove '${value}' and the dead branch at ${formatLocation(tested.loc)}.`
-                : `Remove '${value}' from the type of ${name}, or add the transition that sets it.${hasDynamicWrites ? ' (It may be set by a computed write: see the notes of the model.)' : ''}`,
+                : `Remove '${value}' from the type of ${name}, or add the transition that sets it.`,
             loc: tested?.loc ?? loc,
             fallback: 'reach',
             states: [value]
         });
     }
-    const rest = [...new Set([...(configuredTerminal ?? terminal), ...b.states.filter(s => isInitial(b, s))])].filter(v => b.has(v));
-    if (rest.length > 0 && b.states.length > 1) {
+    // 'unset' (a field declared without a value) is where the variable starts, not a state to come back to.
+    const rest = [...new Set([...(configuredTerminal ?? terminal), ...b.states.filter(s => isInitial(b, s))])].filter(v => b.has(v) && v !== 'unset');
+    if (!hasDynamicWrites && rest.length > 0 && b.states.length > 1) {
         b.spec('CTLSPEC', 'can_settle', `AG EF (${b.anyOf(rest)})`, {
             rule: 'cannot-settle',
             category: 'state-machine',
-            severity: hasDynamicWrites ? 'info' : 'warning',
+            severity: 'warning',
             message: `${name} can reach a state from which it never gets back to ${rest.map(v => `'${v}'`).join(', ')}.`,
             fix: `Follow the counterexample to the last state and add a way out of it (reset, cancel, error handling), or declare the states where ${name} may stop in provenflow.config.json (machines["${name}"].terminal).`,
             loc,

@@ -142,6 +142,18 @@ export interface LanguageConfig {
     naming?: Partial<Record<NameKind, NamingStyle>>;
 }
 
+/** What a pull-request review comments on inline (`pflow review --github`, the Action). */
+export interface ReviewConfig {
+    /** The verdicts given in replies to earlier reviews (`pflow feedback`; default provenflow-feedback.json); `false` reads none. */
+    feedback?: string | false;
+    /** A rule whose answered findings were real less often than this (0 to 1, default 0.5) goes to the summary instead of inline comments. */
+    minPrecision?: number;
+    /** Answers (fixed or false positive) a rule needs before its precision counts (default 5). */
+    minAnswers?: number;
+    /** Where a rule's findings go, whatever the verdicts say. */
+    rules?: Record<string, 'inline' | 'summary'>;
+}
+
 export interface ChecksConfig {
     /** Catalogue entries to check, instead of the default selection. */
     select?: string[];
@@ -191,6 +203,7 @@ export interface ProvenflowConfig {
     /** File of accepted findings (default provenflow-baseline.json when it exists): only findings not in it fail. */
     baseline?: string;
     agents?: AgentPolicyConfig;
+    review?: ReviewConfig;
     /**
      * Which entries of the patterns and practices catalogue to check (`pflow catalogue` lists them):
      * `select` replaces the default selection, `skip` removes entries from it. Findings of rules no
