@@ -45,6 +45,11 @@ export interface ServerContext {
     readonly runs: ExtractRuns;
     /** The last run of each folder (a path, or an uploaded folder by name), for incremental re-runs. */
     readonly previousRuns: Map<string, PreviousRun>;
+    /**
+     * The analysis a single change (POST /api/fix, /api/verify-change) was checked against, for a folder
+     * this server did not analyse itself (the IDEs analyse with pflow extract): kept for the next change.
+     */
+    readonly changeBaselines: Map<string, PreviousRun>;
     /** Folders analysed by path: the only places /api/apply may write to. */
     readonly analysedRoots: Set<string>;
     readonly settings: LlmSettingsStore;
@@ -53,7 +58,7 @@ export interface ServerContext {
 }
 
 export function createContext(options: AppOptions): ServerContext {
-    return { options, runs: new ExtractRuns(options.heartbeatMs), previousRuns: new Map(), analysedRoots: new Set(), settings: options.llmSettings ?? new LlmSettingsStore(), running: 0 };
+    return { options, runs: new ExtractRuns(options.heartbeatMs), previousRuns: new Map(), changeBaselines: new Map(), analysedRoots: new Set(), settings: options.llmSettings ?? new LlmSettingsStore(), running: 0 };
 }
 
 /** Runs `work` in one of the run slots, or refuses with 429 when all are taken. */

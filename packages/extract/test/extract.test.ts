@@ -264,8 +264,8 @@ describe('LLM assistance (verified)', () => {
                 `type Mode = 'off' | 'on' | 'blink';
 export class Lamp {
     mode: Mode = 'off';
-    apply(next: Mode): void {
-        this.mode = next;
+    apply(raw: string): void {
+        this.mode = JSON.parse(raw);
     }
 }
 `

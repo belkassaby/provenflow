@@ -11,6 +11,9 @@ export { isApplied, lineDiff, quickFixes, verifyProposals, type Edit, type Propo
 export { BUNDLED_RULES, parseCbmcJson, parseEsbmc, parseKani, sarifToFindings, type ToolRun } from './analyzers/index.js';
 export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './buildcheck.js';
 export * from './review.js';
+export * from './review-feedback.js';
+export * from './review-placement.js';
+export { commentKey } from './github-api.js';
 export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export type { IncrementalInfo, PreviousRun } from './incremental.js';
@@ -25,10 +28,13 @@ export { runReview, projectReader, type ReviewOptions, type ReviewRun } from './
 export type { QualityMetrics, QualityResult } from './quality/index.js';
 export { fixWithLlm, verifyVersion, type ChangeContext, type ChangeEvent, type SingleChange } from './single-change.js';
 export * from './report.js';
+export { precisionMarkdown, precisionOf, totalPrecision, type PrecisionProject, type PrecisionRow } from './precision.js';
+export { applyEdits, combineVerifiedFixes, commitFiles, fixPullRequestBody, openFixPullRequest, pushCommit, readerAt, type CombinedFixes, type FixPullRequest } from './fix-pr.js';
+export { appendHistory, commitsToBackfill, DEFAULT_HISTORY, historyEntry, historyPath, readHistory, recordRun, sparkline, trendsMarkdown, trendTable, type HistoryEntry } from './history.js';
 export { listSourceFiles } from './scan.js';
 export { CATALOGUE, catalogueMarkdown, practiceOf, selectedPractices, type Practice, type PracticeKind } from './catalogue/index.js';
 export { LANGUAGES } from './treesitter/frontend.js';
 export type { Checker, SpecVerdict } from './verify.js';
 export type { PatternInstance } from './patterns.js';
 export type { ParadigmProfile } from './paradigm.js';
-export { mapProjects, projectMapMarkdown, type DiscoverOptions, type PlacementSuggestion, type ProjectInfo, type ProjectLink, type ProjectMap, type ProjectMapOptions, type SharedLibrary } from './c4/index.js';
+export { mapProjects, modelDrift, modelFileOf, projectMapMarkdown, type DiscoverOptions, type PlacementSuggestion, type ProjectInfo, type ProjectLink, type ProjectMap, type ProjectMapOptions, type SharedLibrary } from './c4/index.js';

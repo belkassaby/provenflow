@@ -4,19 +4,19 @@
  * verified like the automatic fixes: the analysis is run again on the changed files (in memory),
  * the finding must be gone and nothing new appear, and the project must still build.
  */
-import { findingKey } from './incremental.js';
+import { findingKey, type PreviousRun } from './incremental.js';
 import { isApplied, lineDiff, quickFixes, readSafe, verifyProposals, type BuildCheck, type Proposal, type Rerun } from './fixes.js';
 import type { ProvenflowConfig } from './config.js';
 import type { Facts } from './ir.js';
 import { proposeFixFor, type LlmEvent, type LlmProvider, type LlmUsage } from './llm.js';
 import type { ExtractedModel, Finding } from './models.js';
-import type { SpecVerdict } from './verify.js';
 import { join } from 'node:path';
 
 /** What checking a change needs: the project, its last results, and how to re-run and build it. */
 export interface ChangeContext {
     root: string;
-    baseline: { findings: Finding[]; models: ExtractedModel[]; verdicts: SpecVerdict[] };
+    /** The last results of the project: the reference a change is checked against. */
+    baseline: PreviousRun;
     rerun: Rerun;
     buildCheck?: BuildCheck;
 }

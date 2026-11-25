@@ -1,0 +1,644 @@
+{
+  "name": "provenflow-vscode",
+  "displayName": "ProvenFlow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ProvenFlow in VS Code: a sidebar with the model-checked findings, models, hotspots and quality trends of the workspace, the ProvenFlow editor (diagrams, counterexamples, C4 architecture) in editor tabs, verified fixes as quick fixes, and any finding fixed in a diff (the analysis's own fix, an LLM's, or by hand), verified before it is applied, from the pflow command-line tool.",
+  "license": "MIT",
+  "publisher": "belkassaby",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/belkassaby/provenflow"
+  },
+  "type": "commonjs",
+  "main": "./out/extension.js",
+  "engines": {
+    "vscode": "^1.140.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "provenflow.analyse",
+        "title": "Analyse workspace",
+        "category": "ProvenFlow",
+        "icon": "$(play)"
+      },
+      {
+        "command": "provenflow.openReport",
+        "title": "Open report",
+        "category": "ProvenFlow",
+        "icon": "$(output)"
+      },
+      {
+        "command": "provenflow.openModel",
+        "title": "Open model in the editor",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.openEditor",
+        "title": "Open the ProvenFlow editor",
+        "category": "ProvenFlow",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "provenflow.openC4",
+        "title": "Open C4 architecture",
+        "category": "ProvenFlow",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "provenflow.openInEditor",
+        "title": "Open in the ProvenFlow editor",
+        "category": "ProvenFlow",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "provenflow.showCounterexample",
+        "title": "Show the model and its counterexample",
+        "category": "ProvenFlow",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "provenflow.applyFindingFix",
+        "title": "Apply the fix",
+        "category": "ProvenFlow",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "provenflow.fixFindingNode",
+        "title": "Fix… (in a diff, with or without an LLM)",
+        "category": "ProvenFlow",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "provenflow.fixFinding",
+        "title": "Fix a finding in a diff",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.fixReview.verify",
+        "title": "Verify this fix",
+        "category": "ProvenFlow",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "provenflow.fixReview.apply",
+        "title": "Apply this fix",
+        "category": "ProvenFlow",
+        "icon": "$(check)"
+      },
+      {
+        "command": "provenflow.fixReview.discard",
+        "title": "Discard this fix",
+        "category": "ProvenFlow",
+        "icon": "$(close)"
+      },
+      {
+        "command": "provenflow.refreshTrends",
+        "title": "Refresh trends",
+        "category": "ProvenFlow",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "provenflow.backfillTrends",
+        "title": "Measure older commits",
+        "category": "ProvenFlow",
+        "icon": "$(history)"
+      },
+      {
+        "command": "provenflow.editor.newDiagram",
+        "title": "New Diagram",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.open",
+        "title": "Open .pflow…",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.importAgentGraph",
+        "title": "Import Agent Graph…",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.importCodeBase",
+        "title": "Import Code Base…",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.codeReport",
+        "title": "Code Base Report",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.c4",
+        "title": "C4 Architecture",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.save",
+        "title": "Save .pflow",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.exportSmv",
+        "title": "Export nuXmv Model (.smv)",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.exportPng",
+        "title": "Export Diagram (.png)",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.exportSvg",
+        "title": "Export Diagram (.svg)",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.exportPython",
+        "title": "Export Python Implementation (.py)",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.exportNotebook",
+        "title": "Export Jupyter Notebook (.ipynb)",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.example",
+        "title": "Open Example…",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.attributes",
+        "title": "Edit Attribute Table",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.showModel",
+        "title": "Show Generated Model",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.check",
+        "title": "Check Properties",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.simulate",
+        "title": "Simulate the Diagram",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.showConsole",
+        "title": "Show nuXmv Output",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.redetectNuxmv",
+        "title": "Re-detect nuXmv",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.helpGuide",
+        "title": "Using the Editor",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.helpWalkthroughs",
+        "title": "Walkthroughs",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.helpSymbols",
+        "title": "Logic Symbols",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.helpGlossary",
+        "title": "Glossary of Logic Terms",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.helpReferences",
+        "title": "References",
+        "category": "ProvenFlow"
+      },
+      {
+        "command": "provenflow.editor.llmSettings",
+        "title": "LLM Settings (API Keys)…",
+        "category": "ProvenFlow"
+      }
+    ],
+    "configuration": {
+      "title": "ProvenFlow",
+      "properties": {
+        "provenflow.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path of the pflow command. Empty: node_modules/.bin/pflow in the workspace folder, then pflow on the PATH."
+        },
+        "provenflow.runOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analyse the workspace folder when a file is saved."
+        },
+        "provenflow.saveDelay": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 0,
+          "description": "Milliseconds to wait after the last save before analysing."
+        },
+        "provenflow.fullAnalysis": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also run the installed analysers (Semgrep, Infer, ESBMC/CBMC, Kani) and replay counterexamples on the code. Slower."
+        },
+        "provenflow.proposeFixes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Propose automatic fixes (pflow extract --fix), each verified by re-running the analysis and the build."
+        },
+        "provenflow.offerUnverifiedFixes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also offer fixes that could not be verified, to review before keeping them."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "provenflow",
+          "title": "ProvenFlow",
+          "icon": "media/provenflow.svg"
+        }
+      ]
+    },
+    "views": {
+      "provenflow": [
+        {
+          "id": "provenflow.findings",
+          "name": "Findings"
+        },
+        {
+          "id": "provenflow.models",
+          "name": "Models"
+        },
+        {
+          "id": "provenflow.hotspots",
+          "name": "Hotspots"
+        },
+        {
+          "id": "provenflow.trends",
+          "name": "Trends"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "provenflow.findings",
+        "contents": "No analysis yet. ProvenFlow analyses the folder when a file is saved, or now:\n[Analyse workspace](command:provenflow.analyse)\n[Open the ProvenFlow editor](command:provenflow.openEditor)\n[Open C4 architecture](command:provenflow.openC4)"
+      },
+      {
+        "view": "provenflow.models",
+        "contents": "The state machines, resource lifecycles and patterns ProvenFlow extracts from the code show here after an analysis."
+      },
+      {
+        "view": "provenflow.hotspots",
+        "contents": "The complex functions in files that change often show here after an analysis."
+      },
+      {
+        "view": "provenflow.trends",
+        "contents": "No commits measured yet. Each pflow extract run in a terminal measures one, or measure older ones from git:\n[Measure older commits](command:provenflow.backfillTrends)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "provenflow.analyse",
+          "when": "view == provenflow.findings",
+          "group": "navigation@1"
+        },
+        {
+          "command": "provenflow.openReport",
+          "when": "view == provenflow.findings",
+          "group": "navigation@2"
+        },
+        {
+          "command": "provenflow.openC4",
+          "when": "view == provenflow.findings",
+          "group": "navigation@3"
+        },
+        {
+          "command": "provenflow.openEditor",
+          "when": "view == provenflow.findings",
+          "group": "navigation@4"
+        },
+        {
+          "command": "provenflow.refreshTrends",
+          "when": "view == provenflow.trends",
+          "group": "navigation@1"
+        },
+        {
+          "command": "provenflow.backfillTrends",
+          "when": "view == provenflow.trends",
+          "group": "navigation@2"
+        },
+        {
+          "submenu": "provenflow.menu",
+          "when": "view == provenflow.findings",
+          "group": "navigation@9"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "provenflow.fixFindingNode",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )located( |$)/ && !(viewItem =~ /(^| )fix( |$)/)",
+          "group": "inline@1"
+        },
+        {
+          "command": "provenflow.applyFindingFix",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )fix( |$)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "provenflow.showCounterexample",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )model( |$)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "provenflow.fixFindingNode",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )located( |$)/",
+          "group": "1_fix@0"
+        },
+        {
+          "command": "provenflow.applyFindingFix",
+          "when": "view == provenflow.findings && viewItem =~ /fix/",
+          "group": "1_fix"
+        },
+        {
+          "command": "provenflow.showCounterexample",
+          "when": "view == provenflow.findings && viewItem =~ /(^| )model( |$)/",
+          "group": "2_model"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "provenflow.fixReview.verify",
+          "when": "resourceScheme == provenflow-fix",
+          "group": "navigation@1"
+        },
+        {
+          "command": "provenflow.fixReview.apply",
+          "when": "resourceScheme == provenflow-fix",
+          "group": "navigation@2"
+        },
+        {
+          "command": "provenflow.fixReview.discard",
+          "when": "resourceScheme == provenflow-fix",
+          "group": "navigation@3"
+        },
+        {
+          "submenu": "provenflow.menu",
+          "when": "activeWebviewPanelId == 'provenflow.editor'",
+          "group": "navigation"
+        },
+        {
+          "command": "provenflow.openInEditor",
+          "when": "resourceExtname == .pflow || resourceExtname == .nxd || resourceExtname == .dsl",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "provenflow.openInEditor",
+          "when": "resourceExtname == .pflow || resourceExtname == .nxd || resourceExtname == .dsl",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "provenflow.showCounterexample",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.applyFindingFix",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.openInEditor",
+          "when": "resourceExtname == .pflow || resourceExtname == .nxd || resourceExtname == .dsl"
+        },
+        {
+          "command": "provenflow.fixFindingNode",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.fixFinding",
+          "when": "false"
+        },
+        {
+          "command": "provenflow.fixReview.verify",
+          "when": "provenflow.fixReviewOpen"
+        },
+        {
+          "command": "provenflow.fixReview.apply",
+          "when": "provenflow.fixReviewOpen"
+        },
+        {
+          "command": "provenflow.fixReview.discard",
+          "when": "provenflow.fixReviewOpen"
+        }
+      ],
+      "provenflow.menu": [
+        {
+          "submenu": "provenflow.menu.file",
+          "group": "1_editor@1"
+        },
+        {
+          "command": "provenflow.editor.example",
+          "group": "1_editor@2"
+        },
+        {
+          "submenu": "provenflow.menu.attributes",
+          "group": "1_editor@3"
+        },
+        {
+          "submenu": "provenflow.menu.nuxmv",
+          "group": "1_editor@4"
+        },
+        {
+          "submenu": "provenflow.menu.help",
+          "group": "1_editor@5"
+        },
+        {
+          "command": "provenflow.analyse",
+          "group": "2_analysis@1"
+        },
+        {
+          "command": "provenflow.openReport",
+          "group": "2_analysis@2"
+        },
+        {
+          "command": "provenflow.openModel",
+          "group": "2_analysis@3"
+        },
+        {
+          "command": "provenflow.backfillTrends",
+          "group": "2_analysis@4"
+        }
+      ],
+      "provenflow.menu.file": [
+        {
+          "command": "provenflow.editor.newDiagram",
+          "group": "file"
+        },
+        {
+          "command": "provenflow.editor.open",
+          "group": "file"
+        },
+        {
+          "command": "provenflow.editor.importAgentGraph",
+          "group": "file"
+        },
+        {
+          "command": "provenflow.editor.importCodeBase",
+          "group": "file"
+        },
+        {
+          "command": "provenflow.editor.codeReport",
+          "group": "file"
+        },
+        {
+          "command": "provenflow.editor.c4",
+          "group": "file"
+        },
+        {
+          "command": "provenflow.editor.save",
+          "group": "file2"
+        },
+        {
+          "command": "provenflow.editor.exportSmv",
+          "group": "file3"
+        },
+        {
+          "command": "provenflow.editor.exportPng",
+          "group": "file3"
+        },
+        {
+          "command": "provenflow.editor.exportSvg",
+          "group": "file3"
+        },
+        {
+          "command": "provenflow.editor.exportPython",
+          "group": "file3"
+        },
+        {
+          "command": "provenflow.editor.exportNotebook",
+          "group": "file3"
+        }
+      ],
+      "provenflow.menu.attributes": [
+        {
+          "command": "provenflow.editor.attributes",
+          "group": "attributes"
+        }
+      ],
+      "provenflow.menu.nuxmv": [
+        {
+          "command": "provenflow.editor.showModel",
+          "group": "nuxmv"
+        },
+        {
+          "command": "provenflow.editor.check",
+          "group": "nuxmv"
+        },
+        {
+          "command": "provenflow.editor.simulate",
+          "group": "nuxmv"
+        },
+        {
+          "command": "provenflow.editor.showConsole",
+          "group": "nuxmv"
+        },
+        {
+          "command": "provenflow.editor.redetectNuxmv",
+          "group": "nuxmv"
+        }
+      ],
+      "provenflow.menu.help": [
+        {
+          "command": "provenflow.editor.helpGuide",
+          "group": "help"
+        },
+        {
+          "command": "provenflow.editor.helpWalkthroughs",
+          "group": "help"
+        },
+        {
+          "command": "provenflow.editor.helpSymbols",
+          "group": "help"
+        },
+        {
+          "command": "provenflow.editor.helpGlossary",
+          "group": "help"
+        },
+        {
+          "command": "provenflow.editor.helpReferences",
+          "group": "help"
+        },
+        {
+          "command": "provenflow.editor.llmSettings",
+          "group": "help2"
+        }
+      ]
+    },
+    "submenus": [
+      {
+        "id": "provenflow.menu",
+        "label": "ProvenFlow",
+        "icon": {
+          "light": "media/provenflow-light.svg",
+          "dark": "media/provenflow-dark.svg"
+        }
+      },
+      {
+        "id": "provenflow.menu.file",
+        "label": "File"
+      },
+      {
+        "id": "provenflow.menu.attributes",
+        "label": "Attributes"
+      },
+      {
+        "id": "provenflow.menu.nuxmv",
+        "label": "nuXmv"
+      },
+      {
+        "id": "provenflow.menu.help",
+        "label": "Help"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "1.140.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}

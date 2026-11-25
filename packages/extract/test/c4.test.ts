@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseC4Dsl, viewContents } from '@provenflow/language';
-import { mapProjects, projectMapMarkdown } from '../src/index.js';
+import { extractProject, mapProjects, modelDrift, projectMapMarkdown } from '../src/index.js';
 import { remoteOwner } from '../src/c4/discover.js';
 import { pep508 } from '../src/c4/manifests.js';
 import { minimum, satisfies } from '../src/c4/semver.js';
@@ -133,5 +133,67 @@ describe('the projects around a code base', () => {
         const markdown = projectMapMarkdown(map);
         const dsl = markdown.slice(markdown.indexOf('```dsl') + 6, markdown.lastIndexOf('```'));
         expect(parseC4Dsl(dsl).diagnostics.filter(d => d.severity === 'error')).toEqual([]);
+    });
+});
+
+describe("the code base's own C4 model against its code", () => {
+    const MODEL = `workspace "Shop" {
+    model {
+        user = person "Customer"
+        shop = softwareSystem "Shop" {
+            web = container "Web" "The storefront" "Angular"
+            api = container "API" "Orders" "Node"
+        }
+        user -> web "Buys"
+        web -> api "Calls"
+        api -> web "Pushes updates"
+    }
+}
+`;
+
+    function shop(): string {
+        const root = mkdtempSync(join(tmpdir(), 'provenflow-c4-drift-'));
+        const write = (file: string, text: string) => {
+            mkdirSync(join(root, file, '..'), { recursive: true });
+            writeFileSync(join(root, file), text);
+        };
+        write('package.json', JSON.stringify({ name: 'shop', private: true, workspaces: ['packages/*'] }));
+        write('packages/web/package.json', JSON.stringify({ name: '@shop/web', dependencies: { '@shop/api': '*' } }));
+        write('packages/api/package.json', JSON.stringify({ name: '@shop/api' }));
+        write('packages/jobs/package.json', JSON.stringify({ name: '@shop/jobs', dependencies: { '@shop/api': '*' } }));
+        write('packages/web/src/page.ts', "import { order } from '@shop/api';\nexport const page = () => order();\n");
+        write('packages/api/src/index.ts', 'export function order(): number {\n    return 1;\n}\n');
+        write('packages/jobs/src/run.ts', "import { order } from '@shop/api';\nexport const run = () => order();\n");
+        write('docs/c4/workspace.dsl', MODEL);
+        return root;
+    }
+
+    it('links the packages of one repository, and finds what the model leaves out or the code does not back', () => {
+        const root = shop();
+        try {
+            const ws = mapProjects(root, { scan: [root] }).workspace;
+            const name = (id: string) => ws.elements.find(e => e.id === id)?.name;
+            expect(ws.relationships.filter(r => r.tags.includes('Module dependency')).map(r => `${name(r.source)} -> ${name(r.destination)}`).sort()).toEqual(['@shop/jobs -> @shop/api', '@shop/web -> @shop/api']);
+            const drift = modelDrift(root);
+            expect(drift.file).toBe('docs/c4/workspace.dsl');
+            // Web -> API is backed by the import; the jobs package is missing; API -> Web has no import (it may be a push over the network).
+            expect(drift.findings.map(f => [f.rule, f.severity, f.subject, f.loc?.line])).toEqual([
+                ['c4-undocumented-part', 'warning', '@shop/jobs', 4],
+                ['c4-unbacked-relationship', 'info', 'API -> Web', 10]
+            ]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reports it with the other findings, unless the config turns it off', async () => {
+        const root = shop();
+        try {
+            const quick = { analyzers: false, confirm: false } as const;
+            expect((await extractProject(root, { ...quick, config: {} })).findings.filter(f => f.rule.startsWith('c4-')).length).toBe(2);
+            expect((await extractProject(root, { ...quick, config: { c4: false } })).findings.some(f => f.rule.startsWith('c4-'))).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });

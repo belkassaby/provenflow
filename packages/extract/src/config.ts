@@ -142,11 +142,32 @@ export interface LanguageConfig {
     naming?: Partial<Record<NameKind, NamingStyle>>;
 }
 
+/** What a pull-request review comments on inline (`pflow review --github`, the Action). */
+export interface ReviewConfig {
+    /** The verdicts given in replies to earlier reviews (`pflow feedback`; default provenflow-feedback.json); `false` reads none. */
+    feedback?: string | false;
+    /** A rule whose answered findings were real less often than this (0 to 1, default 0.5) goes to the summary instead of inline comments. */
+    minPrecision?: number;
+    /** Answers (fixed or false positive) a rule needs before its precision counts (default 5). */
+    minAnswers?: number;
+    /** Where a rule's findings go, whatever the verdicts say. */
+    rules?: Record<string, 'inline' | 'summary'>;
+}
+
 export interface ChecksConfig {
     /** Catalogue entries to check, instead of the default selection. */
     select?: string[];
     /** Catalogue entries not to check. */
     skip?: string[];
+}
+
+export interface AdvisoriesConfig {
+    /** Ask osv.dev about the dependencies' versions. */
+    osv?: boolean;
+    /** Package names never sent (private packages), as globs: "@acme/*". Local and workspace packages are never sent. */
+    private?: string[];
+    /** The OSV API (default https://api.osv.dev). */
+    url?: string;
 }
 
 export interface ProvenflowConfig {
@@ -170,10 +191,19 @@ export interface ProvenflowConfig {
     /** `false` turns off the check that imported packages are declared and exist. */
     dependencies?: boolean;
     coverage?: CoverageConfig;
+    /** Hotspots: complexity weighed by the commits of the last `months` (default 12). `false` leaves git history out. */
+    hotspots?: { months?: number } | false;
+    /** Known vulnerabilities of the dependencies, from the OSV database (off by default: it sends package names and versions to osv.dev). */
+    advisories?: AdvisoriesConfig;
+    /** The code base's C4 model to compare with its code (default: docs/c4/workspace.dsl and the like); `false` turns the comparison off. */
+    c4?: { model?: string } | false;
+    /** Where each run's measures are kept for `pflow trends` (default .provenflow/history.jsonl); `false` keeps none. */
+    history?: string | false;
     mutation?: MutationConfig;
     /** File of accepted findings (default provenflow-baseline.json when it exists): only findings not in it fail. */
     baseline?: string;
     agents?: AgentPolicyConfig;
+    review?: ReviewConfig;
     /**
      * Which entries of the patterns and practices catalogue to check (`pflow catalogue` lists them):
      * `select` replaces the default selection, `skip` removes entries from it. Findings of rules no

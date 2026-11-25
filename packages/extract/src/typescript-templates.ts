@@ -57,7 +57,7 @@ export function synthesizeTemplates(root: string, files: string[], overrides?: M
                     event: `${cls.name.text}.template ${binding.kind}`,
                     text: binding.source.trim()
                 });
-                methods.push(`${name}($event: any) { const $any = (v: any): any => v; ${code}; }`);
+                methods.push(`${name}($event: ${binding.eventType ?? 'any'}) { const $any = (v: any): any => v; ${code}; }`);
             }
             if (methods.length > 0) inserts.push({ at: cls.end - 1, code: ` ${methods.join(' ')} ` });
         }
@@ -75,6 +75,8 @@ interface Binding {
     source: string;
     /** Line offset in the template. */
     line: number;
+    /** The type of `$event` (a two-way binding emits a value of the bound field's type). */
+    eventType?: string;
 }
 
 /** Event handlers, property bindings, control-flow conditions and interpolations of an Angular template. */
@@ -85,9 +87,16 @@ function templateBindings(template: string): Binding[] {
         const cleaned = code.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
         result.push({ kind, code: cleaned, source, line: lineAt(index) });
     };
+    // [(mode)]="maskMode": the child component's mode output writes the field.
+    for (const m of template.matchAll(/\[\(([\w.-]+)\)\]\s*=\s*"\s*([A-Za-z_$][\w$]*)\s*"/g)) {
+        add(`[(${m[1]})]`, `${m[2]} = $event`, m.index!, m[0]);
+        result[result.length - 1].eventType = `this[${JSON.stringify(m[2])}]`;
+    }
     for (const m of template.matchAll(/\(([\w.:-]+)\)\s*=\s*"([^"]*)"/g)) add(`(${m[1]})`, m[2], m.index!, m[0]);
     for (const m of template.matchAll(/\[([\w.-]+)\]\s*=\s*"([^"]*)"/g)) add(`[${m[1]}]`, `void (${stripPipes(m[2])})`, m.index!, m[0]);
     for (const m of template.matchAll(/\{\{([\s\S]*?)\}\}/g)) add('{{ }}', `void (${stripPipes(m[1])})`, m.index!, m[0]);
+    // *ngIf="mode === 'a'; else other" (the structural directive before the @if syntax).
+    for (const m of template.matchAll(/\*ngIf\s*=\s*"([^"]*)"/g)) add('*ngIf', `void (${stripPipes(m[1].split(';')[0])})`, m.index!, m[0]);
     for (const m of template.matchAll(/@(if|else if|switch|case)\s*\(/g)) {
         const start = m.index! + m[0].length;
         let depth = 1;

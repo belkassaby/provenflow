@@ -49,7 +49,22 @@ export const OPTIONS = {
     depth: { type: 'string' },
     format: { type: 'string' },
     view: { type: 'string' },
-    merge: { type: 'boolean', default: false }
+    merge: { type: 'boolean', default: false },
+    osv: { type: 'boolean', default: false },
+    history: { type: 'string' },
+    'no-history': { type: 'boolean', default: false },
+    check: { type: 'boolean', default: false },
+    branch: { type: 'string' },
+    'dry-run': { type: 'boolean', default: false },
+    last: { type: 'string' },
+    backfill: { type: 'string' },
+    projects: { type: 'boolean', default: false },
+    'fix-pr': { type: 'boolean', default: false },
+    port: { type: 'string' },
+    'progress-json': { type: 'boolean', default: false },
+    'until-stdin-closes': { type: 'boolean', default: false },
+    labels: { type: 'string', multiple: true },
+    'fail-on-labels': { type: 'boolean', default: false }
 } as const;
 
 export function parse(argv: string[]) {
@@ -80,6 +95,18 @@ export function terminalProgress(): ((p: Progress) => void) | undefined {
         const line = `[${String(p.percent).padStart(3)}%] ${p.message}`;
         process.stderr.write(`\r\x1b[K${line.slice(0, (process.stderr.columns || 100) - 1)}`);
     };
+}
+
+/** What starts a progress line of --progress-json, which the IDEs read. */
+export const PROGRESS_PREFIX = 'pflow-progress ';
+
+/**
+ * --progress-json: each step of the analysis as a line on stderr, `pflow-progress {"phase", "message",
+ * "percent"}`, for a program to show (the VS Code extension and the JetBrains plugin).
+ */
+export function progressOutput(values: Values): ((p: Progress) => void) | undefined {
+    if (values['progress-json']) return p => process.stderr.write(`${PROGRESS_PREFIX}${JSON.stringify(p)}\n`);
+    return values.quiet ? undefined : terminalProgress();
 }
 
 export function clearProgress(): void {

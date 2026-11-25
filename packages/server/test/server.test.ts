@@ -9,6 +9,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeF
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/app.js';
+import { startEditorServer } from '../src/serve.js';
 import { nuxmvInfo, runNuxmv, type RunnerConfig } from '../src/nuxmv-runner.js';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-nuxmv.mjs', import.meta.url));
@@ -428,6 +429,28 @@ describe('one change for one finding: LLM fix, and Verify this version', () => {
         expect(readFileSync(join(copy, file.file), 'utf8')).toBe(file.before); // nothing written
     });
 
+    it('fixes a folder it never analysed (as the IDEs ask), reusing that analysis until a file changes', async () => {
+        const ide = mkdtempSync(join(tmpdir(), 'provenflow-ide-'));
+        cpSync(copy, ide, { recursive: true });
+        const stages = async (body: unknown) => {
+            const res = await fetch(`${url}/api/fix`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }, body: JSON.stringify(body) });
+            const lines = (await res.text()).trim().split('\n').map(l => JSON.parse(l));
+            return { first: lines.find(l => l.event?.type === 'stage').event.text as string, result: lines.at(-1).result };
+        };
+        try {
+            const finding = { rule: 'stale-write-after-await', subject: 'unknown', message: '', fix: 'Check the status again after the await.', severity: 'warning', loc: { file: 'src/ui/widgets.ts', line: 1 } };
+            const fresh = await stages({ path: ide, finding, how: 'analysis', analyzers: false });
+            expect(fresh.first).toMatch(/^Analysing the folder first/);
+            expect(fresh.result.finding.suggestedPatch).toBeDefined();
+            expect((await stages({ path: ide, finding, how: 'analysis', analyzers: false })).first).toMatch(/^Preparing the check \(from the last analysis/);
+            writeFileSync(join(ide, 'src/ui/widgets.ts'), `${readFileSync(join(ide, 'src/ui/widgets.ts'), 'utf8')}\nexport const changed = 1;\n`);
+            const again = await stages({ path: ide, finding, how: 'analysis', analyzers: false });
+            expect(again.result.finding.suggestedPatch.files[0].before).toContain('export const changed = 1;');
+        } finally {
+            rmSync(ide, { recursive: true, force: true });
+        }
+    });
+
     it('streams what the LLM does (the stage, the answer, the tokens) and logs its usage', async () => {
         const report = await (await post('/api/extract', { analyzers: false, path: copy, quickFixes: 0 })).json();
         const leak = report.findings.find((f: { rule: string; subject: string }) => f.rule === 'resource-leak' && f.subject.startsWith('Poller'));
@@ -638,5 +661,36 @@ describe('C4: the projects around a code base (POST /api/c4/discover, /api/c4/sa
     it('does not read folders by path when the server is not bound to localhost', async () => {
         const url = await start(false);
         expect((await post(url, '/api/c4/discover', { path: join(FIXTURE, 'app') })).status).toBe(403);
+    });
+});
+
+describe('the editor on a loopback port (desktop application, pflow serve)', () => {
+    const editor = mkdtempSync(join(tmpdir(), 'provenflow-editor-'));
+    writeFileSync(join(editor, 'index.html'), '<!doctype html><title>editor under test</title>');
+    afterAll(() => rmSync(editor, { recursive: true, force: true }));
+
+    it('serves the built editor on a free port of 127.0.0.1, and stops', async () => {
+        const server = await startEditorServer({ staticDir: editor });
+        try {
+            expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+            expect(await (await fetch(server.url)).text()).toContain('editor under test');
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('says when the editor is not built', async () => {
+        await expect(startEditorServer({ staticDir: join(editor, 'missing') })).rejects.toThrow(/not built/);
+    });
+
+    const CLI = fileURLToPath(new URL('../out/cli.js', import.meta.url));
+    it.skipIf(!existsSync(CLI))('pflow serve prints its address first, and ends when its stdin closes', async () => {
+        const child = spawn(process.execPath, [CLI, 'serve', '--until-stdin-closes'], { env: { ...process.env, STATIC_DIR: editor } });
+        const first = await new Promise<string>(resolve => child.stdout.once('data', chunk => resolve(String(chunk))));
+        const url = /^ProvenFlow editor at (\S+)/.exec(first)?.[1];
+        expect(await (await fetch(url!)).text()).toContain('editor under test');
+        const exit = new Promise<number | null>(resolve => child.once('exit', resolve));
+        child.stdin.end();
+        expect(await exit).toBe(0);
     });
 });

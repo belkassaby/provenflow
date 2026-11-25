@@ -10,7 +10,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import express, { type Express, type Request, type Response } from 'express';
-import { isApplied } from '@provenflow/extract';
+import { applyEdits as editedTexts } from '@provenflow/extract';
 import { analysedRoot, bodyOf, HttpError, route, writableFile, type ServerContext } from '../context.js';
 
 export function registerApplyRoutes(app: Express, ctx: ServerContext): void {
@@ -75,20 +75,10 @@ async function applyEdits(ctx: ServerContext, req: Request, res: Response): Prom
 
 /** The new texts of the files one change edits, or why it cannot be applied. */
 async function applyChange(edits: Edit[], current: (file: string) => Promise<string | undefined>): Promise<Map<string, string> | string> {
-    const pending = new Map<string, string>();
-    for (const e of edits) {
-        if (typeof e.file !== 'string' || typeof e.search !== 'string' || typeof e.replace !== 'string') return 'invalid edit';
-        const text = pending.get(e.file) ?? (await current(e.file));
-        const next = applyEdit(text, { file: e.file, search: e.search, replace: e.replace });
-        if (!next.ok) return next.conflict;
-        pending.set(e.file, next.text);
-    }
-    return pending.size ? pending : 'nothing to change';
-}
-
-function applyEdit(text: string | undefined, e: { file: string; search: string; replace: string }): { ok: true; text: string } | { ok: false; conflict: string } {
-    if (text === undefined && e.search === '') return { ok: true, text: e.replace };
-    if (isApplied(text, e)) return { ok: false, conflict: `This change is already in ${e.file}: it was not applied a second time.` };
-    if (text === undefined || text.split(e.search).length !== 2) return { ok: false, conflict: `${e.file} no longer contains the text this change replaces (another change or an edit touched it): run the analysis again for an up-to-date proposal.` };
-    return { ok: true, text: text.replace(e.search, () => e.replace) };
+    if (edits.some(e => typeof e.file !== 'string' || typeof e.search !== 'string' || typeof e.replace !== 'string')) return 'invalid edit';
+    const typed = edits as Array<{ file: string; search: string; replace: string }>;
+    const texts = new Map<string, string | undefined>();
+    for (const e of typed) if (!texts.has(e.file)) texts.set(e.file, await current(e.file));
+    const outcome = editedTexts(typed, file => texts.get(file));
+    return typeof outcome === 'string' && outcome.includes('no longer contains') ? `${outcome}: run the analysis again for an up-to-date proposal.` : outcome;
 }

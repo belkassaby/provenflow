@@ -33,7 +33,7 @@
  */
 import { rm } from 'node:fs/promises';
 import express, { type Express, type Request, type Response } from 'express';
-import { CATALOGUE, changeContext, extractProject, fixWithLlm, fixWithoutLlm, logged, verifyVersion, webReport, type ChangeEvent, type ChangeContext, type Finding, type ChecksConfig, type LlmProvider, type ProvenflowConfig } from '@provenflow/extract';
+import { CATALOGUE, changeContext, extractProject, fixWithLlm, fixWithoutLlm, logged, recordRun, verifyVersion, webReport, type ChangeEvent, type ChangeContext, type Finding, type ChecksConfig, type LlmProvider, type ProvenflowConfig } from '@provenflow/extract';
 import { nuxmvInfo, runNuxmv } from '../nuxmv-runner.js';
 import { bodyOf, folderKey, folderOf, HttpError, inSlot, providerOf, route, type ServerContext } from '../context.js';
 
@@ -140,7 +140,9 @@ async function analyse(ctx: ServerContext, req: Request, res: Response, a: Analy
         });
         if (!temp) ctx.analysedRoots.add(root);
         ctx.previousRuns.set(a.key, result.previous);
-        const report = { ...(webReport(result) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!ctx.options.allowLocalPaths };
+        // The editor's analyses count in the code base's trends, as the command line's do.
+        const history = temp ? [] : recordRun(result);
+        const report = { ...(webReport(result, history) as object), root: temp ? '(uploaded folder)' : root, applicable: !temp && !!ctx.options.allowLocalPaths };
         if (run) ctx.runs.finish(run, { result: report });
         else res.json(report);
     } catch (error) {
@@ -190,11 +192,15 @@ async function singleChange(ctx: ServerContext, kind: 'fix' | 'verify', req: Req
     const source = await folderOf(ctx, body);
     try {
         const key = folderKey(source, body.name);
-        const options = { config, checker: await checkerOf(ctx), analyzers: body.analyzers !== false, previous: ctx.previousRuns.get(key) };
+        const analyzers = body.analyzers !== false;
+        // A baseline of this server's own analysis without analysers would miss their findings.
+        const kept = `${key}|analyzers:${analyzers}`;
+        const options = { config, checker: await checkerOf(ctx), analyzers, previous: ctx.previousRuns.get(key) ?? ctx.changeBaselines.get(kept) };
         await inSlot(ctx, BUSY, () =>
             respond(req, res, async onEvent => {
-                onEvent({ type: 'stage', text: options.previous ? 'Preparing the check (from the last analysis of this folder)…' : 'Analysing the folder first (the server has no analysis of it since it started)…' });
+                onEvent({ type: 'stage', text: options.previous ? 'Preparing the check (from the last analysis of this folder, again for the files changed since)…' : 'Analysing the folder first (the server has no analysis of it since it started)…' });
                 const change = await changeContext(source.root, options);
+                if (change.baseline !== options.previous && !ctx.previousRuns.has(key)) ctx.changeBaselines.set(kept, change.baseline);
                 return makeChange(change, asked, options, onEvent);
             })
         );

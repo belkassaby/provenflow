@@ -4,7 +4,7 @@ import edgehandles from 'cytoscape-edgehandles';
 import type { DiagramModel } from '@provenflow/language';
 import { DiagramStore, type Highlight, type Selection } from '../diagram-store';
 import { LiveLink } from '../live-link';
-import { downloadText } from '../file-io';
+import { downloadDataUrl, downloadText } from '../file-io';
 import { computeLayout, LAYOUTS, type LayoutKind } from './layouts';
 import { cytoscapeToSvg } from './svg-export';
 import { followSize, themeColour, ThemeService } from '../theme';
@@ -333,11 +333,7 @@ export class DiagramCanvas implements OnDestroy {
     exportPng(): void {
         const cy = this.cy;
         if (!cy) return;
-        const png = cy.png({ full: true, scale: 2, bg: this.background() });
-        const a = document.createElement('a');
-        a.href = png;
-        a.download = this.baseName() + '.png';
-        a.click();
+        downloadDataUrl(this.baseName() + '.png', cy.png({ full: true, scale: 2, bg: this.background() }));
     }
 
     exportSvg(): void {

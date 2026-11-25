@@ -31,3 +31,12 @@ packages/language/test/.generated/
 # Desktop application: staged app and installers
 packages/desktop/stage/
 packages/desktop/release/
+
+# VS Code extension packages (npx @vscode/vsce package)
+*.vsix
+
+# JetBrains plugin build (packages/jetbrains: ./gradlew buildPlugin)
+packages/jetbrains/build/
+packages/jetbrains/.gradle/
+packages/jetbrains/.intellijPlatform/
+packages/jetbrains/.kotlin/

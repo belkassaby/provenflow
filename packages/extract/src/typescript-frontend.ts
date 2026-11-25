@@ -212,7 +212,8 @@ class Extractor {
                 loc: this.ctx.loc(node),
                 inClass: cls?.name?.text,
                 inMember: member ? memberName(member) : undefined,
-                inTest: this.ctx.test
+                inTest: this.ctx.test,
+                injectedDefault: injectedDefault(node) || undefined
             });
         }
         if (isFunctionLike(node) && node.body) {
@@ -226,23 +227,8 @@ class Extractor {
 
     private stateFacts(node: ts.Node): void {
         // Initial values: declarations with initialisers, signal('x'), constructor writes, object creations.
-        if ((ts.isPropertyDeclaration(node) || ts.isVariableDeclaration(node)) && node.initializer) {
-            const symbol = this.checker.getSymbolAtLocation(node.name);
-            if (symbol && this.states.has(symbol)) {
-                let init: ts.Expression = node.initializer;
-                if (ts.isCallExpression(init) && init.arguments.length > 0) init = init.arguments[0];
-                this.addInitial(symbol, this.literalValues(init));
-            }
-        }
-        if (ts.isObjectLiteralExpression(node)) {
-            const spread = node.properties.some(ts.isSpreadAssignment);
-            for (const property of this.stateProperties(node)) {
-                const state = this.states.get(property.symbol);
-                if (!state) continue;
-                if (spread) this.recordWrite(property.node, state, property.value);
-                else this.addInitial(property.symbol, this.literalValues(property.value));
-            }
-        }
+        if ((ts.isPropertyDeclaration(node) || ts.isVariableDeclaration(node)) && node.initializer) this.initializerFact(node.name, node.initializer);
+        if (ts.isObjectLiteralExpression(node)) this.objectLiteralFacts(node);
         const target = this.writeTarget(node);
         if (target) {
             const state = this.states.get(target.symbol);
@@ -257,6 +243,41 @@ class Extractor {
         this.readFact(node);
     }
 
+    private initializerFact(name: ts.Node, initializer: ts.Expression): void {
+        const symbol = this.checker.getSymbolAtLocation(name);
+        if (!symbol || !this.states.has(symbol)) return;
+        const init = ts.isCallExpression(initializer) && initializer.arguments.length > 0 ? initializer.arguments[0] : initializer;
+        this.addInitial(symbol, this.literalValues(init));
+    }
+
+    /** An object created whole gives its fields initial values; an object that updates one (spread, partial) writes them. */
+    private objectLiteralFacts(node: ts.ObjectLiteralExpression): void {
+        const update = node.properties.some(ts.isSpreadAssignment) || this.isPartialUpdate(node);
+        for (const property of this.stateProperties(node)) {
+            const state = this.states.get(property.symbol);
+            if (!state) continue;
+            if (update) this.recordWrite(property.node, state, property.value);
+            else this.addInitial(property.symbol, this.literalValues(property.value));
+        }
+    }
+
+    /**
+     * `setViewState({ cellColorMode: 'gene' })`, `patch: Partial<View> = {...}`: an object given to a
+     * call or typed as a Partial changes fields of an existing object, unlike an object created whole.
+     */
+    private isPartialUpdate(node: ts.ObjectLiteralExpression): boolean {
+        let e: ts.Node = node;
+        while (ts.isParenthesizedExpression(e.parent) || ts.isAsExpression(e.parent) || ts.isSatisfiesExpression(e.parent)) e = e.parent;
+        const parent = e.parent;
+        if (ts.isCallExpression(parent) && parent.arguments.includes(e as ts.Expression)) {
+            const callee = parent.expression;
+            const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : '';
+            return !INITIALISERS.test(name);
+        }
+        const contextual = this.checker.getContextualType(node);
+        return contextual?.aliasSymbol?.getName() === 'Partial';
+    }
+
     private addInitial(symbol: ts.Symbol, values: string[] | null): void {
         if (!values) return;
         const set = this.initials.get(symbol) ?? new Set<string>();
@@ -268,9 +289,10 @@ class Extractor {
         const fn = enclosingFunction(node);
         const flow = this.sourcesOf(node, state);
         const handler = this.ctx.handlerOf(node);
+        const param = value && fn ? ownParameter(this.checker, value, fn) : undefined;
         const write: StateWriteFact = {
             variable: state.id,
-            targets: value ? this.literalValues(value) : null,
+            targets: value ? (this.literalValues(value) ?? (param ? null : this.typeValues(value))) : null,
             sources: flow.values ? [...flow.values] : null,
             event: handler ? handler.event : fn ? eventName(fn) : 'module',
             loc: this.ctx.loc(node),
@@ -279,11 +301,18 @@ class Extractor {
         };
         this.facts.writes.push(write);
         // A parameter written as is: its values come from the callers.
-        const e = value && skipParens(value);
-        if (e && !write.targets && ts.isIdentifier(e) && fn) {
-            const decl = this.checker.getSymbolAtLocation(e)?.valueDeclaration;
-            if (decl && ts.isParameter(decl) && decl.parent === fn) this.pendingParams.push({ write, fn, index: fn.parameters.indexOf(decl), param: decl });
-        }
+        if (param && fn && !write.targets) this.pendingParams.push({ write, fn, index: fn.parameters.indexOf(param), param });
+    }
+
+    /**
+     * Every value of an expression's type, when it is a finite union of literals: a write of a
+     * `ToolMode` can set any ToolMode. Over-approximating keeps a value from being called
+     * unreachable because the code that picks it is elsewhere (a caller, a template, another field).
+     */
+    private typeValues(expression: ts.Expression | ts.BindingName): string[] | null {
+        const type = this.checker.getTypeAtLocation(expression);
+        const values = literalValuesOf(this.checker.getBaseConstraintOfType(type) ?? type);
+        return values && values.length > 0 ? values : null;
     }
 
     /** Values of an expression when they are statically known literals. */
@@ -527,15 +556,18 @@ class Extractor {
             visit(sf);
         }
         for (const p of this.pendingParams) {
-            const sites = calls.get(p.fn) ?? [];
-            if (sites.length === 0) continue;
             const values = new Set<string>();
             let complete = true;
-            for (const call of sites) {
-                const arg = call.arguments[p.index];
-                const v = arg ? this.literalValues(arg) : p.param.initializer ? this.literalValues(p.param.initializer) : null;
+            const add = (v: string[] | null) => {
                 if (v) v.forEach(x => values.add(x));
                 else complete = false;
+            };
+            const sites = calls.get(p.fn) ?? [];
+            // Code this analysis does not see can call a public function with any value of its type.
+            if (sites.length === 0 || !onlyLocalCallers(p.fn)) add(this.typeValues(p.param.name));
+            for (const call of sites) {
+                const arg = call.arguments[p.index];
+                add(arg ? (this.literalValues(arg) ?? this.typeValues(arg)) : p.param.initializer ? this.literalValues(p.param.initializer) : null);
             }
             if (values.size === 0) continue;
             p.write.targets = [...values];
@@ -618,6 +650,32 @@ function literalDomain(type: ts.Type): string[] | null {
     const values = literalValuesOf(type);
     if (!values || values.length < 2 || values.length > MAX_DOMAIN) return null;
     return values;
+}
+
+/** `constructor(private s: Session = new Session())` in an @Injectable/@Component class: Angular passes `s`. */
+function injectedDefault(node: ts.NewExpression): boolean {
+    const param = node.parent;
+    if (!ts.isParameter(param) || param.initializer !== node || !ts.isConstructorDeclaration(param.parent)) return false;
+    const cls = param.parent.parent;
+    return ts.isClassDeclaration(cls) && (ts.getDecorators(cls) ?? []).some(d => /^(Injectable|Component|Directive|Pipe)\b/.test(d.expression.getText()));
+}
+
+/** Calls whose object argument is a value created whole (a signal's first value, a frozen constant). */
+const INITIALISERS = /^(signal|linkedSignal|model|input|computed|freeze|of|structuredClone)$/;
+
+/** The parameter of `fn` an expression is, as is (`this.mode = mode`). */
+function ownParameter(checker: ts.TypeChecker, value: ts.Expression, fn: ts.SignatureDeclaration): ts.ParameterDeclaration | undefined {
+    const e = skipParens(value);
+    if (!ts.isIdentifier(e)) return undefined;
+    const decl = checker.getSymbolAtLocation(e)?.valueDeclaration;
+    return decl && ts.isParameter(decl) && decl.parent === fn ? decl : undefined;
+}
+
+/** A private method, or a function its module does not export: every call of it is in the code analysed. */
+function onlyLocalCallers(fn: ts.FunctionLikeDeclaration): boolean {
+    if (ts.isMethodDeclaration(fn)) return (ts.getCombinedModifierFlags(fn) & ts.ModifierFlags.Private) !== 0 || ts.isPrivateIdentifier(fn.name);
+    if (ts.isFunctionDeclaration(fn)) return (ts.getCombinedModifierFlags(fn) & ts.ModifierFlags.Export) === 0;
+    return false;
 }
 
 function literalValuesOf(type: ts.Type): string[] | null {

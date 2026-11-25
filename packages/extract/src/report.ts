@@ -6,11 +6,13 @@
  * counterexample, to confirm the bug on the real code.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { ExtractionResult } from './project.js';
 import { formatLocation } from './ir.js';
 import { modelToPflow, slug, type Finding } from './models.js';
 import { codeQuality, rdjson, sarif } from './report-formats.js';
+import { scenarioFor } from './scenarios.js';
+import { trendTable, type HistoryEntry } from './history.js';
 
 export { codeQuality, fingerprint, rdjson, sarif } from './report-formats.js';
 
@@ -18,12 +20,15 @@ export interface WrittenFiles {
     dir: string;
     models: string[];
     scenarios: string[];
+    /** The scenarios that are skeletons to fill in (the others drive the real code). */
+    skeletons: string[];
     /** One folder per proposed change: the changed files and change.patch. */
     fixes: string[];
     report: string;
 }
 
-export function writeOutputs(result: ExtractionResult, dir: string): WrittenFiles {
+/** Writes the outputs of a run; `history` (this code base's earlier runs and this one) adds a section of trends to report.md. */
+export function writeOutputs(result: ExtractionResult, dir: string, history: HistoryEntry[] = []): WrittenFiles {
     mkdirSync(join(dir, 'models'), { recursive: true });
     const models = result.models.map(m => {
         const file = join('models', `${m.id}.pflow`);
@@ -31,14 +36,18 @@ export function writeOutputs(result: ExtractionResult, dir: string): WrittenFile
         return file;
     });
     const scenarios: string[] = [];
+    const skeletons: string[] = [];
     const withTrace = result.findings.filter(f => f.counterexample && f.counterexample.length > 1 && f.category !== 'architecture');
     if (withTrace.length > 0) mkdirSync(join(dir, 'scenarios'), { recursive: true });
+    const context = { models: result.models, facts: result.facts, root: resolve(result.root), folder: resolve(dir, 'scenarios') };
     withTrace.forEach((f, i) => {
         const python = f.loc?.file.endsWith('.py');
         const base = slug(`${f.model ?? 'finding'}-${f.rule}-${i + 1}`).replace(/[-.]/g, '_');
         const file = join('scenarios', python ? `test_${base}.py` : `${base}.test.ts`);
-        writeFileSync(join(dir, file), python ? pytestScenario(f) : vitestScenario(f));
+        const scenario = scenarioFor(f, context);
+        writeFileSync(join(dir, file), scenario.text);
         scenarios.push(file);
+        if (!scenario.runnable) skeletons.push(file);
     });
     const fixes: string[] = [];
     result.findings.filter(f => f.suggestedPatch?.files?.length).forEach((f, i) => {
@@ -50,12 +59,12 @@ export function writeOutputs(result: ExtractionResult, dir: string): WrittenFile
         writeFileSync(join(dir, folder, 'change.patch'), f.suggestedPatch!.diff);
         fixes.push(folder);
     });
-    writeFileSync(join(dir, 'report.md'), markdownReport(result, models, scenarios));
+    writeFileSync(join(dir, 'report.md'), markdownReport(result, models, scenarios, skeletons, history));
     writeFileSync(join(dir, 'report.json'), JSON.stringify(jsonReport(result), null, 2));
     writeFileSync(join(dir, 'report.sarif'), JSON.stringify(sarif(result), null, 2));
     writeFileSync(join(dir, 'report.codequality.json'), JSON.stringify(codeQuality(result), null, 2));
     writeFileSync(join(dir, 'report.rdjson'), JSON.stringify(rdjson(result), null, 2));
-    return { dir, models, scenarios, fixes, report: join(dir, 'report.md') };
+    return { dir, models, scenarios, skeletons, fixes, report: join(dir, 'report.md') };
 }
 
 export function summary(result: ExtractionResult): { error: number; warning: number; info: number } {
@@ -76,8 +85,8 @@ export function formatFindings(result: ExtractionResult, minimum: Finding['sever
     return lines.join('\n');
 }
 
-function markdownReport(result: ExtractionResult, models: string[], scenarios: string[]): string {
-    return [header(result), ...findingSections(result), patternsSection(result), qualitySection(result), proofsSection(result), paradigmSection(result), dependenciesSection(result), modelsSection(result, models), scenariosSection(scenarios), llmSection(result), notesSection(result)]
+function markdownReport(result: ExtractionResult, models: string[], scenarios: string[], skeletons: string[] = [], history: HistoryEntry[] = []): string {
+    return [header(result), ...findingSections(result), patternsSection(result), qualitySection(result), trendsSection(history), proofsSection(result), paradigmSection(result), dependenciesSection(result), modelsSection(result, models), scenariosSection(scenarios, skeletons), llmSection(result), notesSection(result)]
         .filter(Boolean)
         .join('\n');
 }
@@ -180,11 +189,7 @@ export function qualitySection(result: Pick<ExtractionResult, 'quality'>): strin
     out.push(`| unknown / undeclared dependencies | ${m.dependencies.unknown} / ${m.dependencies.undeclared} |`);
     if (m.coverage) out.push(`| line coverage | ${m.coverage.percent}% (${m.coverage.covered} of ${m.coverage.total} lines) |`);
     out.push('');
-    if (m.hotspots.length) {
-        out.push('Most complex functions:', '', '| function | file | Cognitive Complexity | nesting |', '| --- | --- | --- | --- |');
-        for (const h of m.hotspots) out.push(`| ${h.name} | \`${h.file}:${h.line}\` | ${h.cognitive} | ${h.nesting} |`);
-        out.push('');
-    }
+    out.push(...hotspotsTable(m));
     const conventions = result.quality.conventions.filter(c => c.names > 0);
     if (conventions.length) {
         out.push('Naming conventions applied (from the config, the project itself, or the language\'s style guide):', '', '| language | kind | style | from | names fitting |', '| --- | --- | --- | --- | --- |');
@@ -229,10 +234,37 @@ function modelsSection(result: ExtractionResult, models: string[]): string {
     return out.join('\n');
 }
 
-function scenariosSection(scenarios: string[]): string {
+function trendsSection(history: HistoryEntry[]): string {
+    return history.length ? ['## Trends', '', ...trendTable(history)].join('\n') : '';
+}
+
+/** The functions to simplify first: complex, in files that change often. */
+function hotspotsTable(m: ExtractionResult['quality']['metrics']): string[] {
+    if (!m.hotspots.length) return [];
+    if (!m.churn) {
+        const rows = m.hotspots.map(h => `| ${h.name} | \`${h.file}:${h.line}\` | ${h.cognitive} | ${h.nesting} |`);
+        return ['Most complex functions (no git history to weigh them with):', '', '| function | file | Cognitive Complexity | nesting |', '| --- | --- | --- | --- |', ...rows, ''];
+    }
+    const rows = m.hotspots.map(h => `| ${h.name} | \`${h.file}:${h.line}\` | ${h.cognitive} | ${h.changes} | ${h.score} |`);
+    return [
+        `Hotspots: complex functions in files that change often (${m.churn.commits} commit(s) in the last ${m.churn.months} months). Simplify these first.`,
+        '',
+        '| function | file | Cognitive Complexity | commits to the file | score |',
+        '| --- | --- | --- | --- | --- |',
+        ...rows,
+        ''
+    ];
+}
+
+function scenariosSection(scenarios: string[], skeletons: string[]): string {
     if (scenarios.length === 0) return '';
-    const out = ['## Scenarios', '', 'A test per counterexample: replay it on the real code. If the expectation fails, the bug is real; if it passes, the model is coarser than the code (declare the missing guard or terminal state in provenflow.config.json).', ''];
-    scenarios.forEach(s => out.push(`- \`${s}\``));
+    const out = [
+        '## Scenarios',
+        '',
+        'A test per counterexample. Most drive the real code along the counterexample and check the property: they fail while the bug is there and pass once it is fixed, so they can join the project\'s tests as regression tests. A test that passes before any fix means the model is coarser than the code (declare the missing guard or terminal state in provenflow.config.json). Skeletons list the steps to write by hand.',
+        ''
+    ];
+    scenarios.forEach(s => out.push(`- \`${s}\`${skeletons.includes(s) ? ' (skeleton)' : ''}`));
     out.push('');
     return out.join('\n');
 }
@@ -263,12 +295,12 @@ function icon(severity: Finding['severity']): string {
 }
 
 function sourceLabel(source: Finding['source']): string {
-    const tools: Partial<Record<Finding['source'], string>> = { semgrep: 'Semgrep', codeql: 'CodeQL', infer: 'Infer', esbmc: 'proved by ESBMC on the code', cbmc: 'proved by CBMC on the code', kani: 'proved by Kani on the code', sarif: 'SARIF import', build: 'build' };
+    const tools: Partial<Record<Finding['source'], string>> = { semgrep: 'Semgrep', codeql: 'CodeQL', infer: 'Infer', esbmc: 'proved by ESBMC on the code', cbmc: 'proved by CBMC on the code', kani: 'proved by Kani on the code', sarif: 'SARIF import', build: 'build', osv: 'OSV database' };
     return source === 'nuxmv' ? 'proved by nuXmv' : source === 'graph' ? 'found on the model graph' : source === 'llm' ? 'LLM' : (tools[source] ?? 'static analysis');
 }
 
 /** Everything the editor shows for an imported code base, including the .pflow text of every model. */
-export function webReport(result: ExtractionResult): unknown {
+export function webReport(result: ExtractionResult, history: HistoryEntry[] = []): unknown {
     const models = result.models.map(m => `models/${m.id}.pflow`);
     return {
         ...(jsonReport(result) as object),
@@ -284,7 +316,7 @@ export function webReport(result: ExtractionResult): unknown {
             notes: m.notes,
             pflow: modelToPflow(m)
         })),
-        markdown: markdownReport(result, models, [])
+        markdown: markdownReport(result, models, [], [], history)
     };
 }
 
@@ -296,45 +328,4 @@ function jsonReport(result: ExtractionResult): unknown {
         facts: { stateVariables: facts.stateVariables.length, writes: facts.writes.length, resources: facts.resources.length, classes: facts.classes.length, functions: facts.functions.length, modules: facts.modules.length },
         models: models.map(m => ({ id: m.id, kind: m.kind, subject: m.subject, loc: m.loc, states: m.model.states.length, transitions: m.model.transitions.length, specs: m.model.specs.map(s => `${s.name} := ${s.expression}`), notes: m.notes }))
     };
-}
-
-function steps(f: Finding, comment: string): string {
-    return (f.counterexample ?? []).map((c, i) => `${comment}   ${i}. ${c.event ? `${c.event}${c.loc ? ` (${formatLocation(c.loc)})` : ''} -> ` : 'start: '}${c.state}`).join('\n');
-}
-
-function vitestScenario(f: Finding): string {
-    const title = `${f.subject}: ${f.rule}`.replace(/'/g, "\\'");
-    return `// Scenario generated by pflow extract from a counterexample.
-// ${f.message.replace(/\n/g, ' ')}
-// Property: ${f.spec ?? '-'}
-// Replay these steps on the real code:
-${steps(f, '//')}
-// If the final expectation fails, the bug is real: apply the fix
-//   ${f.fix}
-// If it passes, the model is coarser than the code: declare the guard or terminal state in provenflow.config.json.
-import { describe, it } from 'vitest';
-
-describe('${title}', () => {
-    it.todo('drives the code along the counterexample and expects the property to hold');
-});
-`;
-}
-
-function pytestScenario(f: Finding): string {
-    return `"""Scenario generated by pflow extract from a counterexample.
-
-${f.message}
-Property: ${f.spec ?? '-'}
-Replay these steps on the real code:
-${steps(f, '')}
-If the final assertion fails, the bug is real: ${f.fix}
-If it passes, the model is coarser than the code: declare the guard or terminal state in provenflow.config.json.
-"""
-import pytest
-
-
-@pytest.mark.skip(reason="fill in the steps above, then remove this mark")
-def test_counterexample():
-    ...
-`;
 }

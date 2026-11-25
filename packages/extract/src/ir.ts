@@ -192,6 +192,8 @@ export interface InstantiationFact {
     inMember?: string;
     /** The file is a test. */
     inTest: boolean;
+    /** The default value of a constructor parameter of a class the dependency injector creates. */
+    injectedDefault?: boolean;
 }
 
 export interface FunctionFact {

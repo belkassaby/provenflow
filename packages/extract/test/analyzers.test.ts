@@ -251,6 +251,20 @@ describe('pull request review', () => {
         expect(gh.issue[0].body).toContain('0 new, 1 already reported, 0 no longer reported');
     });
 
+    it('lists findings answered as false positives on the pull request, with the ignore entries that accept them', async () => {
+        const gh = fakeGithub();
+        const target = { token: 't', repository: 'o/r', pull: 7, commit: 'abc' };
+        const leak = finding(4, { rule: 'resource-leak', subject: 'Poller' });
+        const payload: ReviewPayload = { repository: 'o/r', pull: 7, commit: 'abc', summary: '### ProvenFlow review', comments: reviewComments([leak], changed, () => undefined), keys: ['resource-leak|Poller|src/a.ts'] };
+        await publishReview(target, payload, gh.fetchImpl);
+        gh.inline.push({ id: 99, in_reply_to_id: gh.inline[0].id, body: 'Not a leak: start() returns early while the timer is set. The model missed the guard.' });
+        await publishReview({ ...target, commit: 'def' }, { ...payload, commit: 'def' }, gh.fetchImpl);
+        expect(gh.calls.filter(c => c === 'POST /repos/o/r/pulls/7/reviews')).toHaveLength(1);
+        expect(gh.issue[0].body).toContain('1 finding(s) answered as false positives on this pull request');
+        expect(gh.issue[0].body).toContain('"reason": "Not a leak: start() returns early while the timer is set."');
+        expect(gh.issue[0].body).toContain('"file": "src/a.ts"');
+    });
+
     it('checks a review file from a fork against the pull request before posting it', async () => {
         const gh = fakeGithub('abc');
         const target = { token: 't', repository: 'o/r', pull: 7, commit: 'abc' };

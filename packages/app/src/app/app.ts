@@ -8,6 +8,7 @@ import { downloadText, pickFile } from './file-io';
 import { CodeImport } from './code-import/code-import';
 import { C4Page } from './c4/c4-page';
 import { DesktopBridge, type DesktopFile } from './desktop-bridge';
+import { menuCommands } from './host-commands';
 import { CodeReportPage } from './code-import/code-report-page';
 import { DocumentTabs } from './document-tabs/document-tabs';
 import { LlmSettingsDialog } from './llm-settings/llm-settings-dialog';
@@ -51,6 +52,9 @@ export class App implements OnInit {
     readonly codeReport = inject(CodeImport);
     readonly codeExport = inject(CodeExport);
     readonly theme = inject(ThemeService);
+    private readonly desktop = inject(DesktopBridge);
+    /** In an IDE tab: the document only, without the menu bar and the tabs (the IDE has them). */
+    readonly embedded = this.desktop.embedded;
     private readonly injector = inject(Injector);
     readonly exampleGroups = [...new Set(EXAMPLES.map(e => e.group))].map(name => ({ name, examples: EXAMPLES.filter(e => e.group === name) }));
     readonly tab = signal<Tab>('properties');
@@ -89,28 +93,22 @@ export class App implements OnInit {
         effect(() => {
             if (active()) this.tab.set('trace');
         });
-        // In the desktop application: its native menus, and the files opened with it.
-        const desktop = inject(DesktopBridge);
+        // In the desktop application or an IDE: their menus, and the files opened with them. In an
+        // IDE the editor shows no menu bar or tabs of its own, and its messages go to the IDE.
+        const desktop = this.desktop;
+        effect(() => {
+            const text = this.message();
+            if (text) desktop.notify(text);
+        });
         afterNextRender(() =>
             desktop.connect(
+                menuCommands(this, panel => this.tab.set(panel)),
                 {
-                    'new-diagram': () => this.newDiagram(),
-                    save: () => this.save(),
-                    'import-code': () => this.importCodeBase(),
-                    c4: () => this.openC4(),
-                    'export-png': () => this.exportPng(),
-                    'export-svg': () => this.exportSvg(),
-                    'export-smv': () => this.exportSmv(),
-                    'export-python': () => this.codeExport.downloadPython(),
-                    'export-notebook': () => this.codeExport.downloadNotebook(),
-                    check: () => void this.check(),
-                    simulate: () => this.simulate(),
-                    'llm-settings': () => this.openLlmSettings(),
-                    'help-guide': () => this.openHelp('guide'),
-                    'help-walkthroughs': () => this.openHelp('walkthroughs'),
-                    'toggle-theme': () => this.theme.toggle()
+                    diagram: file => this.documents.open(file.text, file.name, 'file'),
+                    model: file => void this.openCodeModel({ text: file.text, name: file.name, check: true }),
+                    c4: file => this.openC4(file)
                 },
-                file => (file.kind === 'c4' ? this.openC4(file) : this.documents.open(file.text, file.name, 'file'))
+                folder => this.openC4(folder)
             )
         );
     }

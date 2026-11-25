@@ -221,6 +221,24 @@ Machines declared with XState, LangGraph, CrewAI Flows or python-transitions are
 | `stale-write-after-await`: a write after an `await` relies on a check made before it, while other methods write the variable | warning | analysis |
 | `property-violated`: a property declared in the config is false | error | nuXmv |
 
+The values a write can set come from the code:
+- a literal (`this.mode = 'draw'`) sets that value;
+- any other value of a finite union type (another field, an object's property, a function's
+  result) can set every value of that type;
+- a parameter written as is (`this.mode = mode`) takes the values its callers pass. A private method
+  takes only those, since every call is in the code; a public method can also be called by code the
+  analysis does not see, so it can set every value of the parameter's type;
+- an Angular template writes through event bindings (`(click)="tab.set('home')"`) and two-way
+  bindings (`[(mode)]="maskMode"` sets any value of `maskMode`'s type), and reads through `@if`,
+  `*ngIf` and interpolations;
+- an object passed to a call (`setViewState({ mode: 'gene' })`) or typed `Partial<...>` writes the
+  fields it names; an object created whole gives them initial values.
+
+A write whose values stay unknown (an `any`, or a computed value in a language without types) leaves
+values out of the model. For that variable, `unreachable-state`, `stuck-state` and `cannot-settle`
+are not reported: the model's notes list the writes, and `--llm` can resolve them. A field declared
+without a value starts in `unset`, which is not a state it has to come back to.
+
 ### Resource lifecycles (typestate)
 
 These resources are tracked, per owning class:
@@ -239,6 +257,21 @@ class's public methods and dispose hooks (`ngOnDestroy`, `DestroyRef.onDestroy`,
 | `resource-leak`: the resource can be lost, i.e. acquired again while held, or held when the object is disposed or dropped | warning | nuXmv `INVARSPEC !(state = leaked)` |
 | `release-not-guaranteed`: a function releases a temp dir, file or lock only on the normal path | warning | analysis (release outside `finally`/`with`) |
 | `unremovable-listener`: an inline listener on a global target, which can never be removed | warning | analysis |
+
+What the model knows about the code and the framework, so that it does not report what cannot happen:
+- **guards**: an acquisition is not repeated while held when its function returns early on the
+  handle (`if (this.sub) return;`), on a field the function sets itself (`if (this.busy) return;
+  this.busy = true;`), or runs inside a check that none is held (`if (el && !this.observer)`). A
+  method calling a guarded helper is guarded too;
+- **hooks called once**: Angular calls `ngOnInit`, `ngAfterViewInit` and `ngAfterContentInit` once
+  per instance;
+- **dispose methods**: `ngOnDestroy`, `destroy`, `dispose`, `unsubscribe`, `detach`... (and `close`,
+  `stop`, `disconnect`... for `Closeable`/`Disposable` classes);
+- **releases kept in a closure**: `this.end = () => removeEventListener(...)` releases wherever
+  `this.end()` is called;
+- **listeners kept in a collection** (`this.listeners.push([type, listener])`) are not lost when
+  more are added;
+- **timeouts**: a pending `setTimeout` of an object without a lifecycle fires once and is gone.
 
 ### Design patterns
 
@@ -435,7 +468,48 @@ finding says **✓ confirmed on the code**, **✗ not reproduced** or nothing:
 | `unreachable-state` of a C state variable | ESBMC/CBMC run a generated harness calling the file's functions in any order, 6 calls deep, and assert the value is never reached: *proved* confirms the finding, a trace refutes it (the model missed a transition) | C |
 
 The replay runs the project's code, with timers and I/O mocked, in a child process with a
-timeout; turn it off with `--no-confirm`.
+timeout; turn it off with `--no-confirm`. Only analyse code you trust to run.
+
+### Regression tests from counterexamples
+
+Each counterexample also becomes a test in `scenarios/`, next to the report. When the counterexample
+can be driven on the real code (as the replay drives it) and reaching its last state is itself the
+violation, the test makes the same calls and checks the property:
+- a `resource-leak` of a timer: fewer than 2 timers may still run;
+- a `stale-write-after-await`: the write made meanwhile must not be lost;
+- a property such as `!(state = jammed)`: the state must not be reached.
+
+The test fails while the bug is there and passes once it is fixed, so it can be moved among the
+project's tests (TypeScript and JavaScript as vitest, Python as pytest) to keep the bug from coming
+back. Its header has the counterexample, the property, the replay's verdict and the fix.
+
+Properties such as `cannot-settle` (`AG EF`) are broken by the missing way out, not by reaching the
+state, so they stay **skeletons**: the steps to replay, to finish by hand. report.md marks them.
+
+### How often counterexamples are real: `pflow bench`
+
+```sh
+pflow bench ../app ../lib ../service -o precision.md
+```
+
+It analyses each folder, replays every counterexample on the code (not only the first 12, as an
+analysis does), and counts per rule how many were confirmed, refuted, or could not run. The headline
+is the share confirmed of those the code decided. A refuted counterexample is a false alarm of the
+model (it is coarser than the code); one that could not run, because the class needs real
+dependencies or a tool is missing, says nothing either way. `--json` gives the counts.
+
+The replay runs the code of every folder given, so measure only code you trust to run.
+
+`--labels <feedback.json>` also measures the findings people answered (see
+[Answers to reviews](#answers-to-reviews-pflow-feedback)): per rule, how many were answered as false
+positives, fixed or declined, and how many of the false positives the analysis **still reports**.
+The file applies to the folder named like its repository. `--fail-on-labels` exits 5 when any false
+positive is still reported.
+
+This repository keeps such files in `bench/labels/`, each with the revision its answers were checked
+against. `npm run bench:reviews` (after `npm run build`) clones each repository at that revision into
+`.provenflow/bench/`, installs its dependencies without running their scripts, and runs the bench
+with its labels: run it after changing a model, to see that no answered false positive comes back.
 
 ## Code quality: duplication, complexity, naming, dependencies, tests
 
@@ -482,6 +556,15 @@ if the change makes it worse ("Raised from 18 by this change").
 "languages": { "python": { "complexity": { "cognitive": 12 } } }
 ```
 
+**Hotspots.** Complex code nobody touches costs little; complex code changed every week is where
+bugs and slow reviews come from. report.md ranks the functions to simplify first by their
+Cognitive Complexity times the commits that changed their file in the last 12 months (`git log`).
+Outside a git repository, or with `"hotspots": false`, it lists the most complex functions.
+
+```json
+"hotspots": { "months": 6 }
+```
+
 ### Naming conventions
 
 Class, function, method and field names are compared with the style expected for their language
@@ -506,6 +589,24 @@ What is read for each language:
 - **Python:** `requirements*.txt`, `pyproject.toml` (PEP 621 and Poetry), `setup.cfg`/`setup.py` and
   `Pipfile`; the standard library and what is installed come from `python3`.
 - **Go:** `go.mod`.
+
+**Known vulnerabilities (OSV).** With `--osv` (or `"advisories": { "osv": true }`), the exact versions
+the project installs are checked against the [OSV](https://osv.dev) database. They are read from
+`package-lock.json`, `poetry.lock`, `uv.lock`, pinned `requirements*.txt` lines, `Cargo.lock`,
+`go.mod`, `composer.lock` and literal versions in `pom.xml`.
+
+| rule | severity | when |
+| --- | --- | --- |
+| `vulnerable-dependency` | error for critical and high advisories, warning for moderate, info for low | A locked version has known vulnerabilities. The finding names the advisories (GHSA, CVE) and the versions that fix them, on the lockfile's line. |
+
+Only package names and versions are sent to osv.dev, never code. Local, linked and workspace
+packages, packages from another registry than the public one, and names matching `private` are
+never sent. Answers are cached for a day in `.provenflow/cache/osv`. When osv.dev cannot be reached,
+a note says so and the analysis goes on.
+
+```json
+"advisories": { "osv": true, "private": ["@acme/*", "acme-*"] }
+```
 
 ### Tests and coverage
 
@@ -653,7 +754,8 @@ on data) are dropped, so the model can do more than the code.
   model. It holds for the code too, *as far as the model captures it*. What it does not capture:
   - writes through aliases or reflection;
   - state changed by code outside the project;
-  - computed values that stay unresolved (listed in the model's notes).
+  - computed values that stay unresolved (listed in the model's notes; the variable's reachability,
+    stuck states and settling are then not checked at all).
 - **A counterexample** is a run of the model. The code may not allow it, because of a condition on
   another variable. That is why each counterexample comes with a test skeleton in `scenarios/`:
   - replay the calls on the real code;
@@ -697,9 +799,14 @@ cycles and paradigm profiles.
   },
   "duplication": { "minTokens": 100, "minLines": 10, "similarity": 0.8 },
   "coverage": { "reports": ["coverage/lcov.info"] },
+  "hotspots": { "months": 12 },
+  "advisories": { "osv": true, "private": ["@acme/*"] },
+  "history": ".provenflow/history.jsonl",
+  "c4": { "model": "docs/c4/workspace.dsl" },
   "mutation": { "test": "npm test", "max": 20 },
   "baseline": "provenflow-baseline.json",
   "agents": { "failOn": "warning", "requireTests": true },
+  "review": { "feedback": "provenflow-feedback.json", "minPrecision": 0.5, "minAnswers": 5, "rules": { "long-function": "inline" } },
   "checks": { "skip": ["flag-argument"] }
 }
 ```
@@ -719,9 +826,17 @@ cycles and paradigm profiles.
   false` turns off the dependency check.
 - `coverage.reports` lists the coverage reports to read; `mutation` sets the test command and the
   number of mutants.
+- `hotspots.months` is how much git history weighs the hotspots (`false`: none);
+  `advisories` turns on the OSV check and lists private package names never sent; `history` is
+  where each run's measures go (`false`: nowhere); `c4.model` is the C4 model compared with the code
+  (found under `docs/` by default; `false` turns the comparison off).
 - `baseline` is the file of accepted findings (default `provenflow-baseline.json` when it exists).
 - `agents` sets how lines written by coding agents are held: `failOn`, `requireTests`, and `authors`
   (extra patterns that recognise an agent).
+- `review` sets what a pull-request review comments on inline: the answers file (`feedback`,
+  `false` for none), the share of answered findings a rule needs to have been real (`minPrecision`,
+  after `minAnswers` answers), and `rules` placed `inline` or in the `summary` whatever the answers
+  say. See [Answers to reviews](#answers-to-reviews-pflow-feedback).
 - `checks` selects the entries of the [patterns and practices catalogue](#patterns-and-practices-the-catalogue)
   to check: `select` replaces the default selection, `skip` removes entries from it.
 
@@ -856,8 +971,12 @@ the build or type check on a copy). The review then opens: the code before and a
 the LLM's explanation, and the verdict. Edit the right side and **Verify this version**, ask for
 a **New LLM fix**, or **Apply** it. Each click asks the LLM again (these answers are not cached).
 
-The same from the API: `POST /api/fix { path | files, finding, llm }`, and
-`POST /api/verify-change { path | files, finding, changed: [{ file, after }] }` for your version.
+The same from the API: `POST /api/fix { path | files, finding, llm }` (or `how: 'analysis'` for the
+fix without an LLM), and `POST /api/verify-change { path | files, finding, changed: [{ file, after }] }`
+for your version. A folder the server did not analyse itself (the IDEs analyse with `pflow extract`)
+is analysed with the first request; the next ones reuse that analysis while no source file changed,
+and otherwise redo only the changed files. The VS Code extension and the JetBrains plugin use these
+to fix any finding in a diff ([docs/vscode.md](vscode.md#fixes), [docs/jetbrains.md](jetbrains.md#fixing-a-finding-in-a-diff)).
 
 ## LLM assistance, verified
 
@@ -904,7 +1023,7 @@ so a run can be reproduced and a second run costs nothing.
 | `report.codequality.json` | GitLab Code Quality (merge request widget) |
 | `report.rdjson` | reviewdog: comments on GitHub, GitLab, Gerrit, Bitbucket or Gitea; verified changes as suggestions |
 | `models/*.pflow` | the ProvenFlow editor: Open .pflow… to see, check and replay |
-| `scenarios/*` | a vitest/pytest skeleton per counterexample |
+| `scenarios/*` | a vitest/pytest regression test per counterexample (or a skeleton to finish, see [Regression tests from counterexamples](#regression-tests-from-counterexamples)) |
 
 The exit code is 5 when there are findings at or above `--fail-on`, beyond the baseline. That is
 `error` by default; use `warning` for stricter gates, or `none`. report.md also has a **Code quality**
@@ -947,6 +1066,34 @@ Later pushes do not repeat the review. Each comment carries a hidden marker with
 `--state <dir>` keeps the run between pushes; the Action keeps it in the Actions cache, so a push
 re-analyses only the files it changed.
 
+### Answers to reviews: `pflow feedback`
+
+A reply to a review comment is a verdict on its finding. `pflow feedback` reads the replies on the
+pull requests of a repository and writes them to `provenflow-feedback.json`:
+
+```sh
+pflow feedback owner/repo                 # GITHUB_TOKEN, or the GitHub CLI's login
+pflow feedback owner/repo --max 50 -o provenflow-feedback.json
+```
+
+Each answered finding gets a verdict from the first sentence of its first reply: `false-positive`
+("Not a leak: ...", "False positive", "Reachable: ..."), `fixed` ("Fixed in abc1234", "Split
+..."), `declined` ("Leaving this one ..."), `outdated` ("Already gone ...") or `unclear`. Check the
+`unclear` ones and correct any verdict by hand: a later run adds new answers and keeps the ones
+already in the file.
+
+Commit the file at the root of the code base. Reviews then use it:
+- a finding answered as a false positive is not commented on again, on any pull request: it is
+  listed in the summary with a link to the answer;
+- a rule whose answered findings were real (fixed) less often than `review.minPrecision` (default
+  50%, once it has `review.minAnswers` answers, default 5) goes to the summary instead of inline
+  comments;
+- `review.rules` places a rule whatever the answers say (`"inline"` or `"summary"`).
+
+On the pull request itself, a finding answered as a false positive is listed in the summary with the
+`ignore` entry that accepts it, the answer's first sentence as its `reason`, ready to paste into
+provenflow.config.json.
+
 ### The GitHub Action
 
 ```yaml
@@ -960,7 +1107,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }          # the base of the pull request is needed for the diff
-      - uses: belkassaby/provenflow@v0
+      # Pin a commit (the comment gives its version): a moving tag such as @v0 changes the analysis
+      # between two pushes, so the same code can get a different review.
+      - uses: belkassaby/provenflow@<commit-sha> # v0.x.y
         with:
           fail-on: error                  # the check fails on errors of the changed lines (warning, none)
 ```
@@ -975,6 +1124,8 @@ jobs:
 | `mutate` | `0` | mutation-test up to this many changed lines (needs the dependencies installed) |
 | `check-run` | `false` | also post a check run named ProvenFlow with every finding as an annotation (`checks: write`) |
 | `fix` | `true` | propose verified fixes, posted as suggestions |
+| `fix-pr` | `false` | also open one pull request into the pull request's branch with every verified fix (needs `contents: write` and `pull-requests: write`; not for pull requests from forks) |
+| `osv` | `false` | report known vulnerabilities of the locked dependency versions, from osv.dev (sends package names and versions, never code) |
 | `files` | `false` | review the whole changed files, not only the changed lines |
 | `semgrep` / `cbmc` / `infer` | `true` / `false` / `false` | install the analyser on the runner |
 | `incremental` | `true` | keep each run in the Actions cache, and re-analyse only what a push changed |
@@ -1014,7 +1165,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { name: provenflow-review, run-id: '${{ github.event.workflow_run.id }}', github-token: '${{ github.token }}' }
-      - uses: belkassaby/provenflow@v0
+      - uses: belkassaby/provenflow@<commit-sha> # v0.x.y, the same as the review
         with: { post-review-file: provenflow-review.json }
 ```
 
@@ -1089,6 +1240,45 @@ request exists (recipes in `examples/ci/`):
 - **reviewdog** (GitHub, GitLab, Gerrit, Bitbucket, Gitea): `reviewdog -f=rdjson
   -filter-mode=added < report.rdjson` (`examples/ci/reviewdog.yml`).
 - **Anything else:** the exit code (5 on new findings), `report.sarif` and `report.json`.
+
+## Trends over time: pflow trends
+
+Each `pflow extract`, and each analysis in the editor, adds a line of measures to the code base's
+history (`.provenflow/history.jsonl`, or the config's `"history": "path"`; `false` or `--no-history`
+keeps none): the date and commit, errors, warnings and notes, findings per category, duplicated
+code, complexity, false properties and coverage. report.md shows how they moved in a **Trends**
+section, and so does:
+
+```sh
+pflow trends                          # this code base
+pflow trends --backfill 12            # first measure 12 older commits, spread over the last year
+pflow trends ../app ../lib            # several code bases
+pflow trends --projects               # this one and the owner's other projects (as pflow c4 finds them)
+```
+
+Each measure shows its first and latest value, the change, and a sparkline of every run. A commit
+measured twice keeps its latest measure. `--backfill` analyses the older versions from git without
+checking them out (no analysers, no replay), so it changes nothing in the working tree. `.provenflow/`
+is gitignored: in CI, keep the history in the cache or point `history` at a committed file.
+
+## Every verified fix as one pull request: pflow fix-pr
+
+```sh
+pflow fix-pr . --dry-run            # the commit it would push, and its description
+pflow fix-pr .                      # push it to provenflow/fixes-<branch> and open the pull request
+pflow review . --base origin/main --fix --fix-pr --github
+```
+
+The verified fixes of a run (`--fix`, and with `--llm` the LLM's) are applied one on top of the
+other. A fix whose text another fix already changed is left out and named in the description. The
+result is committed with git's plumbing on a separate index, so the working tree and the index stay
+as they are. The commit is pushed to its own branch, and a pull request is opened, or the open one
+updated, when `GITHUB_TOKEN` and `GITHUB_REPOSITORY` are set. Otherwise the branch is pushed and you
+open the pull request.
+
+On a pull request (in GitHub Actions), the fixes are made on top of the pull request's head commit,
+not the merge commit the checkout made, and proposed to its branch (`provenflow/fixes-pr-<n>` into
+it). A pull request from a fork cannot receive pushes: its fixes stay suggestions in the review.
 
 ## Comparing two versions: pflow compare
 
