@@ -42,7 +42,7 @@ The two properties are optional:
 
 `npm run build:jetbrains` runs `./gradlew buildPlugin` without them.
 
-This writes `packages/jetbrains/build/distributions/provenflow-jetbrains-0.2.0.zip`. To install it,
+This writes `packages/jetbrains/build/distributions/provenflow-jetbrains-0.2.1.zip`. To install it,
 open **Settings | Plugins**, then **⚙ → Install Plugin from Disk…**, pick the zip, and restart the
 IDE. To try it without installing, `./gradlew runIde` (with the same properties) starts a sandboxed
 IDE with the plugin loaded.

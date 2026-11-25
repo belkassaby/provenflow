@@ -718,8 +718,8 @@ ProvenFlow editor in VS Code tabs ([docs/vscode.md](docs/vscode.md)):
 
 ```sh
 npm run build:vscode                     # build it
-cd packages/vscode && npx @vscode/vsce package --no-dependencies   # provenflow-vscode-0.2.0.vsix
-code --install-extension provenflow-vscode-0.2.0.vsix   # or Extensions view → ⋯ → Install from VSIX…
+cd packages/vscode && npx @vscode/vsce package --no-dependencies   # provenflow-vscode-0.2.1.vsix
+code --install-extension provenflow-vscode-0.2.1.vsix   # or Extensions view → ⋯ → Install from VSIX…
 ```
 
 ### 5. Or in a JetBrains IDE
@@ -728,7 +728,7 @@ The JetBrains plugin does the same in IntelliJ IDEA, WebStorm, PyCharm and the o
 Platform IDEs, 2026.2 or later ([docs/jetbrains.md](docs/jetbrains.md)):
 
 ```sh
-cd packages/jetbrains && ./gradlew buildPlugin   # build/distributions/provenflow-jetbrains-0.2.0.zip
+cd packages/jetbrains && ./gradlew buildPlugin   # build/distributions/provenflow-jetbrains-0.2.1.zip
 # Settings | Plugins | ⚙ → Install Plugin from Disk…
 ```
 

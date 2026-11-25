@@ -1,6 +1,6 @@
 {
   "name": "@provenflow/app",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --proxy-config proxy.conf.json",
@@ -24,7 +24,7 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
     "@lezer/highlight": "^1.2.4",
-    "@provenflow/language": "0.2.0",
+    "@provenflow/language": "0.2.1",
     "cytoscape": "^3.34.3",
     "cytoscape-dagre": "^4.0.1",
     "cytoscape-edgehandles": "^4.0.1",

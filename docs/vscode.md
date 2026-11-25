@@ -95,7 +95,7 @@ npm run build                 # pflow itself (packages/server/out/cli.js)
 npm run build:vscode          # the extension (packages/vscode/out)
 cd packages/vscode
 npx @vscode/vsce package --no-dependencies
-code --install-extension provenflow-vscode-0.2.0.vsix
+code --install-extension provenflow-vscode-0.2.1.vsix
 ```
 
 `--no-dependencies` is needed because the extension has no run-time dependencies, and npm
