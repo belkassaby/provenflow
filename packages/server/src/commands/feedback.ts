@@ -1,7 +1,7 @@
 /** `pflow feedback <owner/repo>`: the verdicts people gave in replies to ProvenFlow's review comments, as a file. */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { FEEDBACK_FILE, harvestFeedback, labelRows, labelsMarkdown, mergeFeedback, type ReviewFeedback } from '@provenflow/extract';
+import { FEEDBACK_FILE, harvestFeedback, labelRows, labelsMarkdown, mergeFeedback, PROVENFLOW_VERSION, sameMinor, type ReviewFeedback } from '@provenflow/extract';
 import type { Values } from './shared.js';
 
 /** GITHUB_TOKEN or GH_TOKEN, else the GitHub CLI's token. */
@@ -31,5 +31,7 @@ export async function feedbackCommand(values: Values, args: string[]): Promise<n
     const unclear = feedback.labels.filter(l => l.verdict === 'unclear').length;
     console.log(labelsMarkdown(repository, labelRows(feedback.labels)));
     console.log(`${feedback.labels.length} answered finding(s) in ${output}${previous ? ` (${feedback.labels.length - previous.labels.length} new)` : ''}.${unclear ? ` ${unclear} reply(ies) could not be classified: set their "verdict" by hand.` : ''}`);
+    const current = feedback.labels.filter(l => sameMinor(l.version, PROVENFLOW_VERSION)).length;
+    console.log(`${current} of them answer findings of ProvenFlow ${PROVENFLOW_VERSION.replace(/\.\d+$/, '.x')}: only those move a rule to the summary of later reviews; any answer as a false positive keeps its own finding there.`);
     return 0;
 }

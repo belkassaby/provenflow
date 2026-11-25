@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { classifyReply, ignoreEntry, labelRows, labelsFromComments, mergeFeedback, placeFindings, placementMarkdown, rulePrecision, type Finding, type ReviewFeedback, type ReviewLabel } from '../src/index.js';
+import { readFileSync } from 'node:fs';
+import { classifyReply, commentVersion, ignoreEntry, labelRows, labelsFromComments, mergeFeedback, placeFindings, placementMarkdown, PROVENFLOW_VERSION, rulePrecision, sameMinor, versionMarker, type Finding, type ReviewFeedback, type ReviewLabel } from '../src/index.js';
 
 describe('review feedback', () => {
     it('reads the verdict from the first sentence of a reply', () => {
@@ -15,7 +16,7 @@ describe('review feedback', () => {
     });
 
     it('labels a finding with the first reply that is not ProvenFlow’s own', () => {
-        const finding = { id: 1, body: '**⚠️ resource-leak** · A\n\n<!-- provenflow:resource-leak|A subscription this.sub|src/a.ts -->', created_at: '2026-01-01' };
+        const finding = { id: 1, body: '**⚠️ resource-leak** · A\n\n<!-- provenflow:resource-leak|A subscription this.sub|src/a.ts --> <!-- provenflow-version:0.2.1 -->', created_at: '2026-01-01' };
         const labels = labelsFromComments(
             [
                 finding,
@@ -26,7 +27,7 @@ describe('review feedback', () => {
             ],
             7
         );
-        expect(labels).toEqual([{ key: 'resource-leak|A subscription this.sub|src/a.ts', rule: 'resource-leak', verdict: 'false-positive', reply: 'Not a leak: Angular calls ngOnInit once per instance.', pull: 7, url: 'https://github.com/o/r/pull/7#discussion_r3' }]);
+        expect(labels).toEqual([{ key: 'resource-leak|A subscription this.sub|src/a.ts', rule: 'resource-leak', verdict: 'false-positive', reply: 'Not a leak: Angular calls ngOnInit once per instance.', pull: 7, url: 'https://github.com/o/r/pull/7#discussion_r3', version: '0.2.1' }]);
     });
 
     it('keeps the labels already in the file (corrected by hand) and adds the new ones', () => {
@@ -62,7 +63,7 @@ describe('review feedback', () => {
 
 describe('review placement', () => {
     const at = (rule: string, subject: string): Finding => ({ rule, subject, category: 'lifecycle', severity: 'warning', message: 'm', fix: 'f', loc: { file: 'src/a.ts', line: 3 }, source: 'analysis' }) as Finding;
-    const label = (rule: string, verdict: ReviewLabel['verdict'], subject = 'X'): ReviewLabel => ({ key: `${rule}|${subject}|src/a.ts`, rule, verdict, reply: '', pull: 3 });
+    const label = (rule: string, verdict: ReviewLabel['verdict'], subject = 'X', version: string | null = '0.2.0'): ReviewLabel => ({ key: `${rule}|${subject}|src/a.ts`, rule, verdict, reply: '', pull: 3, ...(version ? { version } : {}) });
 
     it('comments inline unless the finding or most of its rule was answered as a false positive', () => {
         const feedback: ReviewFeedback = {
@@ -74,10 +75,18 @@ describe('review placement', () => {
                 ...['H', 'I', 'J', 'K', 'L'].map(s => label('long-function', 'fixed', s))
             ]
         };
-        const placed = placeFindings([at('stuck-state', 'A.mode'), at('stuck-state', 'B.mode'), at('resource-leak', 'Z'), at('long-function', 'f')], feedback);
+        const placed = placeFindings([at('stuck-state', 'A.mode'), at('stuck-state', 'B.mode'), at('resource-leak', 'Z'), at('long-function', 'f')], feedback, {}, '0.2.3');
         expect(placed.inline.map(f => f.subject)).toEqual(['B.mode', 'f']);
-        expect(placed.summary.map(s => s.reason)).toEqual(['answered as a false positive in #3', 'resource-leak: 17% of its answered findings were real']);
+        expect(placed.summary.map(s => s.reason)).toEqual(['answered as a false positive in #3', 'resource-leak: 17% of its answered findings in this version were real']);
         expect(placementMarkdown(placed.summary)).toContain('2 finding(s) not commented inline');
+    });
+
+    it('weighs a rule only by answers to its own minor version, but keeps every disputed finding out', () => {
+        const old = (version: string | null) => ['B', 'C', 'D', 'E', 'F'].map(s => label('resource-leak', 'false-positive', s, version));
+        const feedback: ReviewFeedback = { repository: 'o/r', labels: [...old(null), ...old('0.1.0')] };
+        const placed = placeFindings([at('resource-leak', 'Z'), at('resource-leak', 'B')], feedback, {}, '0.2.1');
+        expect(placed.inline.map(f => f.subject)).toEqual(['Z']);
+        expect(placed.summary.map(s => s.reason)).toEqual(['answered as a false positive in #3']);
     });
 
     it('lets the config place a rule whatever the answers say', () => {
@@ -90,5 +99,24 @@ describe('review placement', () => {
 
     it('turns a finding key into an ignore entry', () => {
         expect(ignoreEntry('resource-leak|Poller interval this.timer|src/a.ts', 'guarded')).toEqual({ rule: 'resource-leak', subject: 'Poller interval this.timer', file: 'src/a.ts', reason: 'guarded' });
+    });
+});
+
+describe('versions', () => {
+    it('keeps the version equal to package.json', () => {
+        const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+        expect(PROVENFLOW_VERSION).toBe(pkg.version);
+    });
+
+    it('compares major and minor versions', () => {
+        expect(sameMinor('0.2.0', '0.2.3')).toBe(true);
+        expect(sameMinor('v0.2.0', '0.2.0')).toBe(true);
+        expect(sameMinor('0.1.0', '0.2.0')).toBe(false);
+        expect(sameMinor(undefined, '0.2.0')).toBe(false);
+    });
+
+    it('reads the version a comment was written by', () => {
+        expect(commentVersion(`x\n\n<!-- provenflow:r|s|f --> ${versionMarker('0.2.1')}`)).toBe('0.2.1');
+        expect(commentVersion('x\n\n<!-- provenflow:r|s|f -->')).toBeUndefined();
     });
 });

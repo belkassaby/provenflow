@@ -1058,7 +1058,7 @@ With `--github` (in a `pull_request` run, with `GITHUB_TOKEN`) the findings beco
 - the findings also appear as **annotations** on the Files tab and in the run's summary.
 
 Later pushes do not repeat the review. Each comment carries a hidden marker with its finding
-(rule, subject and file, so moved lines do not matter):
+(rule, subject and file, so moved lines do not matter) and the ProvenFlow version that reported it:
 - only findings not reported before get a new comment;
 - a finding that is gone gets a reply "✓ No longer reported at `<commit>`" under its comment;
 - the summary comment is edited in place, with the new, still-reported and fixed counts.
@@ -1087,7 +1087,10 @@ Commit the file at the root of the code base. Reviews then use it:
   listed in the summary with a link to the answer;
 - a rule whose answered findings were real (fixed) less often than `review.minPrecision` (default
   50%, once it has `review.minAnswers` answers, default 5) goes to the summary instead of inline
-  comments;
+  comments. Only answers to findings of the running minor version count (0.2.x for 0.2.1): a
+  release that fixes a rule's false positives starts it again with a clean slate. Answers to
+  comments written before 0.2.1 carry no version, so they never move a rule, but still keep their
+  own finding out of inline comments;
 - `review.rules` places a rule whatever the answers say (`"inline"` or `"summary"`).
 
 On the pull request itself, a finding answered as a false positive is listed in the summary with the

@@ -11,7 +11,8 @@ import type { ExtractionResult } from './project.js';
 import { formatLocation } from './ir.js';
 import type { Finding } from './models.js';
 import { findingKey } from './incremental.js';
-import { githubApi, marker, MARKER, type GithubApi, type GithubTarget } from './github-api.js';
+import { githubApi, marker, MARKER, versionMarker, type GithubApi, type GithubTarget } from './github-api.js';
+import { PROVENFLOW_VERSION } from './version.js';
 import { labelsFromComments } from './review-feedback.js';
 import { disputedMarkdown } from './review-placement.js';
 
@@ -105,7 +106,7 @@ function commentBody(f: Finding, suggestion: { text: string } | undefined): stri
     if (f.confirmation) parts.push('', `**On the code:** ${CONFIRMATION[f.confirmation.status]} (${f.confirmation.by}): ${f.confirmation.detail}`);
     if (f.counterexample && f.counterexample.length > 1) parts.push('', '<details><summary>Counterexample</summary>', '', ...f.counterexample.map((s, i) => `${i}. ${s.event ? `\`${s.event}\` → ` : ''}**${s.state}**${s.loc ? ` (${formatLocation(s.loc)})` : ''}`), '', '</details>');
     if (suggestion) parts.push('', `**Suggested change** (${f.suggestedPatch!.by ?? 'LLM'}, ✓ verified: ${f.suggestedPatch!.note})`, '', '```suggestion', suggestion.text, '```');
-    parts.push('', marker(findingKey(f)));
+    parts.push('', `${marker(findingKey(f))} ${versionMarker(PROVENFLOW_VERSION)}`);
     return parts.join('\n');
 }
 

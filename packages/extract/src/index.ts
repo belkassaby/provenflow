@@ -13,7 +13,8 @@ export { detectChecks, runChecks, type CheckCommand, type CheckResult } from './
 export * from './review.js';
 export * from './review-feedback.js';
 export * from './review-placement.js';
-export { commentKey } from './github-api.js';
+export * from './version.js';
+export { commentKey, commentVersion, versionMarker } from './github-api.js';
 export { cleanStaleWorkspaces, materialize } from './tools/workspace.js';
 export type { OnProgress, Progress, ProgressPhase } from './progress.js';
 export type { IncrementalInfo, PreviousRun } from './incremental.js';

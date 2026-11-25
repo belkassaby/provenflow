@@ -17,6 +17,15 @@ export function commentKey(body: string): string | undefined {
     return MARKER.exec(body)?.[1].replace(/- -/g, '--');
 }
 
+/** Hidden next to the marker: the ProvenFlow version that made the finding, so answers can be weighed per version. */
+export const versionMarker = (version: string) => `<!-- provenflow-version:${version} -->`;
+const VERSION_MARKER = /<!-- provenflow-version:([\w.+-]+) -->/;
+
+/** The version that wrote a ProvenFlow comment; undefined for comments of versions before 0.2.1. */
+export function commentVersion(body: string): string | undefined {
+    return VERSION_MARKER.exec(body)?.[1];
+}
+
 export interface GithubApi {
     call(method: string, path: string, body?: unknown): Promise<Response>;
     /** Every page of a list (up to 2,000 items). */

@@ -8,6 +8,7 @@ import type { IgnoreRule, ReviewConfig } from './config.js';
 import { findingKey } from './incremental.js';
 import type { Finding } from './models.js';
 import { labelRows, rulePrecision, type ReviewFeedback, type ReviewLabel } from './review-feedback.js';
+import { PROVENFLOW_VERSION, sameMinor } from './version.js';
 
 export const DEFAULT_MIN_PRECISION = 0.5;
 export const DEFAULT_MIN_ANSWERS = 5;
@@ -18,10 +19,14 @@ export interface Placement {
     summary: Array<{ finding: Finding; reason: string }>;
 }
 
-/** Inline unless the config says summary, the finding was answered as a false positive, or its rule was mostly. */
-export function placeFindings(findings: Finding[], feedback: ReviewFeedback | undefined, config: ReviewConfig = {}): Placement {
+/**
+ * Inline unless the config says summary, the finding was answered as a false positive (by any
+ * version), or its rule was mostly, in answers to findings of `version`'s minor version: a release
+ * that fixes a rule's false positives starts it again with a clean slate.
+ */
+export function placeFindings(findings: Finding[], feedback: ReviewFeedback | undefined, config: ReviewConfig = {}, version = PROVENFLOW_VERSION): Placement {
     const disputed = new Map((feedback?.labels ?? []).filter(l => l.verdict === 'false-positive').map(l => [l.key, l]));
-    const lowRules = lowPrecisionRules(feedback, config);
+    const lowRules = lowPrecisionRules((feedback?.labels ?? []).filter(l => sameMinor(l.version, version)), config);
     const placement: Placement = { inline: [], summary: [] };
     for (const f of findings) {
         const reason = summaryReason(f, disputed.get(findingKey(f)), lowRules.get(f.rule), config);
@@ -35,15 +40,15 @@ function summaryReason(f: Finding, disputed: ReviewLabel | undefined, precision:
     if (config.rules?.[f.rule] === 'inline') return undefined;
     if (config.rules?.[f.rule] === 'summary') return 'review.rules sends this rule to the summary';
     if (disputed) return `answered as a false positive${disputed.pull ? ` in #${disputed.pull}` : ''}${disputed.url ? ` ([reply](${disputed.url}))` : ''}`;
-    if (precision !== undefined) return `${f.rule}: ${Math.round(precision * 100)}% of its answered findings were real`;
+    if (precision !== undefined) return `${f.rule}: ${Math.round(precision * 100)}% of its answered findings in this version were real`;
     return undefined;
 }
 
 /** Rules whose answered findings were real less often than `minPrecision`, with their precision. */
-function lowPrecisionRules(feedback: ReviewFeedback | undefined, config: ReviewConfig): Map<string, number> {
+function lowPrecisionRules(labels: ReviewLabel[], config: ReviewConfig): Map<string, number> {
     const low = new Map<string, number>();
     const threshold = config.minPrecision ?? DEFAULT_MIN_PRECISION;
-    for (const row of labelRows(feedback?.labels ?? [])) {
+    for (const row of labelRows(labels)) {
         const precision = rulePrecision(row, config.minAnswers ?? DEFAULT_MIN_ANSWERS);
         if (precision !== undefined && precision < threshold) low.set(row.rule, precision);
     }
